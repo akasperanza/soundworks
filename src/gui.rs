@@ -230,6 +230,7 @@ mod fx_ui;
 mod library_ui;
 mod lyrics_ui;
 mod panels;
+mod proof_ui;
 mod queue_ui;
 mod search_ui;
 mod settings_ui;
@@ -390,6 +391,13 @@ pub struct App {
     /// kütüphaneden "sıraya ekle" isteği: (parçalar, sıradaki olarak mı)
     pending_queue: Option<(Vec<PathBuf>, bool)>,
     undo: Option<(Undo, String, Instant)>,
+    /// bit-perfect kanıtı: parça başı sayaç tabanı, görünen değerler ve son değişiklik zamanı
+    proof_id: u64,
+    proof_base: crate::proof::Counters,
+    proof_view: crate::proof::Counters,
+    proof_dry_shown: u64,
+    proof_alt_seen: u64,
+    proof_alt_at: Instant,
     wave_fetcher: wave::WaveFetcher,
     wave_cache: HashMap<String, Arc<Vec<f32>>>,
     wave_drag: Option<f32>,
@@ -528,6 +536,12 @@ impl App {
             resume_saved: Instant::now(),
             pending_queue: None,
             undo: None,
+            proof_id: u64::MAX,
+            proof_base: Default::default(),
+            proof_view: Default::default(),
+            proof_dry_shown: 0,
+            proof_alt_seen: 0,
+            proof_alt_at: Instant::now() - std::time::Duration::from_secs(10),
             wave_fetcher: wave::WaveFetcher::new(),
             wave_cache: HashMap::new(),
             wave_drag: None,
@@ -778,7 +792,7 @@ impl App {
         if last.map(|t| t.elapsed().as_millis() >= 500).unwrap_or(true) {
             *last = Some(Instant::now());
             dev_trace(&format!(
-                "durum kare={} update_ms={} playing={} pos={:.1} vol={:.2} view={} engine={} idx={:?}",
+                "durum kare={} update_ms={} playing={} pos={:.1} vol={:.2} view={} engine={} idx={:?} kanıt={:?}",
                 FRAMES.swap(0, Relaxed),
                 UPDATE_US.swap(0, Relaxed) / 1000,
                 self.player.playing.load(Relaxed),
@@ -790,7 +804,8 @@ impl App {
                     View::Settings => "ayarlar",
                 },
                 self.running.is_some(),
-                self.player.current()
+                self.player.current(),
+                self.proof_view
             ));
         }
         if crate::devenv::dev_var("SW_LOGS").is_ok() && last.map(|t| t.elapsed().as_millis() < 5).unwrap_or(false) {
@@ -999,6 +1014,7 @@ impl eframe::App for App {
             }
         }
         self.tick_stopping();
+        self.tick_proof();
         self.tick_dsd_volume_note();
         let note = self.player.note.lock().unwrap().take();
         if let Some(n) = note {

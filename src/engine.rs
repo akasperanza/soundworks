@@ -44,6 +44,8 @@ pub struct Control {
     pub peak_r: std::sync::atomic::AtomicU32,
     pub clips: std::sync::atomic::AtomicU32,
     pub out_info: Mutex<OutInfo>,
+    /// bit-perfect kanıtı: cihaza yazılan çerçevelerin ölçümü
+    pub proof: crate::proof::Proof,
     /// Kaynak (sanal) cihazın Windows ses seviyesi/mute'u; loopback bunu içermediği için biz uygularız.
     pub src_gain: std::sync::atomic::AtomicU32,
     /// Arayüzde gösterilecek tek seferlik bildirim.
@@ -98,6 +100,7 @@ impl Control {
             peak_r: std::sync::atomic::AtomicU32::new(0),
             clips: std::sync::atomic::AtomicU32::new(0),
             out_info: Mutex::new(OutInfo::default()),
+            proof: Default::default(),
             src_gain: std::sync::atomic::AtomicU32::new(1f32.to_bits()),
             notice: Mutex::new(None),
             dither: AtomicBool::new(true),
@@ -723,7 +726,7 @@ pub fn run(ctl: Arc<Control>, opts: Options) -> Result<()> {
         if opts.dop {
             render_loop_dop(&ctl, &dst.id, &dst.name, src_rate, &ring)
         } else {
-            render_loop(&ctl, &dst.id, &dst.name, src_rate, &ring, !opts.shared)
+            render_loop(&ctl, &dst.id, &dst.name, src_rate, &ring, !opts.shared, opts.player.is_none())
         }
     };
     ctl.request_stop();
@@ -733,7 +736,19 @@ pub fn run(ctl: Arc<Control>, opts: Options) -> Result<()> {
     result
 }
 
-unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32, ring: &Arc<Ring>, exclusive: bool) -> Result<()> {
+/// Halkadan okuma adımı (1.0 = her çıkış çerçevesi tam bir kaynak çerçevesi). Telafi yalnızca kaynağın kendi saati varsa
+/// (loopback) ve doluluk hedeften çok saptıysa uygulanır; aksi halde adım sabittir ve örnekler birebir geçer.
+fn read_step(drift_comp: bool, base_step: f64, dev_ratio: f64) -> f64 {
+    if !drift_comp || (dev_ratio.abs() < 0.5 && (base_step - 1.0).abs() < 1e-9) {
+        base_step
+    } else {
+        base_step * (1.0 + dev_ratio.clamp(-1.0, 1.0) * 0.002)
+    }
+}
+
+/// `drift_comp`: kaynağın kendi saati varsa (loopback yakalama) halka doluluğuna göre hız telafisi yapılır. Dahili oynatıcıda kaynak
+/// saati yoktur (çözücü halkayı ihtiyaca göre doldurur), telafi yapılmaz: örnekler birebir geçer.
+unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32, ring: &Arc<Ring>, exclusive: bool, drift_comp: bool) -> Result<()> {
     let dev = open(dst_id)?;
     let mut tries = 0;
     let rs = loop {
@@ -889,6 +904,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         let bal = f32::from_bits(ctl.balance.load(Ordering::Relaxed)).clamp(-1.0, 1.0);
         let (bal_l, bal_r) = (if bal > 0.0 { 1.0 - bal } else { 1.0 }, if bal < 0.0 { 1.0 + bal } else { 1.0 });
         let (mut pk_l, mut pk_r, mut clips) = (0f32, 0f32, 0u32);
+        let mut pf = crate::proof::Counters::default();
         let mix_tgt = if ctl.bypass.load(Ordering::Relaxed) || EQ_OFF.load(Ordering::Relaxed) { 0f32 } else { 1f32 };
         let dry_gain = if ctl.level_match.load(Ordering::Relaxed) { eq.preamp_gain() } else { 1.0 };
         // sinyale dokunulmuyorsa (bit-perfect yol) dither eklenmez
@@ -923,12 +939,10 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         if primed {
             // clock drift telafisi: doluluk hedeften saptıkça çok küçük hız ayarı
             let dev_ratio = (fill as f64 - target as f64) / target as f64;
-            let step = if dev_ratio.abs() < 0.5 && (base_step - 1.0).abs() < 1e-9 {
+            let step = read_step(drift_comp, base_step, dev_ratio);
+            if step == 1.0 {
                 frac = 0.0;
-                base_step
-            } else {
-                base_step * (1.0 + dev_ratio.clamp(-1.0, 1.0) * 0.002)
-            };
+            }
             for i in 0..n as usize {
                 gate_cur = if gate_cur < gate_tgt { (gate_cur + gate_step).min(gate_tgt) } else { (gate_cur - gate_step).max(gate_tgt) };
                 if gate_cur <= 0.0 && gate_tgt == 0.0 {
@@ -946,10 +960,12 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 if q.len() < 4 {
                     primed = false;
                     gate_cur = 0.0; // sonraki başlangıçta yumuşak giriş
+                    pf.dry += 1;
                     break;
                 }
                 let (l0, r0, l1, r1) = (q[0], q[1], q[2], q[3]);
-                gain_cur = approach(gain_cur, gain_tgt * src_gain * vol_g, 0.0008);
+                let gain_goal = gain_tgt * src_gain * vol_g;
+                gain_cur = approach(gain_cur, gain_goal, 0.0008);
                 let t = frac as f32;
                 // kesirli konumda (hız farkı/saat kayması) kübik, yoksa birebir örnek: bit-perfect yol bozulmaz
                 let (dl, dr) = if t == 0.0 {
@@ -1028,6 +1044,15 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 let o = &mut out[i * fb..];
                 let dith_on = needs_dither(dither_on, chain_touched, gain_cur, gate_cur);
                 let (dl_, dr_) = if dith_on { (dith[0].tpdf(), dith[1].tpdf()) } else { (0.0, 0.0) };
+                // kanıt: yumuşak geçişler dışında, yazılan değer halkadan gelen örnekle aynı mı?
+                if gate_cur < 1.0 || gain_cur != gain_goal {
+                    pf.ramp += 1;
+                } else if crate::proof::frame_exact(dl, dr, l, r, t == 0.0, dith_on) {
+                    pf.ok += 1;
+                } else {
+                    pf.alt += 1;
+                    pf.causes |= crate::proof::causes(t == 0.0, (gain_cur - 1.0).abs() > 1e-6 || bal_l != 1.0 || bal_r != 1.0, chain_touched, dith_on, l.abs() > 1.0 || r.abs() > 1.0);
+                }
                 write_sample(o, l, &fmt, dl_);
                 if fmt.channels > 1 {
                     write_sample(&mut o[sb..], r, &fmt, dr_);
@@ -1059,6 +1084,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         if clips > 0 {
             ctl.clips.fetch_add(clips, Ordering::Relaxed);
         }
+        ctl.proof.add(&pf);
         render.ReleaseBuffer(n, 0)?;
     }
     rs.client.Stop()?;
@@ -1458,6 +1484,18 @@ pub fn explain_error(e: &anyhow::Error) -> String {
 #[cfg(test)]
 mod dsp_tests {
     use super::*;
+
+    #[test]
+    fn player_mode_never_nudges_the_read_step() {
+        // dahili oynatıcıda halka hedefin kat kat üstünde dolu olsa bile adım tam 1.0 kalır (aksi halde ara değer = bit-perfect değil)
+        for ratio in [-1.0, -0.4, 0.0, 0.4, 2.75, 10.0] {
+            assert_eq!(read_step(false, 1.0, ratio), 1.0, "doluluk sapması {ratio}");
+        }
+        // loopback'te küçük sapma sabit, büyük sapma telafi edilir
+        assert_eq!(read_step(true, 1.0, 0.3), 1.0);
+        assert!(read_step(true, 1.0, 2.75) > 1.0);
+        assert!(read_step(true, 1.0, -2.0) < 1.0);
+    }
 
     fn fmt16() -> Fmt {
         Fmt { rate: 48000, channels: 2, container_bits: 16, valid_bits: 16, float: false, mask: 3 }

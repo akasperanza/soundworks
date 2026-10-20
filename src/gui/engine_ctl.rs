@@ -82,6 +82,7 @@ impl App {
         });
         dev_trace(&format!("engine_start rate={} dop={dop}", self.player.rate()));
         self.running = Some(Running { ctl, handle, dop });
+        self.proof_id = u64::MAX; // yeni motorun sayaçları sıfırdan başlar: tabanı yeniden al
         self.message.clear();
     }
 

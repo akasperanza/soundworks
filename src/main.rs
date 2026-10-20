@@ -18,6 +18,7 @@ mod viz;
 mod wave;
 mod web;
 mod player;
+mod proof;
 mod media;
 mod recover;
 

@@ -4,7 +4,7 @@ use super::*;
 
 impl App {
     /// Alt çubuktaki biçim rozeti: "FLAC 24/96", "MP3 44.1 kHz". Parça yoksa `None`.
-    fn format_badge(&self) -> Option<String> {
+    pub(super) fn format_badge(&self) -> Option<String> {
         let m = &self.meta;
         if m.title.is_empty() || m.codec.is_empty() || m.src_rate == 0 {
             return None;
@@ -318,9 +318,6 @@ impl App {
                             ui.add(egui::Label::new(RichText::new(a).font(body(12.0)).color(DIM)).wrap());
                         });
                     });
-                    if let Some(f) = self.format_badge() {
-                        chip(ui, &f, alpha(TEXT, 170)).on_hover_text("Çalan dosyanın biçimi (kaynak); sinyal yolu için Motor sekmesine bak");
-                    }
                     let playing = self.player.playing.load(Relaxed);
                     ui.add_space(8.0);
                     // karıştır
@@ -353,7 +350,7 @@ impl App {
                     let dur = self.player.duration();
                     let pos = self.player.position();
                     ui.label(RichText::new(fmt_time(pos)).font(body(12.0)).color(DIM));
-                    let seek_w = (ui.available_width() - 140.0).max(120.0);
+                    let seek_w = (ui.available_width() - 182.0).max(120.0);
                     let cur = self.current_path();
                     if let Some(p) = &cur {
                         if !self.wave_cache.contains_key(p) && !self.wave_fetcher.is_pending(p) {
@@ -404,6 +401,7 @@ impl App {
                             self.queue_open = false;
                         }
                     }
+                    self.proof_light(ui);
                     let qb = icon_button(ui, Icon::List, 32.0, self.queue_open).on_hover_text("Kuyruk");
                     if qb.clicked() {
                         self.queue_open = !self.queue_open;
