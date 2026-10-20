@@ -145,18 +145,23 @@ impl App {
             ui.label(RichText::new(format!("Sanatçı bilgisi alınamıyor: {e}")).font(body(12.0)).color(AMBER));
         }
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            let gap = 28.0;
-            let cw = 150.0;
+            let gap = 22.0;
+            let avail = ui.available_width() - 6.0;
+            let cols = ((avail + gap) / (185.0 + gap)).floor().max(1.0);
+            let cw = ((avail - gap * (cols - 1.0)) / cols).floor();
+            let pad = 16.0;
+            let rad = ((cw - 2.0 * pad) * 0.5).clamp(50.0, 96.0);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui| {
                 ui.spacing_mut().item_spacing = vec2(gap, gap);
                 for (name, n_albums, n_tracks) in &artists {
-                    let (nm_f, sb_f) = (bold(13.0), body(11.5));
+                    let (nm_f, sb_f) = (bold(14.5), body(12.0));
                     let sb_txt = format!("{n_albums} albüm · {n_tracks} parça");
                     let (nm_l, sb_l, lh_n, lh_s) = {
                         let p = ui.painter().clone();
-                        (wrap_lines(&p, name, &nm_f, cw), wrap_lines(&p, &sb_txt, &sb_f, cw), line_height(&p, &nm_f), line_height(&p, &sb_f))
+                        (wrap_lines(&p, name, &nm_f, cw - 2.0 * pad), wrap_lines(&p, &sb_txt, &sb_f, cw - 2.0 * pad), line_height(&p, &nm_f), line_height(&p, &sb_f))
                     };
-                    let card_h = (140.0 + nm_l.len() as f32 * lh_n + 4.0 + sb_l.len() as f32 * lh_s + 8.0).max(178.0);
+                    let text_top = pad + 2.0 * rad + 14.0;
+                    let card_h = text_top + nm_l.len() as f32 * lh_n + 4.0 + sb_l.len() as f32 * lh_s + pad;
                     let (rect0, resp) = ui.allocate_exact_size(vec2(cw, card_h), Sense::click());
                     let visible = ui.is_rect_visible(rect0);
                     let ap = if visible { appear(ctx, Id::new(("acard", name, self.view_epoch)), 0.0) } else { 0.0 };
@@ -167,8 +172,10 @@ impl App {
                         self.ensure_artist(name, false);
                     }
                     let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.12);
-                    let c = pos2(rect.center().x, rect.top() + 66.0);
-                    let r = 62.0 + 2.0 * h;
+                    // Surface 2: kart panelden (BG1) bir kat yukarıda durur, üzerine gelince BG3'e çıkar
+                    ui.painter().rect_filled(rect, Rounding::same(16.0), lerp_color(alpha(BG2, 200), BG3, h));
+                    let c = pos2(rect.center().x, rect.top() + pad + rad);
+                    let r = rad + 2.0 * h;
                     let tex = if visible { self.artist_texture(ctx, name, false) } else { None };
                     match tex {
                         Some((t, w, hh)) => circle_image(ui.painter(), t, c, r, cover_uv(w, hh, Rect::from_center_size(c, egui::Vec2::splat(r * 2.0))), Color32::from_white_alpha((255.0 * ap) as u8)),
@@ -181,8 +188,8 @@ impl App {
                     if h > 0.0 {
                         ui.painter().circle_stroke(c, r, Stroke::new(2.0, alpha(BLUE, (200.0 * h) as u8)));
                     }
-                    let used = draw_lines(ui.painter(), pos2(rect.center().x, rect.top() + 140.0), Align2::CENTER_TOP, &nm_l, &nm_f, TEXT);
-                    draw_lines(ui.painter(), pos2(rect.center().x, rect.top() + 140.0 + used + 4.0), Align2::CENTER_TOP, &sb_l, &sb_f, DIM);
+                    let used = draw_lines(ui.painter(), pos2(rect.center().x, rect.top() + text_top), Align2::CENTER_TOP, &nm_l, &nm_f, Color32::WHITE);
+                    draw_lines(ui.painter(), pos2(rect.center().x, rect.top() + text_top + used + 4.0), Align2::CENTER_TOP, &sb_l, &sb_f, DIM);
                     ui.set_opacity(prev_op);
                     if resp.clicked() {
                         open = Some(name.clone());

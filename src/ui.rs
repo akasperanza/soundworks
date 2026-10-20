@@ -587,6 +587,43 @@ pub fn switch_row(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) -> bool {
 }
 
 /// Küçük, kendi çizdiğimiz segmentli segment (mod seçici).
+/// Büyük görünüm anahtarı (Albümler / Sanatçılar gibi): koyu bir oluk (BG0) içinde kayan yükseltilmiş (BG3) gösterge.
+pub fn view_switch<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &str)]) {
+    let gs: Vec<_> = items.iter().map(|(_, t)| ui.painter().layout_no_wrap(t.to_string(), bold(14.5), TEXT)).collect();
+    let ws: Vec<f32> = gs.iter().map(|g| g.size().x + 40.0).collect();
+    let (rect, _) = ui.allocate_exact_size(vec2(ws.iter().sum::<f32>() + 8.0, 42.0), Sense::hover());
+    ui.painter().rect_filled(rect, Rounding::same(13.0), BG0);
+    ui.painter().rect_stroke(rect, Rounding::same(13.0), Stroke::new(1.0, alpha(Color32::WHITE, 14)));
+    let mut x = rect.left() + 4.0;
+    let sel = items.iter().position(|(v, _)| *v == *value).unwrap_or(0);
+    let (mut tx, mut tw) = (rect.left() + 4.0, ws[0]);
+    for (i, w) in ws.iter().enumerate() {
+        if i == sel {
+            tw = *w;
+            break;
+        }
+        tx += *w;
+    }
+    let id = ui.id().with("vswitch");
+    let ix = ui.ctx().animate_value_with_time(id.with("x"), tx, 0.2);
+    let iw = ui.ctx().animate_value_with_time(id.with("w"), tw, 0.2);
+    let ind = Rect::from_min_size(pos2(ix, rect.top() + 4.0), vec2(iw, rect.height() - 8.0));
+    ui.painter().rect_filled(ind, Rounding::same(10.0), BG3);
+    ui.painter().rect_stroke(ind, Rounding::same(10.0), Stroke::new(1.0, alpha(Color32::WHITE, 22)));
+    for (i, g) in gs.into_iter().enumerate() {
+        let r = Rect::from_min_size(pos2(x, rect.top() + 4.0), vec2(ws[i], rect.height() - 8.0));
+        let resp = ui.interact(r, id.with(("t", i)), Sense::click());
+        let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
+        let on = i == sel;
+        let col = if on { Color32::WHITE } else { lerp_color(DIM, TEXT, h) };
+        ui.painter().galley(r.center() - g.size() * 0.5, g, col);
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            *value = items[i].0;
+        }
+        x += ws[i];
+    }
+}
+
 pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &str, Option<Icon>)]) {
     let mut total = 4.0;
     let gs: Vec<_> = items.iter().map(|(_, t, _)| ui.painter().layout_no_wrap(t.to_string(), bold(12.0), TEXT)).collect();

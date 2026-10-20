@@ -215,12 +215,13 @@ impl App {
             Some((self.lib_scans.iter().map(|s| s.1).sum(), self.lib_scans.iter().map(|s| s.2).sum()))
         };
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 14.0;
             let mut tab_v = self.lib_tab;
-            segmented(ui, &mut tab_v, &[(0u8, "Albümler", None), (1u8, "Sanatçılar", None)]);
+            view_switch(ui, &mut tab_v, &[(0u8, "Albümler"), (1u8, "Sanatçılar")]);
             self.lib_tab = tab_v;
             ui.label(
                 RichText::new(format!("{} albüm · {} parça", self.lib.albums.len(), self.lib.total_tracks()))
-                    .font(body(12.5))
+                    .font(body(13.5))
                     .color(DIM),
             );
             if let Some((d, t)) = scanning {
@@ -249,7 +250,7 @@ impl App {
                 }
             });
         });
-        ui.add_space(8.0);
+        ui.add_space(18.0);
 
         if self.lib.albums.is_empty() {
             ui.add_space(70.0);
@@ -304,21 +305,25 @@ impl App {
         ui.set_opacity(prev_op * ap);
         let cover = Rect::from_min_size(rect.min, vec2(cw, cw));
         let painter = ui.painter();
+        // Surface 2: üzerine gelince kart, panelden (BG1) bir kat yukarı kalkar
+        if h > 0.0 {
+            painter.rect_filled(rect.expand(10.0), Rounding::same(16.0), alpha(BG2, (255.0 * h) as u8));
+        }
         match tex {
-            Some(t) => rounded_image(painter, t, cover, 8.0, Color32::from_white_alpha((255.0 * ap) as u8)),
+            Some(t) => rounded_image(painter, t, cover, 12.0, Color32::from_white_alpha((255.0 * ap) as u8)),
             None => {
-                painter.rect_filled(cover, Rounding::same(8.0), BG2);
+                painter.rect_filled(cover, Rounding::same(12.0), BG2);
                 draw_icon(painter, Icon::Wave, cover.center(), 34.0, alpha(DIM, 160));
             }
         }
         if is_cur {
-            painter.rect_stroke(cover, Rounding::same(8.0), Stroke::new(2.0, BLUE));
+            painter.rect_stroke(cover, Rounding::same(12.0), Stroke::new(2.0, BLUE));
         }
         if miss == n {
-            painter.rect_filled(cover, Rounding::same(8.0), Color32::from_black_alpha(150));
+            painter.rect_filled(cover, Rounding::same(12.0), Color32::from_black_alpha(150));
         }
         if h > 0.0 {
-            painter.rect_filled(cover, Rounding::same(8.0), Color32::from_black_alpha((70.0 * h) as u8));
+            painter.rect_filled(cover, Rounding::same(12.0), Color32::from_black_alpha((70.0 * h) as u8));
         }
         let used = draw_lines(painter, pos2(rect.left(), rect.top() + cw + 8.0), Align2::LEFT_TOP, &name_l, &name_f, if miss == n { DIM } else { Color32::WHITE });
         draw_lines(painter, pos2(rect.left(), rect.top() + cw + 8.0 + used + 3.0), Align2::LEFT_TOP, &sub_l, &sub_f, DIM);
@@ -449,7 +454,7 @@ impl App {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let gap = 26.0;
             let avail = ui.available_width() - 6.0;
-            let cols = ((avail + gap) / (170.0 + gap)).floor().max(1.0);
+            let cols = ((avail + gap) / (180.0 + gap)).floor().max(1.0);
             let cw = ((avail - gap * (cols - 1.0)) / cols).floor();
             for (name, idxs) in &sections {
                 if !name.is_empty() {
