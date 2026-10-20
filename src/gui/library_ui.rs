@@ -250,7 +250,11 @@ impl App {
                 }
             });
         });
-        ui.add_space(18.0);
+        ui.add_space(12.0);
+        if !self.lib.albums.is_empty() {
+            self.library_filter_bar(ui);
+        }
+        ui.add_space(14.0);
 
         if self.lib.albums.is_empty() {
             ui.add_space(70.0);
@@ -266,6 +270,104 @@ impl App {
         } else {
             self.artist_grid(ui, ctx);
         }
+    }
+
+    /// Filtre çubuğu: metin, tür ve sıralama. Albümler ve sanatçılar aynı filtreyi paylaşır; sıralama sekmeye göre değişir.
+    fn library_filter_bar(&mut self, ui: &mut egui::Ui) {
+        const ALBUM_SORTS: [&str; 4] = ["A → Z", "Z → A", "Sanatçıya göre", "Süreye göre"];
+        const ARTIST_SORTS: [&str; 4] = ["A → Z", "Z → A", "Çok albümlü önce", "Çok parçalı önce"];
+        let mut genres: Vec<String> = self.lib.albums.iter().filter(|a| !a.genre.is_empty()).map(|a| a.genre.clone()).collect();
+        genres.sort();
+        genres.dedup();
+        if let Some(g) = &self.lib_genre {
+            if !genres.contains(g) {
+                self.lib_genre = None;
+            }
+        }
+        let tab = self.lib_tab.min(1) as usize;
+        let active = !self.lib_q.trim().is_empty() || self.lib_genre.is_some();
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            let hint = if tab == 0 { "Albüm ya da sanatçı filtrele…" } else { "Sanatçı filtrele…" };
+            ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text(hint).desired_width(230.0).margin(vec2(10.0, 7.0)));
+            if !genres.is_empty() {
+                let shown = self.lib_genre.clone().unwrap_or_else(|| "Tüm türler".to_string());
+                egui::ComboBox::from_id_salt("lib_genre").width(150.0).selected_text(shown).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.lib_genre, None, "Tüm türler");
+                    for g in &genres {
+                        ui.selectable_value(&mut self.lib_genre, Some(g.clone()), g);
+                    }
+                });
+            }
+            let names = if tab == 0 { ALBUM_SORTS } else { ARTIST_SORTS };
+            let mut sort = self.lib_sort[tab];
+            egui::ComboBox::from_id_salt(("lib_sort", tab)).width(150.0).selected_text(format!("Sırala: {}", names[sort as usize % 4])).show_ui(ui, |ui| {
+                for (i, n) in names.iter().enumerate() {
+                    ui.selectable_value(&mut sort, i as u8, *n);
+                }
+            });
+            self.lib_sort[tab] = sort;
+            if active && pill_button(ui, "Filtreyi temizle", Some(Icon::Close), false).clicked() {
+                self.lib_q.clear();
+                self.lib_genre = None;
+            }
+        });
+    }
+
+    /// Filtreden geçen albümlerin indeksleri, seçili sıralamayla.
+    fn visible_albums(&self) -> Vec<usize> {
+        let q = self.lib_q.trim().to_lowercase();
+        let mut v: Vec<usize> = (0..self.lib.albums.len())
+            .filter(|&i| {
+                let a = &self.lib.albums[i];
+                (q.is_empty() || a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q))
+                    && self.lib_genre.as_ref().map_or(true, |g| &a.genre == g)
+            })
+            .collect();
+        let al = &self.lib.albums;
+        match self.lib_sort[0] {
+            1 => v.sort_by_key(|&i| std::cmp::Reverse(al[i].title.to_lowercase())),
+            2 => v.sort_by_key(|&i| (al[i].artist.to_lowercase(), al[i].title.to_lowercase())),
+            3 => v.sort_by_key(|&i| std::cmp::Reverse(al[i].total_secs() as u64)),
+            _ => v.sort_by_key(|&i| al[i].title.to_lowercase()),
+        }
+        v
+    }
+
+    /// Filtreden geçen sanatçılar (ad, albüm sayısı, parça sayısı), seçili sıralamayla.
+    pub(super) fn visible_artists(&self) -> Vec<(String, usize, usize)> {
+        let q = self.lib_q.trim().to_lowercase();
+        let mut v: Vec<(String, usize, usize)> = self
+            .lib
+            .artists()
+            .into_iter()
+            .filter(|(name, _, _)| {
+                (q.is_empty() || name.to_lowercase().contains(&q))
+                    && self.lib_genre.as_ref().map_or(true, |g| {
+                        self.lib.albums.iter().any(|a| a.artist.trim().eq_ignore_ascii_case(name.trim()) && &a.genre == g)
+                    })
+            })
+            .collect();
+        match self.lib_sort[1] {
+            1 => v.sort_by_key(|x| std::cmp::Reverse(x.0.to_lowercase())),
+            2 => v.sort_by_key(|x| (std::cmp::Reverse(x.1), x.0.to_lowercase())),
+            3 => v.sort_by_key(|x| (std::cmp::Reverse(x.2), x.0.to_lowercase())),
+            _ => v.sort_by_key(|x| x.0.to_lowercase()),
+        }
+        v
+    }
+
+    /// Filtre hiçbir şeyle eşleşmediğinde gösterilen boş durum.
+    pub(super) fn no_match(&mut self, ui: &mut egui::Ui, what: &str) {
+        ui.add_space(60.0);
+        ui.vertical_centered(|ui| {
+            ui.label(RichText::new(format!("Filtreyle eşleşen {what} yok")).font(bold(16.0)).color(DIM));
+            ui.add_space(8.0);
+            if pill_button(ui, "Filtreyi temizle", Some(Icon::Close), false).clicked() {
+                self.lib_q.clear();
+                self.lib_genre = None;
+            }
+        });
     }
 
     /// Albüm kartı. (aç, çal, kaldır)
@@ -435,11 +537,13 @@ impl App {
     pub(super) fn album_grid(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let cur = self.current_path();
         let (mut open, mut play, mut remove) = (None, None, None);
+        let vis = self.visible_albums();
         // bölümler: tür -> albüm indeksleri
         let mut sections: Vec<(String, Vec<usize>)> = vec![];
         if self.cfg.group_by_genre {
             let mut map: std::collections::BTreeMap<String, Vec<usize>> = std::collections::BTreeMap::new();
-            for (i, a) in self.lib.albums.iter().enumerate() {
+            for &i in &vis {
+                let a = &self.lib.albums[i];
                 let name = if a.genre.is_empty() { "Diğer".to_string() } else { a.genre.clone() };
                 map.entry(name).or_default().push(i);
             }
@@ -449,7 +553,11 @@ impl App {
                 ao.cmp(&bo).then(b.1.len().cmp(&a.1.len())).then(a.0.cmp(&b.0))
             });
         } else {
-            sections.push((String::new(), (0..self.lib.albums.len()).collect()));
+            sections.push((String::new(), vis.clone()));
+        }
+        if vis.is_empty() {
+            self.no_match(ui, "albüm");
+            return;
         }
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let gap = 26.0;

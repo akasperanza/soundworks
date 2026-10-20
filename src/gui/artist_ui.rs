@@ -139,10 +139,14 @@ impl App {
     }
 
     pub(super) fn artist_grid(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let artists = self.lib.artists();
+        let artists = self.visible_artists();
         let mut open: Option<String> = None;
         if let Some(e) = self.fetcher.last_error.lock().unwrap().clone() {
             ui.label(RichText::new(format!("Sanatçı bilgisi alınamıyor: {e}")).font(body(12.0)).color(AMBER));
+        }
+        if artists.is_empty() {
+            self.no_match(ui, "sanatçı");
+            return;
         }
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let gap = 22.0;
