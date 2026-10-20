@@ -240,6 +240,12 @@ use shell::{hide_window, make_tray, set_run_at_login, style_titlebar};
 #[cfg(feature = "devtools")]
 use shell::request_quit;
 
+/// Geri alınabilir silme: bildirimde "Geri al" düğmesiyle birkaç saniye geçerlidir (onay penceresi yerine).
+enum Undo {
+    Album(library::Album, usize),
+    Preset(String, Vec<u8>),
+}
+
 struct Running {
     ctl: Arc<Control>,
     handle: JoinHandle<()>,
@@ -383,6 +389,7 @@ pub struct App {
     resume_saved: Instant,
     /// kütüphaneden "sıraya ekle" isteği: (parçalar, sıradaki olarak mı)
     pending_queue: Option<(Vec<PathBuf>, bool)>,
+    undo: Option<(Undo, String, Instant)>,
     wave_fetcher: wave::WaveFetcher,
     wave_cache: HashMap<String, Arc<Vec<f32>>>,
     wave_drag: Option<f32>,
@@ -516,6 +523,7 @@ impl App {
             queue_sig: 0,
             resume_saved: Instant::now(),
             pending_queue: None,
+            undo: None,
             wave_fetcher: wave::WaveFetcher::new(),
             wave_cache: HashMap::new(),
             wave_drag: None,
@@ -1186,6 +1194,7 @@ impl eframe::App for App {
             }
         }
 
+        self.undo_toast(ctx);
         if let Some((msg, t0)) = &self.toast {
             let age = t0.elapsed().as_secs_f32();
             if age < 2.8 {

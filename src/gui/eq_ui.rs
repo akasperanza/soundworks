@@ -192,14 +192,21 @@ impl App {
             self.select(&n, true);
         }
         if let Some(n) = del {
-            let _ = std::fs::remove_file(presets_dir().join(&n));
-            if self.preset_name.as_ref() == Some(&n) {
-                self.preset_name = None;
-                self.cfg.preset = None;
-            }
-            self.refresh_library();
-            self.say("Preset silindi");
+            self.delete_preset(&n);
         }
+    }
+
+    /// Preset dosyasını siler; içeriği bellekte tutulur, bildirimdeki "Geri al" ile geri yazılır.
+    pub(super) fn delete_preset(&mut self, name: &str) {
+        let path = presets_dir().join(name);
+        let bytes = std::fs::read(&path).unwrap_or_default();
+        let _ = std::fs::remove_file(&path);
+        if self.preset_name.as_deref() == Some(name) {
+            self.preset_name = None;
+            self.cfg.preset = None;
+        }
+        self.refresh_library();
+        self.undo = Some((Undo::Preset(name.to_string(), bytes), format!("\"{}\" silindi", name.trim_end_matches(".txt")), Instant::now()));
     }
 
     pub(super) fn ab_button(ui: &mut egui::Ui, held_in: &mut bool) {

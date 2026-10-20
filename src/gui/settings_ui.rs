@@ -235,12 +235,7 @@ impl App {
                 });
             }
             if let Some(n) = del {
-                let _ = std::fs::remove_file(presets_dir().join(&n));
-                if self.preset_name.as_ref() == Some(&n) {
-                    self.preset_name = None;
-                    self.cfg.preset = None;
-                }
-                self.refresh_library();
+                self.delete_preset(&n);
             }
         });
         ui.add_space(10.0);

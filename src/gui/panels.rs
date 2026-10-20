@@ -3,6 +3,19 @@
 use super::*;
 
 impl App {
+    /// Alt çubuktaki biçim rozeti: "FLAC 24/96", "MP3 44.1 kHz". Parça yoksa `None`.
+    fn format_badge(&self) -> Option<String> {
+        let m = &self.meta;
+        if m.title.is_empty() || m.codec.is_empty() || m.src_rate == 0 {
+            return None;
+        }
+        let codec = m.codec.to_uppercase();
+        let codec = if codec.starts_with("PCM") { "WAV".to_string() } else { codec.replace("VORBIS", "Vorbis") };
+        let khz = m.src_rate as f32 / 1000.0;
+        let khz = if (khz - khz.round()).abs() < 0.01 { format!("{khz:.0}") } else { format!("{khz:.1}") };
+        Some(if m.bits > 0 { format!("{codec} {}/{khz}", m.bits) } else { format!("{codec} {khz} kHz") })
+    }
+
     pub(super) fn sync_cover(&mut self, ctx: &egui::Context, dt: f32) {
         let id = self.player.meta_id.load(Relaxed);
         if id != self.cover_id {
@@ -56,7 +69,7 @@ impl App {
                     left_end = ui.min_rect().right();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let on = self.running.is_some();
-                        if pill_button(ui, if on { "Durdur" } else { "Başlat" }, Some(Icon::Power), !on).clicked() {
+                        if pill_button(ui, if on { "Motoru durdur" } else { "Motoru başlat" }, Some(Icon::Power), !on).clicked() {
                             if on {
                                 self.stop_async();
                             } else {
@@ -305,6 +318,9 @@ impl App {
                             ui.add(egui::Label::new(RichText::new(a).font(body(12.0)).color(DIM)).wrap());
                         });
                     });
+                    if let Some(f) = self.format_badge() {
+                        chip(ui, &f, alpha(TEXT, 170)).on_hover_text("Çalan dosyanın biçimi (kaynak); sinyal yolu için Motor sekmesine bak");
+                    }
                     let playing = self.player.playing.load(Relaxed);
                     ui.add_space(8.0);
                     // karıştır

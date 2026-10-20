@@ -370,9 +370,60 @@ impl App {
             self.play_album(&k, 0);
         }
         if let Some(k) = remove {
-            self.lib.remove_album(&k);
+            self.remove_album_undoable(&k);
+        }
+    }
+
+    /// Albümü kütüphaneden çıkarır; dosyalara dokunmaz ve birkaç saniye boyunca geri alınabilir.
+    pub(super) fn remove_album_undoable(&mut self, key: &str) {
+        if let Some(i) = self.lib.albums.iter().position(|a| a.key == key) {
+            let album = self.lib.albums[i].clone();
+            let msg = format!("\"{}\" kütüphaneden kaldırıldı", album.title);
+            self.lib.remove_album(key);
             self.lib.save();
-            self.say("Albüm kaldırıldı");
+            self.undo = Some((Undo::Album(album, i), msg, Instant::now()));
+        }
+    }
+
+    /// Geri alınabilir silmelerin bildirimi: mesaj ve "Geri al" düğmesi, 6 sn sonra kapanır.
+    pub(super) fn undo_toast(&mut self, ctx: &egui::Context) {
+        let Some((_, msg, t0)) = &self.undo else { return };
+        let age = t0.elapsed().as_secs_f32();
+        if age > 6.0 {
+            self.undo = None;
+            return;
+        }
+        let msg = msg.clone();
+        let mut clicked = false;
+        egui::Area::new(Id::new("undo_toast")).anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -76.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+            Frame::none().fill(BG3).stroke(Stroke::new(1.0, STROKE)).rounding(Rounding::same(8.0)).inner_margin(Margin::symmetric(14.0, 8.0)).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(msg).font(bold(13.0)));
+                    ui.add_space(8.0);
+                    if pill_button(ui, "Geri al", Some(Icon::Undo), false).clicked() {
+                        clicked = true;
+                    }
+                });
+            });
+        });
+        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        if clicked {
+            if let Some((u, _, _)) = self.undo.take() {
+                match u {
+                    Undo::Album(a, i) => {
+                        if !self.lib.albums.iter().any(|x| x.key == a.key) {
+                            let at = i.min(self.lib.albums.len());
+                            self.lib.albums.insert(at, a);
+                            self.lib.save();
+                        }
+                    }
+                    Undo::Preset(name, bytes) => {
+                        let _ = std::fs::create_dir_all(presets_dir());
+                        let _ = std::fs::write(presets_dir().join(&name), bytes);
+                        self.refresh_library();
+                    }
+                }
+            }
         }
     }
 
@@ -504,7 +555,12 @@ impl App {
                     ui.add_space(2.0);
                     ui.add(egui::Label::new(RichText::new(&album.title).font(bold(34.0 * sc)).color(Color32::WHITE)).wrap());
                     ui.add_space(2.0);
-                    if ui.add(egui::Label::new(RichText::new(&album.artist).font(bold(16.0 * sc)).color(SKY)).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    let artist = ui.add(egui::Label::new(RichText::new(&album.artist).font(bold(16.0 * sc)).color(alpha(Color32::WHITE, 225))).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if artist.hovered() {
+                        let y = artist.rect.bottom() + 1.0;
+                        ui.painter().line_segment([pos2(artist.rect.left(), y), pos2(artist.rect.right(), y)], Stroke::new(1.0, alpha(Color32::WHITE, 160)));
+                    }
+                    if artist.clicked() {
                         goto_artist = true;
                     }
                     let secs = album.total_secs() as u64;
@@ -519,9 +575,18 @@ impl App {
                         if pill_button(ui, "Karıştır", Some(Icon::Shuffle), false).clicked() {
                             shuffle_play = true;
                         }
-                        if icon_button(ui, Icon::Trash, 30.0, false).on_hover_text("Kütüphaneden kaldır (dosyalar silinmez)").clicked() {
-                            remove = true;
+                        // yıkıcı eylem ana düğmelerden ayrı, "···" menüsünün içinde
+                        let more = pill_button(ui, "···", None, false).on_hover_text("Diğer işlemler");
+                        let pid = more.id.with("more");
+                        if more.clicked() {
+                            ui.memory_mut(|m| m.toggle_popup(pid));
                         }
+                        egui::popup_below_widget(ui, pid, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                            ui.set_min_width(220.0);
+                            if ui.button("Kütüphaneden kaldır (dosyalar silinmez)").clicked() {
+                                remove = true;
+                            }
+                        });
                     });
                 });
             });
@@ -601,10 +666,8 @@ impl App {
             self.play_album(key, i);
         }
         if remove {
-            self.lib.remove_album(key);
-            self.lib.save();
+            self.remove_album_undoable(key);
             self.lib_open = None;
-            self.say("Albüm kaldırıldı");
         }
     }
 
