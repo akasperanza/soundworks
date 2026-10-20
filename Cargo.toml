@@ -1,0 +1,53 @@
+[package]
+name = "soundworks"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+eframe = "0.29"
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "2"
+symphonia = { version = "0.5", features = ["all"] }
+rubato = "0.15"
+rustfft = "6"
+tray-icon = "0.19"
+png = "0.17"
+resvg = { version = "0.44", default-features = false }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+windows-core = "0.58"
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Dwm",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_Media_KernelStreaming",
+  "Win32_Media_Multimedia",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_System_Threading",
+  "Win32_System_Console",
+  "Win32_Security",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_Devices_FunctionDiscovery",
+] }
+regex = "1"
+
+[dependencies.log]
+version = "0.4"
+optional = true
+
+[features]
+# yalnızca doğrulama derlemesi: durum izi ve otomatik kapatma kancaları (`cargo build --features devtools`)
+devtools = ["dep:log"]
+
+[profile.release]
+opt-level = 3
+
+[patch.crates-io]
+symphonia-bundle-flac = { path = "vendor/symphonia-bundle-flac" }

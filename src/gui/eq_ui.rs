@@ -1,0 +1,490 @@
+//! Ekolayzır: ön ayarlar, eğri grafiği, bant kaydırıcıları.
+
+use super::*;
+
+impl App {
+    pub(super) fn refresh_library(&mut self) {
+        let mut v: Vec<String> = std::fs::read_dir(presets_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.to_lowercase().ends_with(".txt"))
+            .collect();
+        v.sort_by_key(|n| n.to_lowercase());
+        self.library = v
+            .into_iter()
+            .filter_map(|n| apo::load(&presets_dir().join(&n)).ok().map(|p| (n, p)))
+            .collect();
+    }
+
+    pub(super) fn push_preset(&self) {
+        if let Some(r) = &self.running {
+            r.ctl.set_preset(self.preset.clone());
+        }
+    }
+
+    pub(super) fn select(&mut self, name: &str, announce: bool) {
+        match apo::load(&presets_dir().join(name)) {
+            Ok(p) => {
+                self.preset = p;
+                self.preset_name = Some(name.to_string());
+                self.cfg.preset = Some(name.to_string());
+                self.dirty = false;
+                self.sel_band = None;
+                self.push_preset();
+                self.save_cfg();
+                self.message.clear();
+                if announce {
+                    self.say(format!("Preset uygulandı: {}", name.trim_end_matches(".txt")));
+                }
+            }
+            Err(e) => self.message = format!("Preset okunamadı: {e}"),
+        }
+    }
+
+    pub(super) fn import(&mut self) {
+        let Some(files) = rfd::FileDialog::new().add_filter("AutoEQ / APO", &["txt"]).pick_files() else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(presets_dir());
+        let mut last = None;
+        for f in files {
+            match apo::load(&f) {
+                Ok(_) => {
+                    let name = f.file_name().unwrap().to_string_lossy().to_string();
+                    if std::fs::copy(&f, presets_dir().join(&name)).is_ok() {
+                        last = Some(name);
+                    }
+                }
+                Err(e) => self.message = format!("{}: {e}", f.display()),
+            }
+        }
+        self.refresh_library();
+        if let Some(n) = last {
+            self.select(&n, true);
+        }
+    }
+
+    pub(super) fn save_preset(&mut self) {
+        let _ = std::fs::create_dir_all(presets_dir());
+        let name = match &self.preset_name {
+            Some(n) => n.clone(),
+            None => {
+                let Some(p) = rfd::FileDialog::new()
+                    .set_directory(presets_dir())
+                    .set_file_name("Preset.txt")
+                    .add_filter("AutoEQ / APO", &["txt"])
+                    .save_file()
+                else {
+                    return;
+                };
+                p.file_name().unwrap().to_string_lossy().to_string()
+            }
+        };
+        if std::fs::write(presets_dir().join(&name), apo::to_text(&self.preset)).is_ok() {
+            self.preset_name = Some(name.clone());
+            self.cfg.preset = Some(name.clone());
+            self.dirty = false;
+            self.refresh_library();
+            self.save_cfg();
+            self.say(format!("Kaydedildi: {}", name.trim_end_matches(".txt")));
+        }
+    }
+
+    /// EQ'nun toplam yanıtı (dB), 20 Hz–20 kHz arası `EQ_POINTS` logaritmik nokta. Filtreler motorun gerçek çıkış hızında
+    /// tasarlanır (yüksek hızda yüksek frekanslı bantlar 48 kHz'dekinden farklı davranır). Değişmedikçe önbellekten gelir.
+    pub(super) fn eq_curve_db(&mut self) -> Arc<Vec<f64>> {
+        let rate = self
+            .running
+            .as_ref()
+            .map(|r| r.ctl.out_info.lock().unwrap().rate)
+            .filter(|r| *r > 0)
+            .unwrap_or_else(|| self.player.rate());
+        if let Some((p, r, c)) = &self.eq_cache {
+            if *r == rate && *p == self.preset {
+                return c.clone();
+            }
+        }
+        let fs = rate as f64;
+        let coeffs: Vec<Coeffs> = self.preset.bands.iter().filter(|b| b.freq < fs * 0.5).map(|b| Coeffs::design(b, fs)).collect();
+        let curve: Vec<f64> = (0..EQ_POINTS)
+            .map(|i| {
+                let f = 20.0 * 1000f64.powf(i as f64 / (EQ_POINTS - 1) as f64);
+                coeffs.iter().map(|c| c.magnitude_db(f, fs)).sum::<f64>()
+            })
+            .collect();
+        let c = Arc::new(curve);
+        self.eq_cache = Some((self.preset.clone(), rate, c.clone()));
+        c
+    }
+
+    /// EQ eğrisindeki en yüksek pozitif kazanç (preamp hariç).
+    pub(super) fn peak_boost(&mut self) -> f64 {
+        self.eq_curve_db().iter().copied().fold(0.0, f64::max)
+    }
+
+    pub(super) fn preset_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
+        let g = ui.painter().layout_no_wrap(text.to_string(), bold(12.5), TEXT);
+        let (rect, resp) = ui.allocate_exact_size(vec2(g.size().x + 22.0, 28.0), Sense::click());
+        let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
+        let a = ui.ctx().animate_bool_with_time(resp.id.with("a"), active, 0.18);
+        let bg = lerp_color(lerp_color(BG2, BG3, h), BLUE, a);
+        ui.painter().rect_filled(rect, Rounding::same(7.0), bg);
+        let col = lerp_color(lerp_color(DIM, TEXT, h), Color32::WHITE, a);
+        ui.painter().galley(rect.center() - g.size() * 0.5, g, col);
+        resp
+    }
+
+    pub(super) fn preset_strip(&mut self, ui: &mut egui::Ui) {
+        if dev_skip("strip") {
+            return;
+        }
+        let mut pick = None;
+        let mut del = None;
+        ui.horizontal(|ui| {
+            if pill_button(ui, "Import", Some(Icon::Import), true).clicked() {
+                self.import();
+            }
+            let strip_w = (ui.available_width() - 170.0).max(120.0);
+            ui.allocate_ui(vec2(strip_w, 30.0), |ui| {
+                egui::ScrollArea::horizontal().id_salt("strip").auto_shrink([false, true]).show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        if self.library.is_empty() {
+                            ui.label(RichText::new("Preset yok: Import ile AutoEQ / APO .txt ekle").font(body(12.5)).color(DIM));
+                        }
+                        for (name, _) in &self.library {
+                            let active = self.preset_name.as_ref() == Some(name);
+                            let mut label = name.trim_end_matches(".txt").to_string();
+                            if active && self.dirty {
+                                label.push_str("  •");
+                            }
+                            let resp = Self::preset_chip(ui, &label, active);
+                            if resp.clicked() {
+                                pick = Some(name.clone());
+                            }
+                            resp.context_menu(|ui| {
+                                if ui.button("Sil").clicked() {
+                                    del = Some(name.clone());
+                                    ui.close_menu();
+                                }
+                            });
+                        }
+                    });
+                });
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_enabled_ui(self.dirty && self.preset_name.is_some(), |ui| {
+                    if pill_button(ui, "Geri al", Some(Icon::Undo), false).clicked() {
+                        let n = self.preset_name.clone().unwrap();
+                        self.select(&n, false);
+                    }
+                });
+                ui.add_enabled_ui(self.dirty || self.preset_name.is_none(), |ui| {
+                    if pill_button(ui, "Kaydet", Some(Icon::Save), false).clicked() {
+                        self.save_preset();
+                    }
+                });
+            });
+        });
+        if let Some(n) = pick {
+            self.select(&n, true);
+        }
+        if let Some(n) = del {
+            let _ = std::fs::remove_file(presets_dir().join(&n));
+            if self.preset_name.as_ref() == Some(&n) {
+                self.preset_name = None;
+                self.cfg.preset = None;
+            }
+            self.refresh_library();
+            self.say("Preset silindi");
+        }
+    }
+
+    pub(super) fn ab_button(ui: &mut egui::Ui, held_in: &mut bool) {
+        let (rect, resp) = ui.allocate_exact_size(vec2(150.0, 28.0), Sense::click_and_drag());
+        if resp.is_pointer_button_down_on() {
+            *held_in = true;
+        }
+        let held = *held_in;
+        let t = ui.ctx().animate_bool_with_time(resp.id, held, 0.1);
+        let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
+        let bg = lerp_color(lerp_color(BG2, BG3, h), RED, t);
+        ui.painter().rect_filled(rect, Rounding::same(8.0), bg);
+        ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), Align2::LEFT_CENTER, "A/B", bold(13.0), Color32::WHITE);
+        ui.painter().text(
+            pos2(rect.right() - 12.0, rect.center().y),
+            Align2::RIGHT_CENTER,
+            if held { "EQ kapalı" } else { "basılı tut" },
+            body(11.5),
+            lerp_color(DIM, Color32::WHITE, t),
+        );
+    }
+
+    pub(super) fn eq_graph(&mut self, ui: &mut egui::Ui, size: egui::Vec2) {
+        if dev_skip("graph") {
+            return;
+        }
+        let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, Rounding::same(8.0), BG0);
+
+        let fx = |f: f64| rect.left() + ((f / 20.0).log10() / 3.0) as f32 * rect.width();
+        let xf = |x: f32| 20.0 * 10f64.powf(3.0 * ((x - rect.left()) / rect.width()) as f64);
+        let half = rect.height() as f64 * 0.5 - 12.0;
+        let gy = |d: f64| rect.center().y - (d / GAIN_RANGE * half) as f32;
+        let y_to_gain = |y: f32| (rect.center().y - y) as f64 / half * GAIN_RANGE;
+
+        viz::draw_freq_grid(&painter, rect);
+        for d in (-3..=3).map(|i| i as f64 * 6.0) {
+            painter.line_segment(
+                [pos2(rect.left(), gy(d)), pos2(rect.right(), gy(d))],
+                Stroke::new(1.0, if d == 0.0 { alpha(DIM, 90) } else { alpha(STROKE, 120) }),
+            );
+            painter.text(pos2(rect.right() - 6.0, gy(d) - 8.0), Align2::RIGHT_CENTER, format!("{d:+.0}"), body(10.5), DIM);
+        }
+
+        self.viz.draw_spectrum(&painter, rect, self.cfg.viz_bars);
+
+        // EQ eğrisi
+        let curve = self.eq_curve_db();
+        let pts: Vec<egui::Pos2> = curve
+            .iter()
+            .enumerate()
+            .map(|(i, db)| {
+                let f = 20.0 * 1000f64.powf(i as f64 / (EQ_POINTS - 1) as f64);
+                pos2(fx(f), gy(db.clamp(-GAIN_RANGE, GAIN_RANGE)))
+            })
+            .collect();
+        painter.add(Shape::line(pts, Stroke::new(2.0, Color32::WHITE)));
+
+        // etkileşim
+        let node_pos = |b: &Band| {
+            let g = if b.kind.has_gain() { b.gain_db } else { 0.0 };
+            pos2(fx(b.freq), gy(g.clamp(-GAIN_RANGE, GAIN_RANGE)))
+        };
+        let hover = resp.hover_pos();
+        let hit = |p: egui::Pos2, bands: &[Band]| -> Option<usize> {
+            bands
+                .iter()
+                .enumerate()
+                .map(|(i, b)| (i, node_pos(b).distance(p)))
+                .filter(|(_, d)| *d < 13.0)
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                .map(|(i, _)| i)
+        };
+        let before = self.preset.clone();
+        if resp.drag_started() {
+            if let Some(p) = resp.interact_pointer_pos() {
+                self.drag_band = hit(p, &self.preset.bands);
+                if self.drag_band.is_some() {
+                    self.sel_band = self.drag_band;
+                }
+            }
+        }
+        if resp.dragged() {
+            if let (Some(i), Some(p)) = (self.drag_band, resp.interact_pointer_pos()) {
+                if let Some(b) = self.preset.bands.get_mut(i) {
+                    b.freq = xf(p.x).clamp(20.0, 20000.0);
+                    if b.kind.has_gain() {
+                        b.gain_db = (y_to_gain(p.y).clamp(-GAIN_RANGE, GAIN_RANGE) * 10.0).round() / 10.0;
+                    }
+                }
+            }
+        }
+        if resp.drag_stopped() {
+            self.drag_band = None;
+        }
+        let mut hot_band = None;
+        if let Some(p) = hover {
+            if let Some(i) = hit(p, &self.preset.bands) {
+                hot_band = Some(i);
+                let scroll = ui.input(|inp| inp.raw_scroll_delta.y);
+                if scroll != 0.0 {
+                    let b = &mut self.preset.bands[i];
+                    b.q = (b.q * 1.1f64.powf(scroll as f64 / 40.0)).clamp(0.1, 30.0);
+                }
+                if resp.secondary_clicked() {
+                    self.preset.bands.remove(i);
+                    self.sel_band = None;
+                    hot_band = None;
+                }
+            }
+        }
+        if resp.double_clicked() {
+            if let Some(p) = resp.interact_pointer_pos() {
+                if hit(p, &self.preset.bands).is_none() && self.preset.bands.len() < 32 {
+                    self.preset.bands.push(Band {
+                        kind: FilterKind::Peak,
+                        freq: xf(p.x).clamp(20.0, 20000.0),
+                        gain_db: (y_to_gain(p.y).clamp(-GAIN_RANGE, GAIN_RANGE) * 10.0).round() / 10.0,
+                        q: 1.0,
+                    });
+                    self.sel_band = Some(self.preset.bands.len() - 1);
+                }
+            }
+        }
+        // band solo: S tuşu basılıyken (ya da kilitliyken) yalnızca seçili bölge çalar
+        let solo_key = ui.input(|inp| inp.key_down(egui::Key::S) && !inp.modifiers.command && !inp.modifiers.alt) && !ui.ctx().wants_keyboard_input();
+        if solo_key || self.solo_latch {
+            let target = match self.drag_band.or(self.sel_band).and_then(|i| self.preset.bands.get(i)) {
+                Some(b) => Some((b.freq, b.q.clamp(0.5, 20.0))),
+                None => hover.map(|p| (xf(p.x).clamp(20.0, 20000.0), 2.0)),
+            };
+            if let Some((f0, q)) = target {
+                self.solo_target = Some((f0, q));
+                // geçen bölge: -3 dB noktaları f0/(2Q) kadar yan yana
+                let bw = f0 / q;
+                let (lo, hi) = ((f0 - bw * 0.5).max(20.0), (f0 + bw * 0.5).min(20000.0));
+                let band = Rect::from_min_max(pos2(fx(lo), rect.top()), pos2(fx(hi).max(fx(lo) + 3.0), rect.bottom()));
+                painter.rect_filled(band, Rounding::ZERO, alpha(BLUE, 46));
+                painter.line_segment([pos2(fx(f0), rect.top()), pos2(fx(f0), rect.bottom())], Stroke::new(1.5, SKY));
+                let (note, cents) = crate::biquad::note_name(f0);
+                let freq_txt = if f0 >= 1000.0 { format!("{:.2} kHz", f0 / 1000.0) } else { format!("{:.0} Hz", f0) };
+                let lbl = format!("SOLO · {freq_txt} · {note}{}", if cents == 0 { String::new() } else { format!(" {cents:+}c") });
+                let g = painter.layout_no_wrap(lbl, bold(13.0), Color32::WHITE);
+                let x = (fx(f0) + 10.0).min(rect.right() - g.size().x - 14.0).max(rect.left() + 8.0);
+                let box_r = Rect::from_min_size(pos2(x - 6.0, rect.top() + 34.0), g.size() + vec2(12.0, 8.0));
+                painter.rect_filled(box_r, Rounding::same(6.0), alpha(BG0, 230));
+                painter.galley(pos2(x, rect.top() + 38.0), g, Color32::WHITE);
+            } else {
+                painter.text(rect.center(), Align2::CENTER_CENTER, "Fareyi grafiğin üstüne getir ya da bir bant seç", body(12.5), alpha(TEXT, 200));
+            }
+        }
+        for (i, b) in self.preset.bands.iter().enumerate() {
+            let p = node_pos(b);
+            let sel = self.sel_band == Some(i);
+            let hot = hot_band == Some(i);
+            let k = ui.ctx().animate_value_with_time(Id::new(("node", i)), if sel || hot { 1.0 } else { 0.0 }, 0.1);
+            if sel {
+                painter.line_segment([pos2(p.x, rect.top()), pos2(p.x, rect.bottom())], Stroke::new(1.0, alpha(BLUE, 70)));
+            }
+            let r = 5.0 + 2.0 * k;
+            painter.circle_filled(p, r, if sel { BLUE } else { BG0 });
+            painter.circle_stroke(p, r, Stroke::new(1.5, if sel { Color32::WHITE } else { SKY }));
+        }
+        if let Some(i) = hot_band.or(self.drag_band).or(self.sel_band) {
+            if let Some(b) = self.preset.bands.get(i) {
+                let txt = if b.kind.has_gain() {
+                    format!("#{} {} · {:.0} Hz · {:+.1} dB · Q {:.2}", i + 1, b.kind.label(), b.freq, b.gain_db, b.q)
+                } else {
+                    format!("#{} {} · {:.0} Hz · Q {:.2}", i + 1, b.kind.label(), b.freq, b.q)
+                };
+                painter.text(rect.left_top() + vec2(12.0, 12.0), Align2::LEFT_TOP, txt, bold(12.0), TEXT);
+            }
+        } else {
+            painter.text(
+                rect.left_top() + vec2(12.0, 12.0),
+                Align2::LEFT_TOP,
+                "Sürükle: frekans/kazanç · Tekerlek: Q · Çift tık: ekle · Sağ tık: sil · S basılı: solo dinle",
+                body(11.0),
+                alpha(DIM, 170),
+            );
+        }
+        if self.preset != before {
+            self.dirty = true;
+            self.push_preset();
+        }
+    }
+
+    pub(super) fn band_faders(&mut self, ui: &mut egui::Ui) {
+        if dev_skip("faders") {
+            return;
+        }
+        let before = self.preset.clone();
+        let mut remove = None;
+        ui.horizontal(|ui| {
+            section_label(ui, "Parametrik EQ");
+            let boost = self.peak_boost();
+            ui.label(RichText::new(format!("tepe boost {:+.1} dB", boost)).font(body(12.0)).color(if boost + self.preset.preamp_db > 0.05 { AMBER } else { DIM }));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if pill_button(ui, "Solo", Some(Icon::Wave), self.solo_latch)
+                    .on_hover_text("S tuşunu basılı tutarak ya da bu düğmeyle: yalnızca seçili bandın bölgesini dinle (bant seçili değilse farenin üstündeki frekansı)")
+                    .clicked()
+                {
+                    self.solo_latch = !self.solo_latch;
+                }
+                if pill_button(ui, "Düzleştir", None, false).on_hover_text("Tüm kazançları 0 yap").clicked() {
+                    for b in &mut self.preset.bands {
+                        b.gain_db = 0.0;
+                    }
+                }
+                if pill_button(ui, "Oto preamp", None, false).on_hover_text("Kırpılmayı önleyen preamp").clicked() {
+                    self.preset.preamp_db = -((boost * 10.0).ceil() / 10.0);
+                }
+            });
+        });
+        ui.add_space(2.0);
+        egui::ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
+                ui.vertical(|ui| {
+                    ui.set_width(70.0);
+                    ui.label(RichText::new("Preamp").font(bold(12.0)).color(DIM));
+                    ui.add_space(28.0);
+                    ui.spacing_mut().slider_width = 80.0;
+                    ui.add(egui::Slider::new(&mut self.preset.preamp_db, -20.0..=6.0).vertical().show_value(false));
+                    ui.add(egui::DragValue::new(&mut self.preset.preamp_db).speed(0.1).range(-20.0..=6.0).suffix(" dB").fixed_decimals(1));
+                });
+                for (i, b) in self.preset.bands.iter_mut().enumerate() {
+                    let sel = self.sel_band == Some(i);
+                    let s = ui.ctx().animate_bool_with_time(Id::new(("colsel", i)), sel, 0.15);
+                    let frame = Frame::none()
+                        .fill(alpha(BLUE, (22.0 * s) as u8))
+                        .rounding(Rounding::same(8.0))
+                        .inner_margin(Margin::symmetric(6.0, 4.0));
+                    frame.show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(80.0);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 2.0;
+                                if ui.add(egui::Label::new(RichText::new(format!("{}", i + 1)).font(bold(12.0)).color(lerp_color(DIM, SKY, s))).sense(Sense::click())).clicked() {
+                                    self.sel_band = Some(i);
+                                }
+                                ui.add_space(46.0);
+                                if icon_button(ui, Icon::Close, 18.0, false).clicked() {
+                                    remove = Some(i);
+                                }
+                            });
+                            egui::ComboBox::from_id_salt(("kind", i)).width(74.0).selected_text(b.kind.label()).show_ui(ui, |ui| {
+                                for k in FilterKind::ALL {
+                                    ui.selectable_value(&mut b.kind, k, k.label());
+                                }
+                            });
+                            ui.spacing_mut().slider_width = 76.0;
+                            ui.add_enabled(
+                                b.kind.has_gain(),
+                                egui::Slider::new(&mut b.gain_db, -GAIN_RANGE..=GAIN_RANGE).vertical().show_value(false),
+                            );
+                            ui.add_enabled(
+                                b.kind.has_gain(),
+                                egui::DragValue::new(&mut b.gain_db).speed(0.1).range(-GAIN_RANGE..=GAIN_RANGE).suffix(" dB").fixed_decimals(1),
+                            );
+                            let sp = (b.freq * 0.004).max(0.2);
+                            ui.add(egui::DragValue::new(&mut b.freq).speed(sp).range(20.0..=20000.0).suffix(" Hz").fixed_decimals(0));
+                            ui.add(egui::DragValue::new(&mut b.q).speed(0.02).range(0.1..=30.0).prefix("Q ").fixed_decimals(2));
+                        });
+                    });
+                }
+                if self.preset.bands.len() < 32 {
+                    ui.vertical(|ui| {
+                        ui.add_space(60.0);
+                        if icon_button(ui, Icon::Plus, 36.0, false).on_hover_text("Bant ekle").clicked() {
+                            self.preset.bands.push(Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 });
+                            self.sel_band = Some(self.preset.bands.len() - 1);
+                        }
+                    });
+                }
+            });
+        });
+        if let Some(i) = remove {
+            self.preset.bands.remove(i);
+            self.sel_band = None;
+        }
+        if self.preset != before {
+            self.dirty = true;
+            self.push_preset();
+        }
+    }
+}
