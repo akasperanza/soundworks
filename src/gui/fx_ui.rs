@@ -57,6 +57,38 @@ fn fx_glyph(p: &egui::Painter, kind: FxKind, c: Pos2, s: f32, col: Color32) {
                 }
             }
         }
+        FxKind::Filter => {
+            // alçak ve yüksek kesmeyi gösteren yamuk frekans eğrisi
+            let pts = [(-1.0, 0.6), (-0.7, 0.6), (-0.45, -0.3), (-0.3, -0.5), (0.3, -0.5), (0.45, -0.3), (0.7, 0.6), (1.0, 0.6)];
+            let pts: Vec<Pos2> = pts.iter().map(|(x, y)| pos2(c.x + x * h, c.y + y * h)).collect();
+            p.add(Shape::line(pts, st));
+        }
+        FxKind::Tone => {
+            // bas ve tiz uçları yukarı kalkan eğri
+            let pts: Vec<Pos2> = (0..=40)
+                .map(|i| {
+                    let t = i as f32 / 40.0;
+                    let y = 0.45 * ((1.0 - t * 5.0).max(0.0).powi(2) + ((t - 0.8) * 5.0).max(0.0).powi(2)) - 0.1;
+                    pos2(c.x - h + t * 2.0 * h, c.y - y.min(0.9) * h * 0.9 + h * 0.2)
+                })
+                .collect();
+            p.add(Shape::line(pts, st));
+        }
+        FxKind::Loudness => {
+            // yükselen ses çubukları: kısık sesde bas ve tiz uçları uzun
+            for (i, hh) in [0.9f32, 0.45, 0.25, 0.45, 0.8].iter().enumerate() {
+                let x = c.x + (i as f32 - 2.0) * h * 0.42;
+                p.line_segment([pos2(x, c.y - hh * h * 0.8), pos2(x, c.y + hh * h * 0.8)], Stroke::new(st.width * 1.4, col));
+            }
+        }
+        FxKind::Crossfeed => {
+            // iki kanaldan çaprazlanan çizgiler
+            let (a, b) = (h * 0.8, h * 0.45);
+            p.line_segment([pos2(c.x - a, c.y - b), pos2(c.x + a, c.y - b)], st);
+            p.line_segment([pos2(c.x - a, c.y + b), pos2(c.x + a, c.y + b)], st);
+            p.line_segment([pos2(c.x - a * 0.6, c.y - b), pos2(c.x + a * 0.6, c.y + b)], Stroke::new(st.width, alpha(col, 140)));
+            p.line_segment([pos2(c.x - a * 0.6, c.y + b), pos2(c.x + a * 0.6, c.y - b)], Stroke::new(st.width, alpha(col, 140)));
+        }
         FxKind::Gain => {
             p.line_segment([pos2(c.x, c.y + h * 0.7), pos2(c.x, c.y - h * 0.7)], st);
             p.line_segment([pos2(c.x - h * 0.5, c.y - h * 0.2), pos2(c.x, c.y - h * 0.7)], st);
@@ -102,6 +134,18 @@ fn summary(s: &FxSpec) -> String {
         FxKind::Compressor => format!("{:.0} dB · {}:1", s.param(0), format!("{:.1}", s.param(1)).trim_end_matches(".0")),
         FxKind::Width => format!("%{:.0}", s.param(0)),
         FxKind::Gain => format!("{:+.1} dB", s.param(0)),
+        FxKind::Filter => {
+            let (h, l) = (s.param(0), s.param(2));
+            match (h > 0.5, l < 23999.5) {
+                (true, true) => format!("{:.0} Hz – {:.1} kHz", h, l / 1000.0),
+                (true, false) => format!("HPF {:.0} Hz", h),
+                (false, true) => format!("LPF {:.1} kHz", l / 1000.0),
+                (false, false) => "Kapalı".to_string(),
+            }
+        }
+        FxKind::Tone => format!("Bas {:+.0} · Tiz {:+.0}", s.param(0), s.param(2)),
+        FxKind::Loudness => format!("Güç %{:.0}", s.param(0)),
+        FxKind::Crossfeed => format!("{:.0} dB", s.param(0)),
     }
 }
 
@@ -419,7 +463,18 @@ impl App {
                     ui.label(RichText::new(pinfo.name).font(body(13.5)).color(TEXT));
                     let mut v = self.cfg.chain[idx].params[pi].clamp(pinfo.min, pinfo.max);
                     let suffix = if pinfo.unit == "%" { "%".to_string() } else { format!(" {}", pinfo.unit) };
-                    if ui.add(egui::Slider::new(&mut v, pinfo.min..=pinfo.max).fixed_decimals(pinfo.decimals).suffix(suffix)).changed() {
+                    let mut slider = egui::Slider::new(&mut v, pinfo.min..=pinfo.max).fixed_decimals(pinfo.decimals).suffix(suffix);
+                    // ucu "kapalı" anlamına gelen parametrelerde değer yerine etiket göster
+                    let (min, max, dec, off) = (pinfo.min, pinfo.max, pinfo.decimals, pinfo.off);
+                    let unit = pinfo.unit;
+                    if off != crate::fx::Off::No {
+                        slider = slider.custom_formatter(move |x, _| match off {
+                            crate::fx::Off::AtMin(l) if x <= min as f64 => l.to_string(),
+                            crate::fx::Off::AtMax(l) if x >= max as f64 => l.to_string(),
+                            _ => format!("{:.*} {}", dec, x, unit),
+                        });
+                    }
+                    if ui.add(slider).changed() {
                         self.cfg.chain[idx].params[pi] = v;
                     }
                     ui.end_row();

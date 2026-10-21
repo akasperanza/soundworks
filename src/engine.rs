@@ -899,6 +899,12 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         let vol_g = f32::from_bits(ring.vol.load(Ordering::Relaxed)).clamp(0.0, 1.0);
         let dither_on = ctl.dither.load(Ordering::Relaxed) && !fmt.float && fmt.valid_bits <= 16;
         let src_gain = f32::from_bits(ctl.src_gain.load(Ordering::Relaxed)).clamp(0.0, 1.0);
+        // seviyeye bağlı modüller (Loudness) çalar ses seviyesini bilir
+        let level = gain_tgt * src_gain * vol_g;
+        chain.set_level(level);
+        if let Some((o, _)) = old_chain.as_mut() {
+            o.set_level(level);
+        }
         let cf_amt = f32::from_bits(ctl.crossfeed.load(Ordering::Relaxed)).clamp(0.0, 1.0);
         let mono = ctl.mono.load(Ordering::Relaxed);
         let bal = f32::from_bits(ctl.balance.load(Ordering::Relaxed)).clamp(-1.0, 1.0);

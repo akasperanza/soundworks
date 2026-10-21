@@ -675,6 +675,10 @@ impl App {
                     "limiter" => FxKind::Limiter,
                     "comp" => FxKind::Compressor,
                     "width" => FxKind::Width,
+                    "filter" => FxKind::Filter,
+                    "tone" => FxKind::Tone,
+                    "loud" => FxKind::Loudness,
+                    "cross" => FxKind::Crossfeed,
                     _ => FxKind::Gain,
                 };
                 app.cfg.chain.push(FxSpec::new(i as u32 + 1, k));

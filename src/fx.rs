@@ -9,6 +9,18 @@ pub enum FxKind {
     Compressor,
     Width,
     Gain,
+    Filter,
+    Tone,
+    Loudness,
+    Crossfeed,
+}
+
+/// Kaydırıcının bir ucundaki değerin "kapalı" anlamına geldiği parametreler için etiket.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Off {
+    No,
+    AtMin(&'static str),
+    AtMax(&'static str),
 }
 
 pub struct ParamInfo {
@@ -18,6 +30,7 @@ pub struct ParamInfo {
     pub max: f32,
     pub default: f32,
     pub decimals: usize,
+    pub off: Off,
 }
 
 pub struct FxInfo {
@@ -35,8 +48,8 @@ pub const CATALOG: &[FxInfo] = &[
         tagline: "Tepe koruması",
         desc: "Tavanı aşan tepeleri (örnekler arası gerçek tepeler dahil) önceden görüp yumuşakça indirir; sert kırpma ve DAC'ta oluşabilecek tepe aşımı olmaz. Tavanın altındaki sesi değiştirmez. Yaklaşık 2,2 ms gecikme ekler.",
         params: &[
-            ParamInfo { name: "Tavan", unit: "dB", min: -6.0, max: 0.0, default: -0.5, decimals: 1 },
-            ParamInfo { name: "Bırakma", unit: "ms", min: 10.0, max: 500.0, default: 120.0, decimals: 0 },
+            ParamInfo { name: "Tavan", unit: "dB", min: -6.0, max: 0.0, default: -0.5, decimals: 1, off: Off::No },
+            ParamInfo { name: "Bırakma", unit: "ms", min: 10.0, max: 500.0, default: 120.0, decimals: 0, off: Off::No },
         ],
     },
     FxInfo {
@@ -45,12 +58,12 @@ pub const CATALOG: &[FxInfo] = &[
         tagline: "Dinamik aralık",
         desc: "Eşiği aşan sesleri orana göre bastırır. Yumuşak diz ile geçiş doğal olur. Kıs ve yüksek sesler arasındaki farkı azaltmak için.",
         params: &[
-            ParamInfo { name: "Eşik", unit: "dB", min: -50.0, max: 0.0, default: -18.0, decimals: 1 },
-            ParamInfo { name: "Oran", unit: ":1", min: 1.0, max: 20.0, default: 3.0, decimals: 1 },
-            ParamInfo { name: "Atak", unit: "ms", min: 1.0, max: 100.0, default: 10.0, decimals: 0 },
-            ParamInfo { name: "Bırakma", unit: "ms", min: 20.0, max: 1000.0, default: 150.0, decimals: 0 },
-            ParamInfo { name: "Diz", unit: "dB", min: 0.0, max: 18.0, default: 6.0, decimals: 1 },
-            ParamInfo { name: "Makyaj", unit: "dB", min: 0.0, max: 18.0, default: 0.0, decimals: 1 },
+            ParamInfo { name: "Eşik", unit: "dB", min: -50.0, max: 0.0, default: -18.0, decimals: 1, off: Off::No },
+            ParamInfo { name: "Oran", unit: ":1", min: 1.0, max: 20.0, default: 3.0, decimals: 1, off: Off::No },
+            ParamInfo { name: "Atak", unit: "ms", min: 1.0, max: 100.0, default: 10.0, decimals: 0, off: Off::No },
+            ParamInfo { name: "Bırakma", unit: "ms", min: 20.0, max: 1000.0, default: 150.0, decimals: 0, off: Off::No },
+            ParamInfo { name: "Diz", unit: "dB", min: 0.0, max: 18.0, default: 6.0, decimals: 1, off: Off::No },
+            ParamInfo { name: "Makyaj", unit: "dB", min: 0.0, max: 18.0, default: 0.0, decimals: 1, off: Off::No },
         ],
     },
     FxInfo {
@@ -58,14 +71,59 @@ pub const CATALOG: &[FxInfo] = &[
         name: "Stereo Genişlik",
         tagline: "Sahne genişliği",
         desc: "Orta/yan (M/S) dengesiyle stereo sahneyi daraltır ya da genişletir. %0 mono, %100 olduğu gibi, %200 yanı iki katına çıkarır.",
-        params: &[ParamInfo { name: "Genişlik", unit: "%", min: 0.0, max: 200.0, default: 100.0, decimals: 0 }],
+        params: &[ParamInfo { name: "Genişlik", unit: "%", min: 0.0, max: 200.0, default: 100.0, decimals: 0, off: Off::No }],
     },
     FxInfo {
         kind: FxKind::Gain,
         name: "Kazanç",
         tagline: "Seviye ayarı",
         desc: "Zincirin bir noktasında sesi yükseltir ya da kısar. EQ'dan sonra kısıp başka bir modüle pay bırakmak için kullanışlı.",
-        params: &[ParamInfo { name: "Kazanç", unit: "dB", min: -24.0, max: 12.0, default: 0.0, decimals: 1 }],
+        params: &[ParamInfo { name: "Kazanç", unit: "dB", min: -24.0, max: 12.0, default: 0.0, decimals: 1, off: Off::No }],
+    },
+    FxInfo {
+        kind: FxKind::Filter,
+        name: "Filtre",
+        tagline: "Alçak / yüksek kes",
+        desc: "Yüksek geçiren (HPF) çok alçak frekansları, alçak geçiren (LPF) çok yüksek frekansları keser. HPF kulaklığı ve hoparlörü duyulmayan derin bas gürültüsünden korur; LPF ultrasonik gürültüyü bastırır. Eğim 12 dB/oktav adımlarla ayarlanır (24 dB iyi bir başlangıçtır). Kaydırıcıyı uca götürerek ilgili filtreyi kapatabilirsin.",
+        params: &[
+            ParamInfo { name: "Alçak kes (HPF)", unit: "Hz", min: 0.0, max: 300.0, default: 30.0, decimals: 0, off: Off::AtMin("Kapalı") },
+            ParamInfo { name: "HPF eğimi", unit: "dB/okt", min: 12.0, max: 48.0, default: 24.0, decimals: 0, off: Off::No },
+            ParamInfo { name: "Üst kes (LPF)", unit: "Hz", min: 2000.0, max: 24000.0, default: 24000.0, decimals: 0, off: Off::AtMax("Kapalı") },
+            ParamInfo { name: "LPF eğimi", unit: "dB/okt", min: 12.0, max: 48.0, default: 24.0, decimals: 0, off: Off::No },
+        ],
+    },
+    FxInfo {
+        kind: FxKind::Tone,
+        name: "Ton",
+        tagline: "Bas ve tiz",
+        desc: "Bas ve tiz için iki basit raf (shelf) kontrolü. EQ'ya girmeden sesi tatlandırmak için. Güçlendirdiğin kadar ses otomatik kısılır, böylece kırpılma olmaz.",
+        params: &[
+            ParamInfo { name: "Bas", unit: "dB", min: -12.0, max: 12.0, default: 0.0, decimals: 1, off: Off::No },
+            ParamInfo { name: "Bas frekansı", unit: "Hz", min: 40.0, max: 400.0, default: 100.0, decimals: 0, off: Off::No },
+            ParamInfo { name: "Tiz", unit: "dB", min: -12.0, max: 12.0, default: 0.0, decimals: 1, off: Off::No },
+            ParamInfo { name: "Tiz frekansı", unit: "Hz", min: 2000.0, max: 16000.0, default: 8000.0, decimals: 0, off: Off::No },
+        ],
+    },
+    FxInfo {
+        kind: FxKind::Loudness,
+        name: "Loudness",
+        tagline: "Kısık sesde denge",
+        desc: "Kulak kısık seviyede bas ve tizi daha zayıf duyar. Bu modül, ses seviyesini kıstıkça bas ve tizi kendiliğinden güçlendirir; ses yükseldikçe etkisi azalır, referans seviyede hiç dokunmaz. Seviye, çalar ses ayarından alınır.",
+        params: &[
+            ParamInfo { name: "Güç", unit: "%", min: 0.0, max: 200.0, default: 100.0, decimals: 0, off: Off::No },
+            ParamInfo { name: "Referans ses", unit: "%", min: 20.0, max: 100.0, default: 100.0, decimals: 0, off: Off::No },
+        ],
+    },
+    FxInfo {
+        kind: FxKind::Crossfeed,
+        name: "Crossfeed",
+        tagline: "Kulaklıkta doğal sahne",
+        desc: "Kulaklıkta her kanalı diğer kulağa da hafifçe, alçak geçirilmiş ve çok kısa geciktirilmiş olarak karıştırır; hoparlör dinlemesine benzer, yorucu \"kafa içi\" sahneyi yumuşatır. Seviye, kesme frekansı ve gecikmeyi geniş aralıkta ayarlayabilirsin.",
+        params: &[
+            ParamInfo { name: "Seviye", unit: "dB", min: -30.0, max: 0.0, default: -8.0, decimals: 1, off: Off::No },
+            ParamInfo { name: "Kesme frekansı", unit: "Hz", min: 200.0, max: 2000.0, default: 700.0, decimals: 0, off: Off::No },
+            ParamInfo { name: "Gecikme", unit: "µs", min: 0.0, max: 800.0, default: 270.0, decimals: 0, off: Off::No },
+        ],
     },
 ];
 
@@ -290,6 +348,217 @@ impl Gain {
     }
 }
 
+// ============================================== EQ tabanlı modüller (Filtre, Ton, Loudness)
+
+use crate::apo::{Band, FilterKind, Preset};
+use crate::biquad::Equalizer;
+
+/// Butterworth kademeleri için (Q değerleri) 12/24/36/48 dB/oktav.
+fn butterworth_qs(slope_db: f32) -> &'static [f64] {
+    match (slope_db / 12.0).round() as i32 {
+        i32::MIN..=1 => &[0.7071067811865476],
+        2 => &[0.5411961001461969, 1.3065629648763766],
+        3 => &[0.5176380902050415, 0.7071067811865476, 1.9318516525781366],
+        _ => &[0.5097955791041592, 0.6013448869350453, 0.8999762231364156, 2.5629154477415055],
+    }
+}
+
+/// Bir ön ayardan çalışan, yerinde güncellenebilen filtre bloğu. Bant yoksa sinyale dokunmaz.
+struct EqBlock {
+    eq: Equalizer,
+    empty: bool,
+    rate: f32,
+}
+
+impl EqBlock {
+    fn new(rate: f32) -> EqBlock {
+        EqBlock { eq: Equalizer::new(&Preset::default(), rate as f64, 2), empty: true, rate }
+    }
+    fn set(&mut self, preset: &Preset) {
+        self.empty = preset.bands.is_empty() && preset.preamp_db.abs() < 1.0e-9;
+        if !self.eq.retarget(preset, self.rate as f64) {
+            self.eq = Equalizer::new(preset, self.rate as f64, 2);
+        }
+    }
+    fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        if self.empty {
+            return (l, r);
+        }
+        self.eq.process_frame(l, r)
+    }
+}
+
+/// HPF ve LPF: Butterworth kademeleri.
+pub struct Filter {
+    blk: EqBlock,
+    enabled: bool,
+}
+
+impl Filter {
+    pub fn new(rate: f32) -> Filter {
+        Filter { blk: EqBlock::new(rate), enabled: false }
+    }
+    pub fn set(&mut self, enabled: bool, hpf: f32, hpf_slope: f32, lpf: f32, lpf_slope: f32) {
+        self.enabled = enabled;
+        let nyq = self.blk.rate as f64 * 0.5;
+        let mut bands = vec![];
+        if hpf > 0.5 {
+            for q in butterworth_qs(hpf_slope) {
+                bands.push(Band { kind: FilterKind::HighPass, freq: hpf as f64, gain_db: 0.0, q: *q });
+            }
+        }
+        if (lpf as f64) < 23999.5 && (lpf as f64) < nyq {
+            for q in butterworth_qs(lpf_slope) {
+                bands.push(Band { kind: FilterKind::LowPass, freq: lpf as f64, gain_db: 0.0, q: *q });
+            }
+        }
+        self.blk.set(&Preset { preamp_db: 0.0, bands: if enabled { bands } else { vec![] } });
+    }
+    pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.blk.process(l, r)
+    }
+}
+
+/// Bas ve tiz rafı; güçlendirme kadar otomatik ön kısma (kırpılma olmasın).
+pub struct Tone {
+    blk: EqBlock,
+}
+
+impl Tone {
+    pub fn new(rate: f32) -> Tone {
+        Tone { blk: EqBlock::new(rate) }
+    }
+    pub fn set(&mut self, enabled: bool, bass_db: f32, bass_hz: f32, treble_db: f32, treble_hz: f32) {
+        if !enabled || (bass_db.abs() < 0.05 && treble_db.abs() < 0.05) {
+            self.blk.set(&Preset::default());
+            return;
+        }
+        let pre = -(bass_db.max(treble_db).max(0.0) as f64);
+        self.blk.set(&Preset {
+            preamp_db: pre,
+            bands: vec![
+                Band { kind: FilterKind::LowShelf, freq: bass_hz as f64, gain_db: bass_db as f64, q: 0.7071 },
+                Band { kind: FilterKind::HighShelf, freq: treble_hz as f64, gain_db: treble_db as f64, q: 0.7071 },
+            ],
+        });
+    }
+    pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.blk.process(l, r)
+    }
+}
+
+/// Ses seviyesine bağlı bas/tiz telafisi: seviye referansın altına indikçe iki raf güçlenir.
+pub struct Loudness {
+    blk: EqBlock,
+    enabled: bool,
+    strength: f32,
+    reference: f32,
+    level: f32,
+    applied: (f32, f32),
+}
+
+impl Loudness {
+    pub fn new(rate: f32) -> Loudness {
+        Loudness { blk: EqBlock::new(rate), enabled: false, strength: 1.0, reference: 1.0, level: 1.0, applied: (f32::NAN, f32::NAN) }
+    }
+    pub fn set(&mut self, enabled: bool, strength_pct: f32, reference_pct: f32) {
+        self.enabled = enabled;
+        self.strength = strength_pct / 100.0;
+        self.reference = (reference_pct / 100.0).max(0.01);
+        self.refresh();
+    }
+    pub fn set_level(&mut self, level: f32) {
+        self.level = level;
+        self.refresh();
+    }
+    /// Seviyeden bas ve tiz kazancı (dB). Referansta ve üstünde 0.
+    pub fn gains(level: f32, reference: f32, strength: f32) -> (f32, f32) {
+        let drop_db = (20.0 * (reference / level.max(1.0e-4)).log10()).max(0.0);
+        ((0.5 * drop_db).min(12.0) * strength, (0.25 * drop_db).min(8.0) * strength)
+    }
+    fn refresh(&mut self) {
+        let (b, t) = if self.enabled { Self::gains(self.level, self.reference, self.strength) } else { (0.0, 0.0) };
+        // küçük seviye oynamalarında filtreyi yeniden kurma (0,1 dB eşiği)
+        if (b - self.applied.0).abs() < 0.1 && (t - self.applied.1).abs() < 0.1 {
+            return;
+        }
+        self.applied = (b, t);
+        if b.abs() < 0.05 && t.abs() < 0.05 {
+            self.blk.set(&Preset::default());
+            return;
+        }
+        self.blk.set(&Preset {
+            preamp_db: 0.0,
+            bands: vec![
+                Band { kind: FilterKind::LowShelf, freq: 110.0, gain_db: b as f64, q: 0.6 },
+                Band { kind: FilterKind::HighShelf, freq: 9000.0, gain_db: t as f64, q: 0.6 },
+            ],
+        });
+    }
+    pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.blk.process(l, r)
+    }
+}
+
+/// Ayarlanabilir crossfeed: karşı kanalın alçak geçirilmiş, geciktirilmiş kısmı.
+pub struct Crossfeed {
+    buf_l: Vec<f32>,
+    buf_r: Vec<f32>,
+    pos: usize,
+    delay: usize,
+    lp_l: f32,
+    lp_r: f32,
+    a: f32,
+    g: f32,
+    g_target: f32,
+    g_a: f32,
+    enabled: bool,
+    rate: f32,
+}
+
+impl Crossfeed {
+    pub fn new(rate: f32) -> Crossfeed {
+        let n = (0.0008 * rate) as usize + 2;
+        Crossfeed {
+            buf_l: vec![0.0; n],
+            buf_r: vec![0.0; n],
+            pos: 0,
+            delay: 0,
+            lp_l: 0.0,
+            lp_r: 0.0,
+            a: 0.1,
+            g: 0.0,
+            g_target: 0.0,
+            g_a: 1.0 - (-1.0 / (0.01 * rate)).exp(),
+            enabled: false,
+            rate,
+        }
+    }
+    pub fn set(&mut self, enabled: bool, level_db: f32, cutoff_hz: f32, delay_us: f32) {
+        self.enabled = enabled;
+        self.g_target = if enabled { db_to_lin(level_db) } else { 0.0 };
+        self.a = 1.0 - (-2.0 * std::f32::consts::PI * cutoff_hz / self.rate).exp();
+        self.delay = ((delay_us * 1.0e-6 * self.rate).round() as usize).min(self.buf_l.len() - 1);
+    }
+    pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
+        self.g += (self.g_target - self.g) * self.g_a;
+        if !self.enabled && self.g < 1.0e-6 {
+            self.g = 0.0;
+            return (l, r);
+        }
+        let n = self.buf_l.len();
+        self.buf_l[self.pos] = l;
+        self.buf_r[self.pos] = r;
+        let idx = (self.pos + n - self.delay) % n;
+        let (dl, dr) = (self.buf_l[idx], self.buf_r[idx]);
+        self.pos = (self.pos + 1) % n;
+        self.lp_l += self.a * (dl - self.lp_l);
+        self.lp_r += self.a * (dr - self.lp_r);
+        let norm = 1.0 / (1.0 + 0.7 * self.g);
+        ((l + self.g * self.lp_r) * norm, (r + self.g * self.lp_l) * norm)
+    }
+}
+
 // ===================================================================== Zincir
 
 enum Node {
@@ -297,6 +566,10 @@ enum Node {
     Compressor(Compressor),
     Width(Width),
     Gain(Gain),
+    Filter(Filter),
+    Tone(Tone),
+    Loudness(Loudness),
+    Crossfeed(Crossfeed),
 }
 
 struct Instance {
@@ -324,6 +597,10 @@ impl FxChain {
                     FxKind::Compressor => Node::Compressor(Compressor::new()),
                     FxKind::Width => Node::Width(Width::new(rate)),
                     FxKind::Gain => Node::Gain(Gain::new(rate)),
+                    FxKind::Filter => Node::Filter(Filter::new(rate)),
+                    FxKind::Tone => Node::Tone(Tone::new(rate)),
+                    FxKind::Loudness => Node::Loudness(Loudness::new(rate)),
+                    FxKind::Crossfeed => Node::Crossfeed(Crossfeed::new(rate)),
                 },
             })
             .collect();
@@ -347,12 +624,25 @@ impl FxChain {
                 Node::Compressor(c) => c.set(s.enabled, s.param(0), s.param(1), s.param(2), s.param(3), s.param(4), s.param(5), rate),
                 Node::Width(w) => w.target = if s.enabled { s.param(0) / 100.0 } else { 1.0 },
                 Node::Gain(g) => g.target = if s.enabled { db_to_lin(s.param(0)) } else { 1.0 },
+                Node::Filter(f) => f.set(s.enabled, s.param(0), s.param(1), s.param(2), s.param(3)),
+                Node::Tone(t) => t.set(s.enabled, s.param(0), s.param(1), s.param(2), s.param(3)),
+                Node::Loudness(l) => l.set(s.enabled, s.param(0), s.param(1)),
+                Node::Crossfeed(c) => c.set(s.enabled, s.param(0), s.param(1), s.param(2)),
             }
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
+    }
+
+    /// Çalar ses seviyesi (doğrusal, 0..1): seviyeye bağlı modüller (Loudness) buna göre ayarlanır.
+    pub fn set_level(&mut self, level: f32) {
+        for it in self.items.iter_mut() {
+            if let Node::Loudness(l) = &mut it.node {
+                l.set_level(level);
+            }
+        }
     }
 
     /// Sinyale dokunabilecek açık bir modül var mı?
@@ -367,6 +657,10 @@ impl FxChain {
                 Node::Compressor(n) => n.process(l, r),
                 Node::Width(n) => n.process(l, r),
                 Node::Gain(n) => n.process(l, r),
+                Node::Filter(n) => n.process(l, r),
+                Node::Tone(n) => n.process(l, r),
+                Node::Loudness(n) => n.process(l, r),
+                Node::Crossfeed(n) => n.process(l, r),
             };
             l = o.0;
             r = o.1;
@@ -380,6 +674,169 @@ mod tests {
     use super::*;
 
     const FS: f32 = 48000.0;
+
+    /// Sinüsü bloktan geçirip kararlı bölümün genliğini (RMS*√2) döndürür.
+    fn amp(mut f: impl FnMut(f32, f32) -> (f32, f32), hz: f32) -> f32 {
+        let n = 48000usize;
+        let mut acc = 0f64;
+        let mut cnt = 0usize;
+        for i in 0..n {
+            let x = (2.0 * std::f32::consts::PI * hz * i as f32 / FS).sin() * 0.5;
+            let (y, _) = f(x, x);
+            if i > n / 2 {
+                acc += (y as f64) * (y as f64);
+                cnt += 1;
+            }
+        }
+        ((acc / cnt as f64).sqrt() * 2f64.sqrt() * 2.0) as f32 // 0.5 genlikli girişe göre: 1.0 = değişmedi
+    }
+    fn db(x: f32) -> f32 {
+        20.0 * x.log10()
+    }
+
+    #[test]
+    fn filter_cuts_the_requested_side_and_passes_the_rest() {
+        let mut f = Filter::new(FS);
+        f.set(true, 100.0, 24.0, 24000.0, 24.0);
+        let low = db(amp(|l, r| f.process(l, r), 20.0));
+        let mut f = Filter::new(FS);
+        f.set(true, 100.0, 24.0, 24000.0, 24.0);
+        let mid = db(amp(|l, r| f.process(l, r), 1000.0));
+        assert!(low < -40.0, "20 Hz yeterince kesilmedi: {low} dB");
+        assert!(mid.abs() < 0.2, "1 kHz geçmeli: {mid} dB");
+        // LPF
+        let mut f = Filter::new(FS);
+        f.set(true, 0.0, 24.0, 5000.0, 24.0);
+        let hi = db(amp(|l, r| f.process(l, r), 15000.0));
+        let mut f = Filter::new(FS);
+        f.set(true, 0.0, 24.0, 5000.0, 24.0);
+        let mid = db(amp(|l, r| f.process(l, r), 1000.0));
+        assert!(hi < -30.0, "15 kHz kesilmeli: {hi} dB");
+        assert!(mid.abs() < 0.2, "{mid} dB");
+    }
+
+    #[test]
+    fn filter_slope_is_steeper_for_more_stages() {
+        let at = |slope: f32| {
+            let mut f = Filter::new(FS);
+            f.set(true, 200.0, slope, 24000.0, 24.0);
+            db(amp(|l, r| f.process(l, r), 100.0))
+        };
+        let (a, b, c) = (at(12.0), at(24.0), at(48.0));
+        assert!(a > b && b > c, "{a} {b} {c}");
+        assert!((a - -12.3).abs() < 1.5, "12 dB/okt (2. derece), bir oktav aşağıda ≈ -12 dB: {a}");
+    }
+
+    #[test]
+    fn filter_off_is_transparent() {
+        let mut f = Filter::new(FS);
+        f.set(true, 0.0, 24.0, 24000.0, 24.0);
+        for i in 0..1000 {
+            let x = (i as f32 * 0.01).sin() * 0.7;
+            assert_eq!(f.process(x, -x), (x, -x));
+        }
+        // kapalı modül de dokunmaz
+        let mut f = Filter::new(FS);
+        f.set(false, 100.0, 24.0, 5000.0, 24.0);
+        assert_eq!(f.process(0.3, 0.2), (0.3, 0.2));
+    }
+
+    #[test]
+    fn tone_boosts_bass_and_trims_to_avoid_clipping() {
+        let mut t = Tone::new(FS);
+        t.set(true, 6.0, 100.0, 0.0, 8000.0);
+        let bass = db(amp(|l, r| t.process(l, r), 40.0));
+        let mut t = Tone::new(FS);
+        t.set(true, 6.0, 100.0, 0.0, 8000.0);
+        let mid = db(amp(|l, r| t.process(l, r), 2000.0));
+        // en güçlü bölge ön kısma ile ≈ 0 dB'de kalır, orta ≈ -6 dB
+        assert!(bass < 0.8, "bas kırpma payını aşmamalı: {bass}");
+        assert!((mid - -6.0).abs() < 1.0, "orta kısılmalı: {mid}");
+        // sıfır ayarda dokunmaz
+        let mut t = Tone::new(FS);
+        t.set(true, 0.0, 100.0, 0.0, 8000.0);
+        assert_eq!(t.process(0.4, 0.4), (0.4, 0.4));
+    }
+
+    #[test]
+    fn loudness_boosts_more_as_volume_drops_and_never_at_reference() {
+        assert_eq!(Loudness::gains(1.0, 1.0, 1.0), (0.0, 0.0));
+        assert_eq!(Loudness::gains(1.5, 1.0, 1.0), (0.0, 0.0), "referans üstünde telafi yok");
+        let (b1, t1) = Loudness::gains(0.5, 1.0, 1.0); // -6 dB
+        let (b2, t2) = Loudness::gains(0.1, 1.0, 1.0); // -20 dB
+        assert!(b2 > b1 && t2 > t1 && b1 > t1, "{b1} {t1} {b2} {t2}");
+        assert!(b2 <= 12.0 && t2 <= 8.0, "üst sınır");
+        // güç 0 -> hiç telafi
+        assert_eq!(Loudness::gains(0.1, 1.0, 0.0), (0.0, 0.0));
+        // filtre gerçekten bas/tizi yükseltir
+        let mut l = Loudness::new(FS);
+        l.set(true, 100.0, 100.0);
+        l.set_level(0.1);
+        let bass = db(amp(|a, b| l.process(a, b), 60.0));
+        let mut l = Loudness::new(FS);
+        l.set(true, 100.0, 100.0);
+        l.set_level(0.1);
+        let mid = db(amp(|a, b| l.process(a, b), 1000.0));
+        assert!(bass - mid > 5.0, "bas orta'dan belirgin güçlü olmalı: {bass} vs {mid}");
+        // tam seviyede şeffaf
+        let mut l = Loudness::new(FS);
+        l.set(true, 100.0, 100.0);
+        l.set_level(1.0);
+        assert_eq!(l.process(0.3, 0.1), (0.3, 0.1));
+    }
+
+    #[test]
+    fn crossfeed_mixes_delayed_lowpassed_opposite_channel() {
+        let mut c = Crossfeed::new(FS);
+        c.set(true, -6.0, 700.0, 270.0);
+        // sadece solda alçak frekans: sağda daha küçük ama sıfır olmayan bir kopya
+        let mut r_amp = 0f32;
+        let mut l_amp = 0f32;
+        for i in 0..48000 {
+            let x = (2.0 * std::f32::consts::PI * 100.0 * i as f32 / FS).sin() * 0.5;
+            let (l, r) = c.process(x, 0.0);
+            if i > 24000 {
+                l_amp = l_amp.max(l.abs());
+                r_amp = r_amp.max(r.abs());
+            }
+        }
+        assert!(r_amp > 0.05 && r_amp < l_amp, "{l_amp} {r_amp}");
+        // yüksek frekans neredeyse geçmez
+        let mut c = Crossfeed::new(FS);
+        c.set(true, -6.0, 700.0, 270.0);
+        let mut r_hi = 0f32;
+        for i in 0..48000 {
+            let x = (2.0 * std::f32::consts::PI * 8000.0 * i as f32 / FS).sin() * 0.5;
+            let (_, r) = c.process(x, 0.0);
+            if i > 24000 {
+                r_hi = r_hi.max(r.abs());
+            }
+        }
+        assert!(r_hi < 0.02, "yüksek frekans sızmamalı: {r_hi}");
+        // kapalıyken birebir
+        let mut c = Crossfeed::new(FS);
+        c.set(false, -6.0, 700.0, 270.0);
+        assert_eq!(c.process(0.3, 0.2), (0.3, 0.2));
+    }
+
+    #[test]
+    fn crossfeed_delay_is_applied() {
+        let mut c = Crossfeed::new(FS);
+        c.set(true, 0.0, 2000.0, 400.0); // 400 µs = 19 örnek
+        // g yumuşak açıldığı için önce birkaç ms ısıt
+        for _ in 0..4800 {
+            c.process(0.0, 0.0);
+        }
+        let mut first = None;
+        for i in 0..100 {
+            let (_, r) = c.process(if i == 0 { 1.0 } else { 0.0 }, 0.0);
+            if first.is_none() && r.abs() > 1.0e-4 {
+                first = Some(i);
+            }
+        }
+        let d = first.expect("sağ kanala sızıntı bekleniyordu");
+        assert!(d >= 18 && d <= 22, "gecikme ≈19 örnek olmalı: {d}");
+    }
 
     fn lcg(seed: &mut u32) -> f32 {
         *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
