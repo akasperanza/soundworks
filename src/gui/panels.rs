@@ -677,6 +677,8 @@ impl App {
                 }
                 self.preset_strip(ui);
                 ui.add_space(8.0);
+                self.ae_bar(ui);
+                ui.add_space(8.0);
                 let total = ui.available_height();
                 let fader_h = 340.0;
                 let viz_h = (total - fader_h - 10.0).max(190.0);

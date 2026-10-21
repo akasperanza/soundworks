@@ -389,6 +389,7 @@ pub enum Icon {
     Upload,
     Lyrics,
     Settings,
+    Headphones,
 }
 
 /// Lucide (lucide.dev, ISC lisansı) SVG ikonları; resvg ile bir kez rasterize edilip doku olarak saklanır.
@@ -426,6 +427,7 @@ fn icon_svg(i: Icon) -> &'static str {
         Icon::Upload => include_str!("../assets/icons/upload.svg"),
         Icon::Lyrics => include_str!("../assets/icons/mic-vocal.svg"),
         Icon::Settings => include_str!("../assets/icons/settings.svg"),
+        Icon::Headphones => include_str!("../assets/icons/headphones.svg"),
     }
 }
 

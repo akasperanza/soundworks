@@ -233,6 +233,7 @@ mod panels;
 mod proof_ui;
 mod queue_ui;
 mod search_ui;
+mod autoeq_ui;
 mod settings_ui;
 mod shell;
 mod tips_ui;
@@ -445,6 +446,9 @@ pub struct App {
     lib_artist: Option<String>,
     bio_open: bool,
     search_open: bool,
+    /// AutoEQ mağazası: indirme istemcisi ve pencere durumu
+    autoeq: crate::autoeq::Client,
+    ae: autoeq_ui::AeUi,
     search_query: String,
     search_sel: usize,
     search_focus: bool,
@@ -598,6 +602,8 @@ impl App {
             lib_artist: None,
             bio_open: false,
             search_open: false,
+            autoeq: crate::autoeq::Client::new(data_dir().join("autoeq_index.md")),
+            ae: autoeq_ui::AeUi::new(),
             search_query: String::new(),
             search_sel: 0,
             search_focus: false,
@@ -716,6 +722,10 @@ impl App {
         }
         if crate::devenv::dev_var("SW_LYRICS").is_ok() {
             app.lyrics_open = true;
+        }
+        if let Ok(q) = crate::devenv::dev_var("SW_AUTOEQ") {
+            app.ae_open(false);
+            app.ae.query = q;
         }
         if let Ok(q) = crate::devenv::dev_var("SW_SEARCH") {
             app.open_search();
@@ -1212,6 +1222,7 @@ impl eframe::App for App {
         }
 
         self.search_overlay(ctx);
+        self.autoeq_overlay(ctx);
         self.tip_banner(ctx);
         self.dsd_dialog_ui(ctx);
 
