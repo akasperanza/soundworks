@@ -69,13 +69,17 @@ impl App {
                     left_end = ui.min_rect().right();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let on = self.running.is_some();
-                        // Oynatıcı modunda motor kendiliğinden yönetilir (Play'de başlar, boşta kalınca cihazı bırakır).
-                        // Elle başlat/durdur yalnızca Sistem DSP'de anlamlıdır: orada yakalama sürekli açık kalmalıdır.
-                        if self.cfg.use_loopback && pill_button(ui, if on { "Sistem DSP'yi durdur" } else { "Sistem DSP'yi başlat" }, Some(Icon::Power), !on).clicked() {
-                            if on {
-                                self.stop_async();
-                            } else {
-                                self.start();
+                        // Yalnızca ikon: oynatıcı modunda motor zaten kendiliğinden yönetilir (Play'de başlar, boşta kalınca cihazı
+                        // bırakır); düğme elle erken bırakmak ya da önceden başlatmak içindir. Sistem DSP'de yakalamayı açıp kapatır.
+                        if self.cfg.show_engine_btn {
+                            let what = if self.cfg.use_loopback { "Sistem DSP" } else { "Ses motoru" };
+                            let tip = if on { format!("{what} açık: durdur (cihazı serbest bırakır)") } else { format!("{what} kapalı: başlat") };
+                            if icon_button(ui, Icon::Power, 34.0, on).on_hover_text(tip).clicked() {
+                                if on {
+                                    self.stop_async();
+                                } else {
+                                    self.start();
+                                }
                             }
                         }
                         if self.cfg.use_loopback {

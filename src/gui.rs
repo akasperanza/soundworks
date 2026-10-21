@@ -113,6 +113,8 @@ struct Config {
     use_loopback: bool,
     exclusive_off: bool,
     autostart: bool,
+    /// başlık çubuğunda motoru açıp kapatan ikon düğmesi görünsün
+    show_engine_btn: bool,
     /// yalnızca eski sürümden göç için okunur; kuyruk artık queue.json'da
     #[serde(skip_serializing)]
     playlist: Vec<String>,
@@ -176,6 +178,7 @@ impl Default for Config {
             use_loopback: false,
             exclusive_off: false,
             autostart: false,
+            show_engine_btn: true,
             playlist: vec![],
             volume: None,
             level_match_off: false,

@@ -235,6 +235,8 @@ impl App {
                 switch_row(ui, "Açılışta Sistem DSP'yi başlat", "", &mut self.cfg.autostart);
                 ui.add_space(4.0);
             }
+            switch_row(ui, "Başlıkta motor düğmesi", "Sağ üstteki güç simgesi; motor zaten kendiliğinden açılıp kapanır", &mut self.cfg.show_engine_btn);
+            ui.add_space(4.0);
             switch_row(ui, "Kapatınca tepside çalışmaya devam et", "Sistem DSP için önerilir", &mut self.cfg.tray_on_close);
             ui.add_space(4.0);
             let mut login = self.cfg.run_at_login;
