@@ -419,6 +419,9 @@ pub struct App {
     proof_alt_at: Instant,
     /// cihazın son yoklamada kabul ettiği exclusive hızlar (makbuzda hız dönüşümünün nedenini göstermek için)
     probe_rates: Vec<u32>,
+    /// ön ayar seçici listesindeki arama metni ve odak isteği
+    preset_q: String,
+    preset_q_focus: bool,
     /// her değişiklik nedeninin (bit sırası) en son görüldüğü an; makbuzda yalnızca güncel nedenler gösterilir
     proof_cause_at: [Instant; 6],
     proof_cause_mask: u32,
@@ -588,6 +591,8 @@ impl App {
             proof_alt_seen: 0,
             proof_alt_at: Instant::now() - std::time::Duration::from_secs(10),
             probe_rates: Vec::new(),
+            preset_q: String::new(),
+            preset_q_focus: false,
             proof_cause_at: [Instant::now() - std::time::Duration::from_secs(10); 6],
             proof_cause_mask: 0,
             proof_frames_seen: 0,
@@ -696,9 +701,10 @@ impl App {
         if crate::devenv::dev_var("SW_QUEUE").is_ok() {
             app.queue_open = true;
         }
-        if crate::devenv::dev_var("SW_SOLO").is_ok() {
+        // SW_SOLO=<bant indeksi>: soloyu kilitler ve o bandı seçer (doğrulama)
+        if let Ok(v) = crate::devenv::dev_var("SW_SOLO") {
             app.solo_latch = true;
-            app.sel_band = Some(4);
+            app.sel_band = Some(v.parse().unwrap_or(4));
         }
         if let Some(m) = crate::devenv::dev_var("SW_RG").ok().and_then(|v| v.parse::<u32>().ok()) {
             app.cfg.rg_mode = m;
@@ -869,7 +875,7 @@ impl App {
         if last.map(|t| t.elapsed().as_millis() >= 500).unwrap_or(true) {
             *last = Some(Instant::now());
             dev_trace(&format!(
-                "durum kare={} update_ms={} playing={} pos={:.1} vol={:.2} view={} engine={} idx={:?} kanıt={:?} ön_ayar={:?} kural={}",
+                "durum kare={} update_ms={} playing={} pos={:.1} vol={:.2} view={} engine={} idx={:?} kanıt={:?} ön_ayar={:?} kural={} viz_rms={:.4} bant={} eq_off={} solo={:?}",
                 FRAMES.swap(0, Relaxed),
                 UPDATE_US.swap(0, Relaxed) / 1000,
                 self.player.playing.load(Relaxed),
@@ -884,7 +890,15 @@ impl App {
                 self.player.current(),
                 self.proof_view,
                 self.preset_name,
-                self.rule_active.is_some()
+                self.rule_active.is_some(),
+                self.running.as_ref().map_or(0.0, |r| {
+                    let v = r.ctl.viz.lock().unwrap();
+                    let n = v.len().min(4096);
+                    if n == 0 { 0.0 } else { (v.iter().rev().take(n).map(|x| x * x).sum::<f32>() / n as f32).sqrt() }
+                }),
+                self.preset.bands.len(),
+                engine::EQ_OFF.load(Relaxed),
+                self.solo_target
             ));
         }
         if crate::devenv::dev_var("SW_LOGS").is_ok() && last.map(|t| t.elapsed().as_millis() < 5).unwrap_or(false) {

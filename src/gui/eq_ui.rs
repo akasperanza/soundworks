@@ -2,6 +2,15 @@
 
 use super::*;
 
+/// Ön ayar listesinden gelen istekler (çizim bittikten sonra uygulanır).
+#[derive(Default)]
+struct PresetActs {
+    pick: Option<String>,
+    props: Option<String>,
+    copy: Option<String>,
+    del: Option<String>,
+}
+
 impl App {
     pub(super) fn refresh_library(&mut self) {
         let mut v: Vec<String> = std::fs::read_dir(presets_dir())
@@ -167,51 +176,12 @@ impl App {
         if dev_skip("strip") {
             return;
         }
-        let mut pick = None;
-        let mut del = None;
-        let mut props: Option<String> = None;
-        let mut copy: Option<String> = None;
+        let mut acts = PresetActs::default();
         ui.horizontal(|ui| {
             if pill_button(ui, "İçe aktar", Some(Icon::Import), false).clicked() {
                 self.import();
             }
             self.create_button(ui);
-            let strip_w = (ui.available_width() - 170.0).max(120.0);
-            ui.allocate_ui(vec2(strip_w, 30.0), |ui| {
-                egui::ScrollArea::horizontal().id_salt("strip").auto_shrink([false, true]).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        if self.library.is_empty() {
-                            ui.label(RichText::new("Henüz ön ayar yok").font(body(12.5)).color(DIM));
-                        }
-                        for (name, _) in &self.library {
-                            let active = self.preset_name.as_ref() == Some(name);
-                            let mut label = name.trim_end_matches(".txt").to_string();
-                            if active && self.dirty {
-                                label.push_str("  •");
-                            }
-                            let resp = Self::preset_chip(ui, &label, active);
-                            if resp.clicked() {
-                                pick = Some(name.clone());
-                            }
-                            resp.context_menu(|ui| {
-                                if ui.button("Özellikler…").clicked() {
-                                    props = Some(name.clone());
-                                    ui.close_menu();
-                                }
-                                if ui.button("Kopya oluştur").clicked() {
-                                    copy = Some(name.clone());
-                                    ui.close_menu();
-                                }
-                                if ui.button("Sil").clicked() {
-                                    del = Some(name.clone());
-                                    ui.close_menu();
-                                }
-                            });
-                        }
-                    });
-                });
-            });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_enabled_ui(self.dirty && self.preset_name.is_some(), |ui| {
                     if pill_button(ui, "Geri al", Some(Icon::Undo), false).clicked() {
@@ -227,17 +197,151 @@ impl App {
                 self.auto_eq_button(ui);
             });
         });
-        if let Some(n) = pick {
+        // ikinci satır: ön ayar seçici tam genişlikte (dar pencerede de taşmaz)
+        ui.add_space(8.0);
+        let w = ui.available_width().clamp(200.0, 560.0);
+        self.preset_picker(ui, w, &mut acts);
+        if let Some(n) = acts.pick {
             self.select(&n, true);
         }
-        if let Some(n) = props {
+        if let Some(n) = acts.props {
             self.props_open(Some(&n));
         }
-        if let Some(n) = copy {
+        if let Some(n) = acts.copy {
             self.duplicate_preset(&n);
         }
-        if let Some(n) = del {
+        if let Some(n) = acts.del {
             self.delete_preset(&n);
+        }
+    }
+
+    /// Ön ayar seçici: tek bir düğme (seçili ön ayarın adı); basınca arama kutulu, klasör gibi gruplanmış liste açılır.
+    /// Çip şeridi yerine bunu kullanmak, ön ayar sayısı ne olursa olsun düzenin taşmamasını sağlar.
+    fn preset_picker(&mut self, ui: &mut egui::Ui, w: f32, acts: &mut PresetActs) {
+        let name = self.preset_name.as_deref().map(|n| n.trim_end_matches(".txt").to_string());
+        let (rect, btn) = ui.allocate_exact_size(vec2(w, 32.0), Sense::click());
+        let h = ui.ctx().animate_bool_with_time(btn.id, btn.hovered(), 0.12);
+        ui.painter().rect_filled(rect, Rounding::same(16.0), lerp_color(BG2, BG3, h));
+        draw_icon(ui.painter(), Icon::Folder, pos2(rect.left() + 20.0, rect.center().y), 14.0, lerp_color(DIM, TEXT, h));
+        let shown = match (&name, self.library.is_empty()) {
+            (Some(n), _) => n.clone(),
+            (None, true) => "Henüz ön ayar yok".to_string(),
+            (None, false) => "Ön ayar seç".to_string(),
+        };
+        let txt_w = rect.width() - 20.0 - 18.0 - 34.0 - if self.dirty { 14.0 } else { 0.0 };
+        let shown = super::eqrules_ui::fit(ui.painter(), &shown, bold(13.0), txt_w);
+        let g = ui.painter().layout_no_wrap(shown, bold(13.0), if name.is_some() { Color32::WHITE } else { DIM });
+        let gw = g.size().x;
+        ui.painter().galley(pos2(rect.left() + 38.0, rect.center().y - g.size().y * 0.5), g, Color32::WHITE);
+        if self.dirty && name.is_some() {
+            ui.painter().circle_filled(pos2(rect.left() + 38.0 + gw + 10.0, rect.center().y), 3.5, AMBER);
+        }
+        draw_icon(ui.painter(), Icon::ChevronDown, pos2(rect.right() - 20.0, rect.center().y), 12.0, lerp_color(DIM, TEXT, h));
+        let id = btn.id.with("preset_list");
+        if btn.clone().on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            self.preset_q.clear();
+            self.preset_q_focus = true;
+            ui.memory_mut(|m| m.toggle_popup(id));
+        }
+        // doğrulama: SW_PRESETLIST=1 listeyi bir kez kendiliğinden açar
+        {
+            static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if crate::devenv::dev_var("SW_PRESETLIST").is_ok() && !OPENED.swap(true, Relaxed) {
+                ui.memory_mut(|m| m.open_popup(id));
+            }
+        }
+        let mut q = std::mem::take(&mut self.preset_q);
+        let mut focus = std::mem::take(&mut self.preset_q_focus);
+        egui::popup_below_widget(ui, id, &btn, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+            ui.set_min_width(w.max(380.0));
+            let te = ui.add(egui::TextEdit::singleline(&mut q).hint_text("Ön ayar ara…").desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
+            if focus {
+                te.request_focus();
+                focus = false;
+            }
+            ui.add_space(6.0);
+            let ql = q.trim().to_lowercase();
+            // iki "klasör": kendi ön ayarların ve AutoEQ'dan gelenler
+            let mut own: Vec<&String> = vec![];
+            let mut auto: Vec<&String> = vec![];
+            for (n, _) in &self.library {
+                let meta = self.cfg.preset_meta.get(n);
+                if !ql.is_empty() && !n.to_lowercase().contains(&ql) && !meta.map_or(false, |m| m.label.to_lowercase().contains(&ql)) {
+                    continue;
+                }
+                if meta.map_or(false, |m| m.source.starts_with("AutoEQ")) {
+                    auto.push(n);
+                } else {
+                    own.push(n);
+                }
+            }
+            egui::ScrollArea::vertical().id_salt("preset_list").max_height(360.0).auto_shrink([true, true]).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                if own.is_empty() && auto.is_empty() {
+                    ui.label(RichText::new(if ql.is_empty() { "Henüz ön ayar yok" } else { "Sonuç yok" }).font(body(12.5)).color(DIM));
+                }
+                for (title, group) in [("Ön ayarlarım", &own), ("AutoEQ", &auto)] {
+                    if group.is_empty() {
+                        continue;
+                    }
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(format!("{title}  ·  {}", group.len())).font(bold(11.5)).color(DIM));
+                    });
+                    for n in group.iter() {
+                        let meta = self.cfg.preset_meta.get(*n);
+                        let active = self.preset_name.as_deref() == Some(n.as_str());
+                        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+                        let hv = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.1);
+                        ui.painter().rect_filled(r, Rounding::same(9.0), if active { alpha(BLUE, 44) } else { alpha(BG3, (200.0 * hv) as u8) });
+                        if active {
+                            ui.painter().rect_filled(Rect::from_min_size(r.min + vec2(0.0, 8.0), vec2(3.0, r.height() - 16.0)), Rounding::same(2.0), BLUE);
+                        }
+                        let title = super::eqrules_ui::fit(ui.painter(), n.trim_end_matches(".txt"), bold(13.0), r.width() - 64.0);
+                        let sub = meta.map(|m| if !m.label.is_empty() { m.label.clone() } else { m.source.clone() }).unwrap_or_default();
+                        // alt satırı yoksa başlık dikey ortalanır
+                        ui.painter().text(pos2(r.left() + 14.0, r.top() + if sub.is_empty() { 22.0 } else { 15.0 }), Align2::LEFT_CENTER, title, bold(13.0), Color32::WHITE);
+                        if !sub.is_empty() {
+                            let sub = super::eqrules_ui::fit(ui.painter(), &sub, body(11.5), r.width() - 64.0);
+                            ui.painter().text(pos2(r.left() + 14.0, r.top() + 31.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
+                        }
+                        // özellikler: satırın sağında (üzerine gelince belirir)
+                        let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(28.0, 28.0));
+                        let gresp = ui.interact(gear, resp.id.with("gear"), Sense::click());
+                        if hv > 0.01 || gresp.hovered() {
+                            draw_icon(ui.painter(), Icon::Settings, gear.center(), 15.0, if gresp.hovered() { Color32::WHITE } else { alpha(DIM, 220) });
+                        }
+                        let gear_clicked = gresp.clicked();
+                        gresp.on_hover_text("Özellikler");
+                        if gear_clicked {
+                            acts.props = Some((*n).clone());
+                        } else if resp.clicked() {
+                            acts.pick = Some((*n).clone());
+                            ui.memory_mut(|m| m.close_popup());
+                        }
+                        resp.context_menu(|ui| {
+                            if ui.button("Özellikler…").clicked() {
+                                acts.props = Some((*n).clone());
+                                ui.close_menu();
+                            }
+                            if ui.button("Kopya oluştur").clicked() {
+                                acts.copy = Some((*n).clone());
+                                ui.close_menu();
+                            }
+                            if ui.button("Sil").clicked() {
+                                acts.del = Some((*n).clone());
+                                ui.close_menu();
+                            }
+                        });
+                    }
+                }
+            });
+        });
+        self.preset_q = q;
+        self.preset_q_focus = focus;
+        if acts.props.is_some() || acts.copy.is_some() || acts.del.is_some() {
+            ui.memory_mut(|m| m.close_popup());
         }
     }
 

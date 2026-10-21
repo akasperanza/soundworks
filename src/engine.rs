@@ -999,12 +999,6 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 let mut l = wl * mix_cur + dl * dry_gain * (1.0 - mix_cur);
                 let mut r = wr * mix_cur + dr * dry_gain * (1.0 - mix_cur);
                 solo_cur += (solo_target - solo_cur) * 0.002;
-                if solo_cur > 0.0005 {
-                    // EQ yerine, ham (EQ'suz) sinyalin yalnızca seçili bölgesi
-                    let (sl, sr) = (solo.process(0, dl) * SOLO_MAKEUP, solo.process(1, dr) * SOLO_MAKEUP);
-                    l = l * (1.0 - solo_cur) + sl * solo_cur;
-                    r = r * (1.0 - solo_cur) + sr * solo_cur;
-                }
                 if !chain.is_empty() || old_chain.is_some() {
                     let (cl, cr) = chain.process(l, r);
                     let (cl, cr) = match old_chain.as_mut() {
@@ -1032,8 +1026,21 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                     l = m;
                     r = m;
                 }
-                l *= bal_l * gain_cur * gate_cur;
-                r *= bal_r * gain_cur * gate_cur;
+                // Solo yalnızca dinlenen sesi değiştirir: karışım zincirden SONRA yapılır ve analizör (grafik arka planı) solosuz
+                // sinyali (vl, vr) görmeye devam eder; yani solo açılınca grafik değişmez.
+                let (mut vl, mut vr) = (l, r);
+                if solo_cur > 0.0005 {
+                    // EQ yerine, ham (EQ'suz) sinyalin yalnızca seçili bölgesi
+                    let (sl, sr) = (solo.process(0, dl) * SOLO_MAKEUP, solo.process(1, dr) * SOLO_MAKEUP);
+                    // zincir (limiter) atlandığı için kırpılma güvenliği: tam ölçeğe sıkıştır
+                    l = (l * (1.0 - solo_cur) + sl * solo_cur).clamp(-1.0, 1.0);
+                    r = (r * (1.0 - solo_cur) + sr * solo_cur).clamp(-1.0, 1.0);
+                }
+                let (k_l, k_r) = (bal_l * gain_cur * gate_cur, bal_r * gain_cur * gate_cur);
+                l *= k_l;
+                r *= k_r;
+                vl *= k_l;
+                vr *= k_r;
                 if meter.feed(l, r) {
                     let put = |a: &std::sync::atomic::AtomicU32, v: Option<f32>| a.store(v.unwrap_or(-200.0).to_bits(), Ordering::Relaxed);
                     put(&ctl.m_lufs, meter.momentary());
@@ -1046,8 +1053,8 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 if l.abs() >= 0.999 || r.abs() >= 0.999 {
                     clips += 1;
                 }
-                vbuf.push(l);
-                vbuf.push(r);
+                vbuf.push(vl);
+                vbuf.push(vr);
                 let o = &mut out[i * fb..];
                 let dith_on = needs_dither(dither_on, chain_touched, gain_cur, gate_cur);
                 let (dl_, dr_) = if dith_on { (dith[0].tpdf(), dith[1].tpdf()) } else { (0.0, 0.0) };
