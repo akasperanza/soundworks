@@ -560,5 +560,5 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("SIRADA", "UP NEXT", "ALS NÄCHSTES"),
     ("Tab: sözler / sıradakiler", "Tab: lyrics / up next", "Tab: Text / Als Nächstes"),
     ("Karıştırma açık: sıradaki parça belli değil", "Shuffle is on: the next track isn't known", "Zufallswiedergabe an: der nächste Titel steht nicht fest"),
-    ("Sıradakiler", "Up next", "Als Nächstes"),
+    ("Tam ekran (F11)", "Full screen (F11)", "Vollbild (F11)"),
 ];
