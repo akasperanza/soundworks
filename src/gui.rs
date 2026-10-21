@@ -334,6 +334,8 @@ pub struct App {
     meta: TrackMeta,
     cover_id: u64,
     cover_tex: Option<TextureHandle>,
+    /// başlıktaki "Soundworks" kelime işareti (vektörden, 4 kat çözünürlükte çizilir)
+    wordmark_tex: Option<(TextureHandle, f32)>,
     cover_t0: Instant,
     tint: Color32,
     tint_target: Color32,
@@ -523,6 +525,10 @@ impl App {
             meta: TrackMeta::default(),
             cover_id: 0,
             cover_tex: None,
+            wordmark_tex: {
+                let (px, w, h) = crate::appicon::wordmark_rgba(72);
+                (w > 0).then(|| (ctx.load_texture("wordmark", ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px), TextureOptions::LINEAR), w as f32 / h as f32))
+            },
             cover_t0: Instant::now(),
             tint: BLUE,
             tint_target: BLUE,

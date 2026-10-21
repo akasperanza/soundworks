@@ -22,6 +22,28 @@ pub fn rgba(size: u32) -> Vec<u8> {
         .collect()
 }
 
+/// Başlıktaki "Soundworks" kelime işareti (`assets/icon/wordmark.svg`, Barlow SemiBold ana hatları, beyaz).
+const WORDMARK_SVG: &str = include_str!("../assets/icon/wordmark.svg");
+
+/// Kelime işaretini `height` piksel yüksekliğinde çizer; (RGBA, genişlik, yükseklik). En/boy oranı SVG'den gelir.
+pub fn wordmark_rgba(height: u32) -> (Vec<u8>, u32, u32) {
+    let Ok(tree) = resvg::usvg::Tree::from_str(WORDMARK_SVG, &resvg::usvg::Options::default()) else { return (vec![], 0, 0) };
+    let size = tree.size();
+    let k = height as f32 / size.height();
+    let w = (size.width() * k).ceil().max(1.0) as u32;
+    let mut pix = resvg::tiny_skia::Pixmap::new(w, height).expect("pixmap");
+    resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(k, k), &mut pix.as_mut());
+    let px = pix
+        .pixels()
+        .iter()
+        .flat_map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect();
+    (px, w, height)
+}
+
 /// Pencere ve görev çubuğu simgesi.
 pub fn window_icon() -> eframe::egui::IconData {
     eframe::egui::IconData { rgba: rgba(256), width: 256, height: 256 }
@@ -78,8 +100,13 @@ mod tests {
         let mut x = 0.0f32;
         let mut d = String::new();
         let (mut top, mut bottom) = (f32::MAX, f32::MIN);
+        let mut prev: Option<ab_glyph::GlyphId> = None;
         for ch in text.chars() {
             let id = font.glyph_id(ch);
+            if let Some(p) = prev {
+                x += sf.kern(p, id);
+            }
+            prev = Some(id);
             if let Some(o) = font.outline(id) {
                 let k = em / font.height_unscaled();
                 let pt = |p: ab_glyph::Point| (x + p.x * k, -p.y * k);
@@ -138,5 +165,31 @@ mod tests {
             r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><defs><linearGradient id="g" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#2B3F72"/><stop offset="0.55" stop-color="#121B34"/><stop offset="1" stop-color="#090D1A"/></linearGradient><linearGradient id="t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#9DB9F2"/></linearGradient><linearGradient id="h" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient></defs><rect width="256" height="256" rx="58" fill="url(#g)"/><rect x="1.5" y="1.5" width="253" height="253" rx="56.5" fill="none" stroke="url(#h)" stroke-width="3"/><path transform="translate({tx:.2} {ty:.2})" d="{path}" fill="url(#t)" stroke="url(#t)" stroke-width="1.5" stroke-linejoin="round"/></svg>"##
         );
         std::fs::write(dir.join("icon.svg"), svg).unwrap();
+    }
+
+    /// Kelime işareti SVG'sini üretir: `ICON_FONT=<Barlow-SemiBold.ttf> cargo test --release build_wordmark_svg -- --ignored`
+    #[test]
+    #[ignore]
+    fn build_wordmark_svg() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("icon");
+        let em = 100.0;
+        let (path, w, _h) = glyph_path(&std::env::var("ICON_FONT").expect("ICON_FONT=<Barlow-SemiBold.ttf yolu>"), "Soundworks", em);
+        // taban çizgisi y=0; büyük harf ve "d" yüksekliği yaklaşık 0.72 em; "Soundworks" alt uzantı içermez
+        let (top, h) = (-em * 0.74, em * 0.74 + 2.0);
+        let svg = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 {top:.2} {w:.2} {h:.2}" width="{w:.2}" height="{h:.2}"><path d="{path}" fill="#F2F5FB"/></svg>"##
+        );
+        std::fs::write(dir.join("wordmark.svg"), svg).unwrap();
+    }
+
+    #[test]
+    fn wordmark_renders_light_text_on_transparent_background() {
+        let (px, w, h) = wordmark_rgba(40);
+        assert_eq!(h, 40);
+        assert!(w > 40, "kelime işareti yataydır: {w}");
+        assert_eq!(px.len(), (w * h * 4) as usize);
+        let opaque = px.chunks(4).filter(|p| p[3] > 200).count();
+        let transparent = px.chunks(4).filter(|p| p[3] == 0).count();
+        assert!(opaque > 0 && transparent > 0, "hem dolu hem şeffaf piksel olmalı");
     }
 }

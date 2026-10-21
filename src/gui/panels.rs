@@ -68,7 +68,15 @@ impl App {
                     left_end = ui.min_rect().right();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // uygulama adı her zaman en sağ köşede; motor ikonu (açıksa) onun soluna gelir
-                        ui.label(RichText::new("Soundworks").font(bold(17.0)));
+                        match &self.wordmark_tex {
+                            Some((t, aspect)) => {
+                                let h = 17.0;
+                                ui.add(egui::Image::new((t.id(), vec2(h * aspect, h))));
+                            }
+                            None => {
+                                ui.label(RichText::new("Soundworks").font(bold(17.0)));
+                            }
+                        }
                         ui.add_space(8.0);
                         let on = self.running.is_some();
                         // Yalnızca ikon: oynatıcı modunda motor zaten kendiliğinden yönetilir (Play'de başlar, boşta kalınca cihazı
