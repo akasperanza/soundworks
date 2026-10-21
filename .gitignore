@@ -2,5 +2,10 @@ target/
 target_dev/
 target_new/
 *.exe
-tools/.venv/
 __pycache__/
+*.bak
+*.tmp
+*.log
+.vscode/
+.idea/
+Thumbs.db
