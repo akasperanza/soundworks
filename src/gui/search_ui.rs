@@ -125,7 +125,7 @@ impl App {
                             draw_icon(ui.painter(), Icon::Search, ir.center(), 16.0, DIM);
                             let te = ui.add(
                                 egui::TextEdit::singleline(&mut self.search_query)
-                                    .hint_text("Sanatçı, albüm ya da parça ara…")
+                                    .hint_text_tr("Sanatçı, albüm ya da parça ara…")
                                     .font(body(18.0))
                                     .frame(false)
                                     .desired_width((w - 28.0 - 44.0).max(120.0)),

@@ -181,7 +181,7 @@ impl App {
                         None => {
                             ui.painter().circle_filled(c, r, BG2);
                             let initial: String = name.chars().next().map(|ch| ch.to_uppercase().to_string()).unwrap_or_default();
-                            ui.painter().text(c, Align2::CENTER_CENTER, initial, bold(40.0), alpha(DIM, 170));
+                            ui.painter().text_tr(c, Align2::CENTER_CENTER, initial, bold(40.0), alpha(DIM, 170));
                         }
                     }
                     if h > 0.0 {
@@ -241,7 +241,7 @@ impl App {
                 None => {
                     painter.rect_filled(rect, Rounding::same(12.0), BG2);
                     let initial: String = display.chars().next().map(|ch| ch.to_uppercase().to_string()).unwrap_or_default();
-                    painter.text(rect.center(), Align2::CENTER_CENTER, initial, bold(120.0), alpha(DIM, 60));
+                    painter.text_tr(rect.center(), Align2::CENTER_CENTER, initial, bold(120.0), alpha(DIM, 60));
                 }
             }
 
@@ -251,8 +251,8 @@ impl App {
                 Color32::from_rgba_unmultiplied(9, 13, 22, 0),
                 Color32::from_rgba_unmultiplied(9, 13, 22, 235),
             );
-            painter.text(pos2(rect.left() + 24.0, rect.bottom() - 62.0), Align2::LEFT_CENTER, &display, bold(40.0), Color32::WHITE);
-            painter.text(
+            painter.text_tr(pos2(rect.left() + 24.0, rect.bottom() - 62.0), Align2::LEFT_CENTER, &display, bold(40.0), Color32::WHITE);
+            painter.text_tr(
                 pos2(rect.left() + 26.0, rect.bottom() - 26.0),
                 Align2::LEFT_CENTER,
                 format!("{} albüm · {} parça", album_ids.len(), tracks.len()),
@@ -268,7 +268,7 @@ impl App {
                     ""
                 };
                 if !msg.is_empty() {
-                    painter.text(rect.left_top() + vec2(20.0, 20.0), Align2::LEFT_CENTER, msg, body(12.0), DIM);
+                    painter.text_tr(rect.left_top() + vec2(20.0, 20.0), Align2::LEFT_CENTER, msg, body(12.0), DIM);
                 }
             }
             ui.add_space(12.0);
@@ -347,7 +347,7 @@ impl App {
                     let mut child = ui.child_ui(r, egui::Layout::left_to_right(egui::Align::Center), None);
                     playing_bars(&mut child, playing, vec2(14.0, 16.0));
                 } else {
-                    ui.painter().text(pos2(rect.left() + 16.0, rect.center().y), Align2::CENTER_CENTER, (i + 1).to_string(), body(12.5), DIM);
+                    ui.painter().text_tr(pos2(rect.left() + 16.0, rect.center().y), Align2::CENTER_CENTER, (i + 1).to_string(), body(12.5), DIM);
                 }
                 let tfont = if is_cur { bold(13.5) } else { body(13.5) };
                 let ty = rect.center().y - ttl_l.len() as f32 * lh_t * 0.5;
@@ -355,16 +355,16 @@ impl App {
                 let ay = rect.center().y - alb_l.len() as f32 * lh_a * 0.5;
                 draw_lines(ui.painter(), pos2(rect.right() - 90.0, ay), Align2::RIGHT_TOP, &alb_l, &af, DIM);
                 let d = t.duration as u64;
-                ui.painter().text(pos2(rect.right() - 12.0, rect.center().y), Align2::RIGHT_CENTER, format!("{}:{:02}", d / 60, d % 60), body(12.5), DIM);
+                ui.painter().text_tr(pos2(rect.right() - 12.0, rect.center().y), Align2::RIGHT_CENTER, format!("{}:{:02}", d / 60, d % 60), body(12.5), DIM);
                 ui.set_opacity(prev_op);
                 let tpath = PathBuf::from(&t.path);
                 let mut qreq: Option<bool> = None;
                 resp.context_menu(|ui| {
-                    if ui.button("Sıradaki olarak ekle").clicked() {
+                    if ui.button_tr("Sıradaki olarak ekle").clicked() {
                         qreq = Some(true);
                         ui.close_menu();
                     }
-                    if ui.button("Sıraya ekle").clicked() {
+                    if ui.button_tr("Sıraya ekle").clicked() {
                         qreq = Some(false);
                         ui.close_menu();
                     }

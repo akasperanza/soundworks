@@ -155,16 +155,16 @@ impl App {
                             }
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, Icon::Close, 30.0, false).on_hover_text("Kapat").clicked() {
+                            if icon_button(ui, Icon::Close, 30.0, false).on_hover_text_tr("Kapat").clicked() {
                                 close = true;
                             }
-                            if cached.is_some() && icon_button(ui, Icon::Undo, 30.0, false).on_hover_text("Yeniden dene").clicked() {
+                            if cached.is_some() && icon_button(ui, Icon::Undo, 30.0, false).on_hover_text_tr("Yeniden dene").clicked() {
                                 retry = true;
                             }
                             if let (Some(l), Some(k)) = (&cached, &key) {
                                 if l.found() && l.kind != "plain" {
                                     let shifted = self.cfg.lyr_offsets.contains_key(k);
-                                    let gear = icon_button(ui, Icon::Settings, 30.0, shifted).on_hover_text("Söz kayması");
+                                    let gear = icon_button(ui, Icon::Settings, 30.0, shifted).on_hover_text_tr("Söz kayması");
                                     self.lyric_offset_popup(ui, &gear, k);
                                 }
                             }
@@ -187,21 +187,21 @@ impl App {
                 let painter = ui.painter_at(rect);
                 match (&cached, known) {
                     (_, false) => {
-                        painter.text(rect.center(), Align2::CENTER_CENTER, "Bir şarkı çal; sözleri burada görünür.", body(14.0), DIM);
+                        painter.text_tr(rect.center(), Align2::CENTER_CENTER, "Bir şarkı çal; sözleri burada görünür.", body(14.0), DIM);
                     }
                     (None, true) => {
                         let failed = key.as_ref().map(|k| self.lyr_failed.contains(k)).unwrap_or(false);
                         if pending || !failed {
-                            painter.text(rect.center(), Align2::CENTER_CENTER, "Sözler aranıyor…", body(14.0), DIM);
+                            painter.text_tr(rect.center(), Align2::CENTER_CENTER, "Sözler aranıyor…", body(14.0), DIM);
                             ctx.request_repaint();
                         } else {
-                            painter.text(rect.center(), Align2::CENTER_CENTER, "Sözler alınamadı", bold(15.0), AMBER);
-                            painter.text(rect.center() + vec2(0.0, 24.0), Align2::CENTER_CENTER, "İnternet bağlantını kontrol et.", body(12.0), DIM);
+                            painter.text_tr(rect.center(), Align2::CENTER_CENTER, "Sözler alınamadı", bold(15.0), AMBER);
+                            painter.text_tr(rect.center() + vec2(0.0, 24.0), Align2::CENTER_CENTER, "İnternet bağlantını kontrol et.", body(12.0), DIM);
                         }
                     }
                     (Some(l), true) if !l.found() => {
-                        painter.text(rect.center(), Align2::CENTER_CENTER, "Bu şarkı için söz bulunamadı", bold(16.0), DIM);
-                        painter.text(rect.center() + vec2(0.0, 26.0), Align2::CENTER_CENTER, "Apple Music, BiniLyrics ve LRCLib arandı.", body(12.0), DIM);
+                        painter.text_tr(rect.center(), Align2::CENTER_CENTER, "Bu şarkı için söz bulunamadı", bold(16.0), DIM);
+                        painter.text_tr(rect.center() + vec2(0.0, 26.0), Align2::CENTER_CENTER, "Apple Music, BiniLyrics ve LRCLib arandı.", body(12.0), DIM);
                     }
                     (Some(l), true) => {
                         self.draw_lyrics(ctx, ui, &painter, rect, &resp, l, key.as_deref().unwrap_or(""));
@@ -243,9 +243,9 @@ impl App {
                 let edit = egui::DragValue::new(&mut secs)
                     .range(-10.0..=10.0)
                     .speed(0.01)
-                    .custom_formatter(|v, _| format!("{v:+.2} sn"))
-                    .custom_parser(|s| s.trim().trim_end_matches("sn").trim().replace(',', ".").parse::<f64>().ok());
-                if ui.add(edit).on_hover_text("Tıklayıp yaz (ör. -2,35) ya da sürükle").changed() {
+                    .custom_formatter(|v, _| format!("{v:+.2} {}", crate::i18n::tr("sn")))
+                    .custom_parser(|s| s.trim().trim_end_matches(|c| c == 's' || c == 'n').trim().replace(',', ".").parse::<f64>().ok());
+                if ui.add(edit).on_hover_text_tr("Tıklayıp yaz (ör. -2,35) ya da sürükle").changed() {
                     next = (secs * 1000.0).round() as i32;
                 }
                 if pill_button(ui, "+", None, false).is_pointer_button_down_on() {

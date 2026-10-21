@@ -60,7 +60,7 @@ impl App {
                 ui.label(RichText::new("Hedef cihaz").font(body(12.5)).color(DIM));
                 ui.horizontal(|ui| {
                     Self::device_combo(ui, "to", &self.devices, &mut self.cfg.to, "Windows varsayılan çıkışı", 44.0);
-                    if icon_button(ui, Icon::Undo, 28.0, false).on_hover_text("Cihazları yenile").clicked() {
+                    if icon_button(ui, Icon::Undo, 28.0, false).on_hover_text_tr("Cihazları yenile").clicked() {
                         self.devices = engine::list_devices().unwrap_or_default();
                     }
                 });
@@ -211,7 +211,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("{done}/{total} albüm işlendi")).font(body(12.5)).color(DIM));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if pill_button(ui, "Yeniden çek", Some(Icon::Undo), false).on_hover_text("Tüm albümlerin türünü silip baştan alır").clicked() {
+                    if pill_button(ui, "Yeniden çek", Some(Icon::Undo), false).on_hover_text_tr("Tüm albümlerin türünü silip baştan alır").clicked() {
                         for a in self.lib.albums.iter_mut() {
                             a.genre.clear();
                             a.genre_checked = false;
@@ -270,6 +270,17 @@ impl App {
             ui.label(RichText::new("Arayüz boyutu").font(body(14.5)).color(Color32::WHITE));
             ui.label(RichText::new("Otomatik, Windows ekran ölçeğine göre seçer").font(body(12.0)).color(DIM));
             ui.add_space(4.0);
+            let mut lang = crate::i18n::get();
+            let before = lang;
+            ui.label(RichText::new("Dil").font(body(14.5)).color(Color32::WHITE));
+            ui.add_space(4.0);
+            let items: Vec<(crate::i18n::Lang, &str, Option<Icon>)> = crate::i18n::Lang::ALL.iter().map(|l| (*l, l.native_name(), None)).collect();
+            segmented(ui, &mut lang, &items);
+            if lang != before {
+                crate::i18n::set(lang);
+                self.cfg.lang = Some(lang.code().to_string());
+            }
+            ui.add_space(10.0);
             segmented(ui, &mut self.cfg.ui_zoom, &[(0, "Otomatik", None), (70, "%70", None), (80, "%80", None), (90, "%90", None), (100, "%100", None), (115, "%115", None)]);
         });
         ui.add_space(10.0);
@@ -287,10 +298,10 @@ impl App {
                 .unwrap_or_else(|| "Kayıtlı cihaz (bağlı değil)".to_string()),
         };
         let w = (ui.available_width() - reserve - 8.0).clamp(180.0, 620.0);
-        egui::ComboBox::from_id_salt(id).width(w).selected_text(shown).show_ui(ui, |ui| {
-            ui.selectable_value(value, None, none_label);
+        egui::ComboBox::from_id_salt(id).width(w).selected_text_tr(shown).show_ui(ui, |ui| {
+            ui.selectable_value_tr(value, None, none_label);
             for d in devices {
-                ui.selectable_value(value, Some(d.id.clone()), &d.name);
+                ui.selectable_value_tr(value, Some(d.id.clone()), &d.name);
             }
         });
     }

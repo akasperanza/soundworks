@@ -78,12 +78,12 @@ fn draw_curve(ui: &mut egui::Ui, size: Vec2, curve: &[f64]) {
         let y = y_of(db);
         let strong = k == 0.0;
         p.line_segment([pos2(inner.left(), y), pos2(inner.right(), y)], Stroke::new(1.0, alpha(Color32::WHITE, if strong { 36 } else { 12 })));
-        p.text(pos2(rect.left() + 6.0, y), Align2::LEFT_CENTER, format!("{db:+.0}"), body(10.0), alpha(DIM, 200));
+        p.text_tr(pos2(rect.left() + 6.0, y), Align2::LEFT_CENTER, format!("{db:+.0}"), body(10.0), alpha(DIM, 200));
     }
     for (f, label) in [(100.0f32, "100"), (1000.0, "1k"), (10000.0, "10k")] {
         let x = inner.left() + (f / 20.0).log10() / 3.0 * inner.width();
         p.line_segment([pos2(x, inner.top()), pos2(x, inner.bottom())], Stroke::new(1.0, alpha(Color32::WHITE, 12)));
-        p.text(pos2(x, rect.bottom() - 2.0), Align2::CENTER_BOTTOM, label, body(10.0), alpha(DIM, 200));
+        p.text_tr(pos2(x, rect.bottom() - 2.0), Align2::CENTER_BOTTOM, label, body(10.0), alpha(DIM, 200));
     }
     if curve.len() > 1 {
         let n = curve.len();
@@ -261,7 +261,7 @@ impl App {
                             ui.label(RichText::new("AutoEQ").font(bold(18.0)).color(Color32::WHITE));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, Icon::Close, 30.0, false).on_hover_text("Kapat (Esc)").clicked() {
+                            if icon_button(ui, Icon::Close, 30.0, false).on_hover_text_tr("Kapat (Esc)").clicked() {
                                 act = Some(Act::Close);
                             }
                         });
@@ -278,7 +278,7 @@ impl App {
                                 draw_icon(ui.painter(), Icon::Search, ir.center(), 15.0, DIM);
                                 let te = ui.add(
                                     egui::TextEdit::singleline(&mut self.ae.query)
-                                        .hint_text("Kulaklık adı (ör. MOMENTUM 4, HD 600, WH-1000XM5)")
+                                        .hint_text_tr("Kulaklık adı (ör. MOMENTUM 4, HD 600, WH-1000XM5)")
                                         .font(body(15.0))
                                         .frame(false)
                                         .desired_width((field_w - 24.0 - 60.0).max(80.0)),
@@ -289,7 +289,7 @@ impl App {
                                 }
                                 if !self.ae.query.is_empty() {
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        if icon_button(ui, Icon::Close, 22.0, false).on_hover_text("Temizle").clicked() {
+                                        if icon_button(ui, Icon::Close, 22.0, false).on_hover_text_tr("Temizle").clicked() {
                                             self.ae.query.clear();
                                             self.ae.focus = true;
                                         }
@@ -299,7 +299,7 @@ impl App {
                         });
                         let dq = self.ae_device_query();
                         let tip = if dq.is_empty() { "Çıkış cihazının adıyla ara".to_string() } else { format!("Çıkış cihazımın adını yaz: {dq}") };
-                        if icon_button(ui, Icon::Headphones, 36.0, false).on_hover_text(tip).clicked() {
+                        if icon_button(ui, Icon::Headphones, 36.0, false).on_hover_text_tr(tip).clicked() {
                             act = Some(Act::Device);
                         }
                     });
@@ -316,7 +316,7 @@ impl App {
                                     ui.add_space(60.0);
                                     ui.vertical_centered(|ui| {
                                         let dots = ".".repeat(1 + (self.ae.t0.elapsed().as_secs_f32() * 2.5) as usize % 3);
-                                        ui.label(RichText::new(format!("Profil listesi indiriliyor{dots}")).font(bold(14.0)).color(TEXT));
+                                        ui.label(RichText::new(format!("{}{dots}", crate::i18n::tr("Profil listesi indiriliyor"))).font(bold(14.0)).color(TEXT));
                                     });
                                 }
                                 IndexState::Failed(msg) => {
@@ -353,9 +353,9 @@ impl App {
                                                     ui.painter().rect_filled(Rect::from_min_size(rect.min + vec2(0.0, 8.0), vec2(3.0, rect.height() - 16.0)), Rounding::same(2.0), BLUE);
                                                 }
                                                 let name = fit_text(ui.painter(), &en.name, bold(13.5), rect.width() - 28.0);
-                                                ui.painter().text(pos2(rect.left() + 14.0, rect.top() + 17.0), Align2::LEFT_CENTER, name, bold(13.5), Color32::WHITE);
+                                                ui.painter().text_tr(pos2(rect.left() + 14.0, rect.top() + 17.0), Align2::LEFT_CENTER, name, bold(13.5), Color32::WHITE);
                                                 let sub = fit_text(ui.painter(), &chip_text(en), body(11.5), rect.width() - 28.0);
-                                                ui.painter().text(pos2(rect.left() + 14.0, rect.top() + 36.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
+                                                ui.painter().text_tr(pos2(rect.left() + 14.0, rect.top() + 36.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
                                                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                                     clicked = Some(*idx);
                                                 }
@@ -424,7 +424,7 @@ impl App {
                                                 act = Some(Act::Listen(false));
                                             }
                                         } else if running {
-                                            if pill_button(ui, "Dinleyerek dene", Some(Icon::Headphones), false).on_hover_text("Profili çalan müziğe geçici uygular; kaydetmeden geri alabilirsin").clicked() {
+                                            if pill_button(ui, "Dinleyerek dene", Some(Icon::Headphones), false).on_hover_text_tr("Profili çalan müziğe geçici uygular; kaydetmeden geri alabilirsin").clicked() {
                                                 act = Some(Act::Listen(true));
                                             }
                                         } else {
@@ -446,7 +446,7 @@ impl App {
                         let status = match &state {
                             IndexState::Ready { cached } => {
                                 let src = if *cached { "yerel kopya" } else { "güncel" };
-                                format!("{} profil · {}{}", crate::proof::group(total as u64), src, if refreshing { " · yenileniyor…" } else { "" })
+                                format!("{} {} · {}{}", crate::proof::group(total as u64), crate::i18n::tr("profil"), crate::i18n::tr(src), crate::i18n::tr(if refreshing { " · yenileniyor…" } else { "" }))
                             }
                             _ => String::new(),
                         };

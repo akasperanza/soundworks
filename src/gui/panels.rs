@@ -81,7 +81,7 @@ impl App {
                         if self.cfg.show_engine_btn {
                             let what = if self.cfg.use_loopback { "Sistem DSP" } else { "Ses motoru" };
                             let tip = if on { format!("{what} açık: durdur (cihazı serbest bırakır)") } else { format!("{what} kapalı: başlat") };
-                            if icon_button(ui, Icon::Power, 34.0, on).on_hover_text(tip).clicked() {
+                            if icon_button(ui, Icon::Power, 34.0, on).on_hover_text_tr(tip).clicked() {
                                 if on {
                                     self.stop_async();
                                 } else {
@@ -92,7 +92,7 @@ impl App {
                         if self.cfg.use_loopback {
                             let (r, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
                             draw_icon(ui.painter(), Icon::Wave, r.center(), 15.0, if on { BLUE } else { DIM });
-                            resp.on_hover_text(if on { "Sistem sesi açık" } else { "Sistem sesi kapalı (motor durdu)" });
+                            resp.on_hover_text_tr(if on { "Sistem sesi açık" } else { "Sistem sesi kapalı (motor durdu)" });
                         }
                         let status = match &self.running {
                             Some(r) => {
@@ -136,13 +136,13 @@ impl App {
                     p.rect_filled(r, Rounding::same(16.0), lerp_color(BG2, BG3, h));
                     p.rect_stroke(r, Rounding::same(16.0), Stroke::new(1.0, lerp_color(STROKE, BLUE, a.max(h * 0.5))));
                     draw_icon(p, Icon::Search, pos2(r.left() + 20.0, r.center().y), 12.5, lerp_color(DIM, TEXT, h));
-                    p.text(pos2(r.left() + 38.0, r.center().y), Align2::LEFT_CENTER, if w >= 300.0 { "Sanatçı, albüm ya da parça ara" } else { "Ara…" }, body(13.0), lerp_color(DIM, TEXT, h * 0.6));
+                    p.text_tr(pos2(r.left() + 38.0, r.center().y), Align2::LEFT_CENTER, if w >= 300.0 { "Sanatçı, albüm ya da parça ara" } else { "Ara…" }, body(13.0), lerp_color(DIM, TEXT, h * 0.6));
                     if w > 280.0 {
                         let kr = Rect::from_center_size(pos2(r.right() - 24.0, r.center().y), vec2(30.0, 20.0));
                         p.rect_filled(kr, Rounding::same(5.0), alpha(BG3, 220));
-                        p.text(kr.center(), Align2::CENTER_CENTER, "F8", bold(10.5), DIM);
+                        p.text_tr(kr.center(), Align2::CENTER_CENTER, "F8", bold(10.5), DIM);
                     }
-                    if resp.on_hover_text("Shift+K  ·  F8").clicked() {
+                    if resp.on_hover_text_tr("Shift+K  ·  F8").clicked() {
                         if self.search_open {
                             self.search_open = false;
                         } else {
@@ -154,7 +154,7 @@ impl App {
                     let r = Rect::from_center_size(pos2(cx, rr.center().y), vec2(32.0, 32.0));
                     let resp = ui.interact(r, Id::new("search_box"), Sense::click());
                     draw_icon(ui.painter(), Icon::Search, r.center(), 14.0, if resp.hovered() { TEXT } else { DIM });
-                    if resp.on_hover_text("Ara (Shift+K · F8)").clicked() {
+                    if resp.on_hover_text_tr("Ara (Shift+K · F8)").clicked() {
                         self.open_search();
                     }
                 }
@@ -201,7 +201,7 @@ impl App {
             let hv = ui.ctx().animate_bool_with_time(resp.id, resp.hovered() || self.upload_sub, 0.1);
             ui.painter().rect_filled(row, Rounding::same(8.0), alpha(BLUE, (70.0 * hv) as u8));
             draw_icon(ui.painter(), Icon::Upload, pos2(row.left() + 20.0, row.center().y), 13.0, lerp_color(TEXT, Color32::WHITE, hv));
-            ui.painter().text(pos2(row.left() + 40.0, row.center().y), Align2::LEFT_CENTER, "Yükle", bold(14.0), Color32::WHITE);
+            ui.painter().text_tr(pos2(row.left() + 40.0, row.center().y), Align2::LEFT_CENTER, "Yükle", bold(14.0), Color32::WHITE);
             draw_icon(ui.painter(), Icon::ChevronRight, pos2(row.right() - 16.0, row.center().y), 12.0, lerp_color(DIM, Color32::WHITE, hv));
 
             let row2 = Rect::from_min_size(rect.min + vec2(6.0, 50.0), vec2(mw - 12.0, 44.0));
@@ -215,8 +215,8 @@ impl App {
             let hv2 = ui.ctx().animate_bool_with_time(resp2.id, resp2.hovered(), 0.1);
             ui.painter().rect_filled(row2, Rounding::same(8.0), alpha(BLUE, (70.0 * hv2) as u8));
             draw_icon(ui.painter(), Icon::Settings, pos2(row2.left() + 20.0, row2.center().y), 13.0, lerp_color(TEXT, Color32::WHITE, hv2));
-            ui.painter().text(pos2(row2.left() + 40.0, row2.center().y), Align2::LEFT_CENTER, "Ayarlar", bold(14.0), Color32::WHITE);
-            ui.painter().text(pos2(row2.right() - 12.0, row2.center().y), Align2::RIGHT_CENTER, "Ctrl+,", body(11.5), DIM);
+            ui.painter().text_tr(pos2(row2.left() + 40.0, row2.center().y), Align2::LEFT_CENTER, "Ayarlar", bold(14.0), Color32::WHITE);
+            ui.painter().text_tr(pos2(row2.right() - 12.0, row2.center().y), Align2::RIGHT_CENTER, "Ctrl+,", body(11.5), DIM);
         });
 
         if s > 0.001 {
@@ -247,8 +247,8 @@ impl App {
                         };
                         painter.rect_filled(r, Rounding::same(8.0), alpha(BLUE, (70.0 * hv) as u8));
                         draw_icon(&painter, *icon, pos2(r.left() + 18.0, r.center().y), 13.0, alpha(lerp_color(TEXT, Color32::WHITE, hv), a));
-                        painter.text(pos2(r.left() + 38.0, r.center().y - 7.0), Align2::LEFT_CENTER, *name, bold(13.5), alpha(Color32::WHITE, a));
-                        painter.text(pos2(r.left() + 38.0, r.center().y + 9.0), Align2::LEFT_CENTER, *sub, body(11.0), alpha(DIM, a));
+                        painter.text_tr(pos2(r.left() + 38.0, r.center().y - 7.0), Align2::LEFT_CENTER, *name, bold(13.5), alpha(Color32::WHITE, a));
+                        painter.text_tr(pos2(r.left() + 38.0, r.center().y + 9.0), Align2::LEFT_CENTER, *sub, body(11.0), alpha(DIM, a));
                     }
                 });
         }
@@ -332,7 +332,7 @@ impl App {
                     ui.add_space(8.0);
 
                     let sh = self.player.shuffle.load(Relaxed);
-                    if icon_button(ui, Icon::Shuffle, 30.0, sh).on_hover_text("Karıştır").clicked() {
+                    if icon_button(ui, Icon::Shuffle, 30.0, sh).on_hover_text_tr("Karıştır").clicked() {
                         self.player.shuffle.store(!sh, Relaxed);
                         self.cfg.shuffle = !sh;
                     }
@@ -349,7 +349,7 @@ impl App {
                     let all = self.player.repeat.load(Relaxed);
                     let one = self.player.repeat_one.load(Relaxed);
                     let (ric, tip) = if one { (Icon::Repeat1, "Tek parçayı tekrarla") } else if all { (Icon::Repeat, "Listeyi tekrarla") } else { (Icon::Repeat, "Tekrar kapalı") };
-                    if icon_button(ui, ric, 30.0, all || one).on_hover_text(tip).clicked() {
+                    if icon_button(ui, ric, 30.0, all || one).on_hover_text_tr(tip).clicked() {
                         let (na, no) = if !all && !one { (true, false) } else if all && !one { (false, true) } else { (false, false) };
                         self.player.repeat.store(na, Relaxed);
                         self.player.repeat_one.store(no, Relaxed);
@@ -404,7 +404,7 @@ impl App {
                         }
                     }
 
-                    let lb = icon_button(ui, Icon::Lyrics, 32.0, self.lyrics_open).on_hover_text("Sözler");
+                    let lb = icon_button(ui, Icon::Lyrics, 32.0, self.lyrics_open).on_hover_text_tr("Sözler");
                     if lb.clicked() {
                         self.lyrics_open = !self.lyrics_open;
                         if self.lyrics_open {
@@ -412,7 +412,7 @@ impl App {
                         }
                     }
                     self.proof_light(ui);
-                    let qb = icon_button(ui, Icon::List, 32.0, self.queue_open).on_hover_text("Kuyruk");
+                    let qb = icon_button(ui, Icon::List, 32.0, self.queue_open).on_hover_text_tr("Kuyruk");
                     if qb.clicked() {
                         self.queue_open = !self.queue_open;
                         if self.queue_open {
@@ -537,7 +537,7 @@ impl App {
         };
         let row = |ui: &mut egui::Ui, label: &str, unit: &str, v: Option<f32>, color: Color32, hint: &str| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(label).font(body(12.5)).color(DIM)).on_hover_text(hint);
+                ui.label(RichText::new(label).font(body(12.5)).color(DIM)).on_hover_text_tr(hint);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let txt = match v {
                         Some(x) => format!("{x:+.1} {unit}"),
@@ -672,7 +672,7 @@ impl App {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let on = !engine::EQ_OFF.load(Relaxed);
                         let tip = if on { "Ekolayzırı devre dışı bırakır; sinyal EQ'dan geçmez" } else { "Ekolayzırı yeniden açar" };
-                        if pill_button(ui, if on { "Ekolayzır açık" } else { "Ekolayzır kapalı" }, Some(Icon::Power), on).on_hover_text(tip).clicked() {
+                        if pill_button(ui, if on { "Ekolayzır açık" } else { "Ekolayzır kapalı" }, Some(Icon::Power), on).on_hover_text_tr(tip).clicked() {
                             engine::EQ_OFF.store(on, Relaxed);
                         }
 

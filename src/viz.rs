@@ -287,7 +287,7 @@ impl VizState {
         painter.line_segment([c + vec2(0.0, -r), c + vec2(0.0, r)], guide);
         painter.line_segment([c + vec2(-r, 0.0), c + vec2(r, 0.0)], guide);
         for (t, p) in [("L", vec2(-d - 10.0, -d - 8.0)), ("R", vec2(d + 10.0, -d - 8.0)), ("M", vec2(0.0, -r - 10.0))] {
-            painter.text(c + p, egui::Align2::CENTER_CENTER, t, bold(12.0), DIM);
+            painter.text_tr(c + p, egui::Align2::CENTER_CENTER, t, bold(12.0), DIM);
         }
         let max = self.scope.iter().fold(0.2f32, |m, (l, r)| m.max(l.abs()).max(r.abs()));
         let g = 0.9 / max.max(0.2);
@@ -315,9 +315,9 @@ impl VizState {
         let x = bar.center().x + self.corr.clamp(-1.0, 1.0) * bar.width() * 0.5;
         let col = if self.corr > 0.3 { GREEN } else if self.corr > -0.1 { AMBER } else { RED };
         painter.circle_filled(pos2(x, bar.center().y), 6.0, col);
-        painter.text(pos2(bar.left() - 8.0, bar.center().y), egui::Align2::RIGHT_CENTER, "-1", body(11.0), DIM);
-        painter.text(pos2(bar.right() + 8.0, bar.center().y), egui::Align2::LEFT_CENTER, "+1", body(11.0), DIM);
-        painter.text(
+        painter.text_tr(pos2(bar.left() - 8.0, bar.center().y), egui::Align2::RIGHT_CENTER, "-1", body(11.0), DIM);
+        painter.text_tr(pos2(bar.right() + 8.0, bar.center().y), egui::Align2::LEFT_CENTER, "+1", body(11.0), DIM);
+        painter.text_tr(
             pos2(bar.center().x, bar.top() - 9.0),
             egui::Align2::CENTER_CENTER,
             format!("Faz korelasyonu {:+.2}", self.corr),
@@ -337,7 +337,7 @@ impl VizState {
         let x0 = rect.left() + 34.0;
         for (ch, name) in ["L", "R"].iter().enumerate() {
             let x = x0 + ch as f32 * (bar_w + 10.0);
-            painter.text(pos2(x + bar_w * 0.5, rect.top() + 6.0), egui::Align2::CENTER_CENTER, *name, bold(11.5), DIM);
+            painter.text_tr(pos2(x + bar_w * 0.5, rect.top() + 6.0), egui::Align2::CENTER_CENTER, *name, bold(11.5), DIM);
             for s in 0..segs {
                 let db = -48.0 + 48.0 * (s as f32 + 0.5) / segs as f32;
                 let y1 = bottom - s as f32 * seg_h;
@@ -352,7 +352,7 @@ impl VizState {
 
         for db in [0, -6, -12, -24, -48] {
             let y = bottom - (db as f32 + 48.0) / 48.0 * (bottom - top);
-            painter.text(pos2(x0 - 6.0, y), egui::Align2::RIGHT_CENTER, format!("{db}"), body(10.0), DIM);
+            painter.text_tr(pos2(x0 - 6.0, y), egui::Align2::RIGHT_CENTER, format!("{db}"), body(10.0), DIM);
         }
 
         let led = pos2(rect.right() - 12.0, rect.top() + 6.0);
@@ -360,7 +360,7 @@ impl VizState {
             radial_glow(&painter, led, 12.0, alpha(RED, (180.0 * self.clip_flash) as u8));
         }
         painter.circle_filled(led, 4.0, lerp_color(alpha(RED, 60), RED, self.clip_flash));
-        painter.text(led + vec2(-8.0, 0.0), egui::Align2::RIGHT_CENTER, "CLIP", bold(9.5), lerp_color(DIM, RED, self.clip_flash));
+        painter.text_tr(led + vec2(-8.0, 0.0), egui::Align2::RIGHT_CENTER, "CLIP", bold(9.5), lerp_color(DIM, RED, self.clip_flash));
     }
 }
 
@@ -388,7 +388,7 @@ pub fn draw_freq_grid(painter: &Painter, rect: Rect) {
         painter.line_segment([pos2(fx(f), rect.top()), pos2(fx(f), rect.bottom())], Stroke::new(1.0, alpha(STROKE, 120)));
         if [50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 20000.0].contains(&f) {
             let l = if f >= 1000.0 { format!("{}k", f / 1000.0) } else { format!("{f}") };
-            painter.text(pos2(fx(f) + 4.0, rect.bottom() - 10.0), egui::Align2::LEFT_CENTER, l, body(10.5), DIM);
+            painter.text_tr(pos2(fx(f) + 4.0, rect.bottom() - 10.0), egui::Align2::LEFT_CENTER, l, body(10.5), DIM);
         }
     }
 }

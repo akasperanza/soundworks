@@ -103,7 +103,7 @@ impl App {
             ui.allocate_rect(r, Sense::click_and_drag());
             ui.painter().rect_filled(r, 0.0, Color32::from_black_alpha(170));
         });
-        egui::Window::new("DSD dosyası")
+        egui::Window::new(crate::i18n::tr("DSD dosyası"))
             .collapsible(false)
             .resizable(false)
             .order(egui::Order::Tooltip)
@@ -188,7 +188,7 @@ impl App {
                         if failed.is_none() && locked_pill_button(ui, "DoP ile çal", &format!("{:.0}", left.ceil()), left / DOP_LOCK_SECS).clicked() {
                             action = Some(1);
                         }
-                        if failed.is_none() && pill_button(ui, "DoP desteğini kontrol et", None, false).on_hover_text("DAC'a yalnızca DSD sessizliği gönderir (müzik yok)").clicked() {
+                        if failed.is_none() && pill_button(ui, "DoP desteğini kontrol et", None, false).on_hover_text_tr("DAC'a yalnızca DSD sessizliği gönderir (müzik yok)").clicked() {
                             action = Some(2);
                         }
                     });
@@ -238,7 +238,7 @@ impl App {
                     ui.allocate_ui(vec2(w, 0.0), |ui| {
                         ui.add(egui::Label::new(RichText::new(format!("{name} · {}", if mode == 1 { "DoP" } else { "PCM'e çevir" })).font(body(12.5)).color(TEXT)).wrap());
                     });
-                    if pill_button(ui, "Yeniden sor", Some(Icon::Undo), false).on_hover_text("Bu cihaz için bir sonraki DSD dosyasında tekrar sorulur").clicked() {
+                    if pill_button(ui, "Yeniden sor", Some(Icon::Undo), false).on_hover_text_tr("Bu cihaz için bir sonraki DSD dosyasında tekrar sorulur").clicked() {
                         reset = Some(id.clone());
                     }
                 });

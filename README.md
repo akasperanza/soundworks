@@ -20,6 +20,7 @@ Soundworks'ün çıkış noktası şu soru: *"Bit-perfect çalıyorum"* demek ko
 - Parametrik EQ (APO uyumlu ön ayarlar), A/B karşılaştırma, bant solo.
 - **AutoEQ mağazası:** kulaklık modelini ara (çıkış cihazının adından otomatik doldurulur), eğrisini gör, çalan müzikte geçici dinle, beğenirsen kaydet. Profiller [AutoEq](https://github.com/jaakkopasanen/AutoEq) projesinden (MIT) gelir.
 - **Otomatik EQ kuralları:** belirli bir şarkı, albüm ya da sanatçı çalınca ekolayzır seçtiğin ön ayara kendiliğinden geçer.
+- **Diller:** Türkçe, İngilizce ve Almanca. İlk açılışta Windows diline göre seçilir; Ayarlar > Uygulama > Görünüm'den değiştirilir.
 - Modül marketi: Limiter (true-peak), Kompresör, Stereo Genişlik, Kazanç, Filtre (HPF/LPF), Ton (bas/tiz), Loudness (ses seviyesine bağlı), ayarlanabilir Crossfeed.
 - Denge, mono.
 - ReplayGain (parça/albüm), canlı LUFS (momentary, short-term, integrated) ve gerçek tepe ölçümü.

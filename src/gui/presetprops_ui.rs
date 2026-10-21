@@ -274,7 +274,7 @@ impl App {
                 }
                 ui.add_space(10.0);
                 ui.label(RichText::new("Kulaklık / hoparlör").font(body(12.5)).color(DIM));
-                ui.add(egui::TextEdit::singleline(&mut st.data.meta.label).hint_text("ör. Sennheiser HD 600").desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
+                ui.add(egui::TextEdit::singleline(&mut st.data.meta.label).hint_text_tr("ör. Sennheiser HD 600").desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
                 ui.add_space(10.0);
                 ui.label(RichText::new("Not").font(body(12.5)).color(DIM));
                 ui.add(egui::TextEdit::multiline(&mut st.data.meta.note).desired_rows(3).desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
@@ -299,7 +299,7 @@ impl App {
                             }
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, Icon::Close, 24.0, false).on_hover_text("Kaldır").clicked() {
+                            if icon_button(ui, Icon::Close, 24.0, false).on_hover_text_tr("Kaldır").clicked() {
                                 remove = Some(i);
                             }
                         });
@@ -329,7 +329,7 @@ impl App {
                         let name = self.devices.iter().find(|d| d.id == id).map(|d| d.name.clone()).unwrap_or_default();
                         let already = st.data.rules.iter().any(|r| r.scope == RuleScope::Device && r.key == id);
                         ui.add_enabled_ui(!name.is_empty() && !already, |ui| {
-                            if pill_button(ui, "Bu çıkış cihazı", Some(Icon::Plus), false).on_hover_text(name.clone()).clicked() {
+                            if pill_button(ui, "Bu çıkış cihazı", Some(Icon::Plus), false).on_hover_text_tr(name.clone()).clicked() {
                                 add = Some((RuleScope::Device, id.clone(), name.clone(), String::new()));
                             }
                         });
@@ -342,7 +342,7 @@ impl App {
                     &[(RuleScope::Track, "Şarkı", None), (RuleScope::Album, "Albüm", None), (RuleScope::Artist, "Sanatçı", None), (RuleScope::Device, "Cihaz", None)],
                 );
                 ui.add_space(6.0);
-                ui.add(egui::TextEdit::singleline(&mut st.query).hint_text(if st.scope == RuleScope::Device { "Cihaz ara…" } else { "Kütüphanede ara…" }).desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
+                ui.add(egui::TextEdit::singleline(&mut st.query).hint_text_tr(if st.scope == RuleScope::Device { "Cihaz ara…" } else { "Kütüphanede ara…" }).desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
                 for (k, l, s) in self.rule_candidates(st.scope, &st.query) {
                     if menu_row(ui, &l, &s, true).clicked() {
                         add = Some((st.scope, k, l, s));
@@ -432,7 +432,7 @@ impl App {
             ui.allocate_rect(r, Sense::click_and_drag());
             ui.painter().rect_filled(r, 0.0, Color32::from_black_alpha(170));
         });
-        egui::Window::new(if is_new { "Yeni ön ayar" } else { "Ön ayar özellikleri" })
+        egui::Window::new(crate::i18n::tr(if is_new { "Yeni ön ayar" } else { "Ön ayar özellikleri" }))
             .collapsible(false)
             .resizable(false)
             .order(egui::Order::Tooltip)

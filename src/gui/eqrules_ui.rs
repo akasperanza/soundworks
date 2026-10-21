@@ -126,7 +126,7 @@ pub(super) fn fit(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) ->
 pub(super) fn scope_badge(ui: &mut egui::Ui, scope: RuleScope) {
     let (rect, _) = ui.allocate_exact_size(vec2(64.0, 22.0), Sense::hover());
     ui.painter().rect_filled(rect, Rounding::same(6.0), alpha(scope.color(), 28));
-    ui.painter().text(rect.center(), Align2::CENTER_CENTER, scope.name(), bold(10.5), scope.color());
+    ui.painter().text_tr(rect.center(), Align2::CENTER_CENTER, scope.name(), bold(10.5), scope.color());
 }
 
 pub(super) fn menu_row(ui: &mut egui::Ui, title: &str, sub: &str, enabled: bool) -> egui::Response {
@@ -134,9 +134,9 @@ pub(super) fn menu_row(ui: &mut egui::Ui, title: &str, sub: &str, enabled: bool)
     let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered() && enabled, 0.1);
     ui.painter().rect_filled(rect, Rounding::same(8.0), alpha(BG3, (220.0 * h) as u8));
     let (c1, c2) = if enabled { (Color32::WHITE, DIM) } else { (alpha(DIM, 150), alpha(DIM, 110)) };
-    ui.painter().text(pos2(rect.left() + 12.0, rect.top() + 14.0), Align2::LEFT_CENTER, title, bold(13.0), c1);
+    ui.painter().text_tr(pos2(rect.left() + 12.0, rect.top() + 14.0), Align2::LEFT_CENTER, title, bold(13.0), c1);
     let sub = fit(ui.painter(), sub, body(11.5), rect.width() - 24.0);
-    ui.painter().text(pos2(rect.left() + 12.0, rect.top() + 30.0), Align2::LEFT_CENTER, sub, body(11.5), c2);
+    ui.painter().text_tr(pos2(rect.left() + 12.0, rect.top() + 30.0), Align2::LEFT_CENTER, sub, body(11.5), c2);
     resp
 }
 
@@ -228,7 +228,7 @@ impl App {
     pub(super) fn auto_eq_button(&mut self, ui: &mut egui::Ui) {
         let now = self.playing_identity();
         let active = self.rule_active.is_some();
-        let btn = pill_button(ui, "Otomatik", Some(Icon::Wave), active).on_hover_text("Bu EQ'yu çalan şarkı, albüm ya da sanatçı için otomatik kullan");
+        let btn = pill_button(ui, "Otomatik", Some(Icon::Wave), active).on_hover_text_tr("Bu EQ'yu çalan şarkı, albüm ya da sanatçı için otomatik kullan");
         let id = btn.id.with("auto_eq");
         if btn.clicked() {
             ui.memory_mut(|m| m.toggle_popup(id));
@@ -254,7 +254,7 @@ impl App {
                     if menu_row(ui, "Bu şarkı çalınca", &n.title, true).clicked() {
                         pick = Some(RuleScope::Track);
                     }
-                    if menu_row(ui, "Bu albüm çalınca", &n.album_title, n.album_key.is_some()).on_disabled_hover_text("Albüm kütüphanede değil").clicked() {
+                    if menu_row(ui, "Bu albüm çalınca", &n.album_title, n.album_key.is_some()).on_disabled_hover_text_tr("Albüm kütüphanede değil").clicked() {
                         pick = Some(RuleScope::Album);
                     }
                     if menu_row(ui, "Bu sanatçı çalınca", &n.artist, !n.artist.trim().is_empty()).clicked() {
@@ -294,7 +294,7 @@ impl App {
 
     pub(super) fn auto_eq_chip(&self, ui: &mut egui::Ui) {
         if let Some(r) = &self.rule_active {
-            chip(ui, &format!("OTOMATİK EQ · {}", r.scope.name()), GREEN).on_hover_text(format!("{} \"{}\" için {} ön ayarı uygulanıyor", r.scope.lower(), r.label, short_preset(&r.preset)));
+            chip(ui, &format!("OTOMATİK EQ · {}", r.scope.name()), GREEN).on_hover_text_tr(format!("{} \"{}\" için {} ön ayarı uygulanıyor", r.scope.lower(), r.label, short_preset(&r.preset)));
         }
     }
 
@@ -370,7 +370,7 @@ impl App {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     let (rect, _) = ui.allocate_exact_size(vec2(64.0, 22.0), Sense::hover());
                     ui.painter().rect_filled(rect, Rounding::same(6.0), alpha(r.scope.color(), 28));
-                    ui.painter().text(rect.center(), Align2::CENTER_CENTER, r.scope.name(), bold(10.5), r.scope.color());
+                    ui.painter().text_tr(rect.center(), Align2::CENTER_CENTER, r.scope.name(), bold(10.5), r.scope.color());
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.set_width((ui.available_width() - 250.0).max(120.0));
@@ -380,13 +380,13 @@ impl App {
                         }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_button(ui, Icon::Trash, 26.0, false).on_hover_text("Kuralı kaldır").clicked() {
+                        if icon_button(ui, Icon::Trash, 26.0, false).on_hover_text_tr("Kuralı kaldır").clicked() {
                             remove = Some(i);
                         }
                         let mut cur = r.preset.clone();
-                        egui::ComboBox::from_id_salt(("rule_preset", i)).width(190.0).selected_text(short_preset(&cur)).show_ui(ui, |ui| {
+                        egui::ComboBox::from_id_salt(("rule_preset", i)).width(190.0).selected_text_tr(short_preset(&cur)).show_ui(ui, |ui| {
                             for (val, name) in &choices {
-                                ui.selectable_value(&mut cur, val.clone(), name);
+                                ui.selectable_value_tr(&mut cur, val.clone(), name);
                             }
                         });
                         if cur != r.preset {
@@ -451,7 +451,7 @@ impl App {
                 None => {
                     ui.add(
                         egui::TextEdit::singleline(&mut f.query)
-                            .hint_text(format!("Kütüphanede {} ara…", f.scope.lower()))
+                            .hint_text_tr(format!("Kütüphanede {} ara…", f.scope.lower()))
                             .desired_width(ui.available_width())
                             .margin(vec2(10.0, 7.0)),
                     );
@@ -473,9 +473,9 @@ impl App {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.label(RichText::new("Kullanılacak EQ").font(body(12.5)).color(DIM));
-                egui::ComboBox::from_id_salt("rule_new_preset").width(200.0).selected_text(short_preset(&f.preset)).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("rule_new_preset").width(200.0).selected_text_tr(short_preset(&f.preset)).show_ui(ui, |ui| {
                     for (val, name) in choices {
-                        ui.selectable_value(&mut f.preset, val.clone(), name);
+                        ui.selectable_value_tr(&mut f.preset, val.clone(), name);
                     }
                 });
             });

@@ -76,9 +76,9 @@ pub(super) fn make_tray(ctx: &egui::Context) -> Option<(TrayIcon, CheckMenuItem)
 
     let icon = crate::appicon::tray_icon()?;
     let menu = Menu::new();
-    let show = MenuItem::new("Soundworks'ü göster", true, None);
-    let eq = CheckMenuItem::new("EQ açık", true, true, None);
-    let quit = MenuItem::new("Çıkış", true, None);
+    let show = MenuItem::new(crate::i18n::tr("Soundworks'ü göster"), true, None);
+    let eq = CheckMenuItem::new(crate::i18n::tr("EQ açık"), true, true, None);
+    let quit = MenuItem::new(match crate::i18n::get() { crate::i18n::Lang::Tr => "Çıkış", crate::i18n::Lang::En => "Quit", crate::i18n::Lang::De => "Beenden" }, true, None);
     menu.append_items(&[&show, &eq, &PredefinedMenuItem::separator(), &quit]).ok()?;
     let (show_id, eq_id, quit_id) = (show.id().clone(), eq.id().clone(), quit.id().clone());
     let tray = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("Soundworks").with_icon(icon).build().ok()?;

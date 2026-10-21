@@ -245,7 +245,7 @@ impl App {
         let mut focus = std::mem::take(&mut self.preset_q_focus);
         egui::popup_below_widget(ui, id, &btn, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
             ui.set_min_width(w.max(380.0));
-            let te = ui.add(egui::TextEdit::singleline(&mut q).hint_text("Ön ayar ara…").desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
+            let te = ui.add(egui::TextEdit::singleline(&mut q).hint_text_tr("Ön ayar ara…").desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
             if focus {
                 te.request_focus();
                 focus = false;
@@ -292,10 +292,10 @@ impl App {
                         let title = super::eqrules_ui::fit(ui.painter(), n.trim_end_matches(".txt"), bold(13.0), r.width() - 64.0);
                         let sub = meta.map(|m| if !m.label.is_empty() { m.label.clone() } else { m.source.clone() }).unwrap_or_default();
 
-                        ui.painter().text(pos2(r.left() + 14.0, r.top() + if sub.is_empty() { 22.0 } else { 15.0 }), Align2::LEFT_CENTER, title, bold(13.0), Color32::WHITE);
+                        ui.painter().text_tr(pos2(r.left() + 14.0, r.top() + if sub.is_empty() { 22.0 } else { 15.0 }), Align2::LEFT_CENTER, title, bold(13.0), Color32::WHITE);
                         if !sub.is_empty() {
                             let sub = super::eqrules_ui::fit(ui.painter(), &sub, body(11.5), r.width() - 64.0);
-                            ui.painter().text(pos2(r.left() + 14.0, r.top() + 31.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
+                            ui.painter().text_tr(pos2(r.left() + 14.0, r.top() + 31.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
                         }
 
                         let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(28.0, 28.0));
@@ -304,7 +304,7 @@ impl App {
                             draw_icon(ui.painter(), Icon::Settings, gear.center(), 15.0, if gresp.hovered() { Color32::WHITE } else { alpha(DIM, 220) });
                         }
                         let gear_clicked = gresp.clicked();
-                        gresp.on_hover_text("Özellikler");
+                        gresp.on_hover_text_tr("Özellikler");
                         if gear_clicked {
                             acts.props = Some((*n).clone());
                         } else if resp.clicked() {
@@ -312,15 +312,15 @@ impl App {
                             ui.memory_mut(|m| m.close_popup());
                         }
                         resp.context_menu(|ui| {
-                            if ui.button("Özellikler…").clicked() {
+                            if ui.button_tr("Özellikler…").clicked() {
                                 acts.props = Some((*n).clone());
                                 ui.close_menu();
                             }
-                            if ui.button("Kopya oluştur").clicked() {
+                            if ui.button_tr("Kopya oluştur").clicked() {
                                 acts.copy = Some((*n).clone());
                                 ui.close_menu();
                             }
-                            if ui.button("Sil").clicked() {
+                            if ui.button_tr("Sil").clicked() {
                                 acts.del = Some((*n).clone());
                                 ui.close_menu();
                             }
@@ -359,8 +359,8 @@ impl App {
         let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
         let bg = lerp_color(lerp_color(BG2, BG3, h), RED, t);
         ui.painter().rect_filled(rect, Rounding::same(8.0), bg);
-        ui.painter().text(pos2(rect.left() + 12.0, rect.center().y), Align2::LEFT_CENTER, "A/B", bold(13.0), Color32::WHITE);
-        ui.painter().text(
+        ui.painter().text_tr(pos2(rect.left() + 12.0, rect.center().y), Align2::LEFT_CENTER, "A/B", bold(13.0), Color32::WHITE);
+        ui.painter().text_tr(
             pos2(rect.right() - 12.0, rect.center().y),
             Align2::RIGHT_CENTER,
             if held { "EQ kapalı" } else { "basılı tut" },
@@ -389,7 +389,7 @@ impl App {
                 [pos2(rect.left(), gy(d)), pos2(rect.right(), gy(d))],
                 Stroke::new(1.0, if d == 0.0 { alpha(DIM, 90) } else { alpha(STROKE, 120) }),
             );
-            painter.text(pos2(rect.right() - 6.0, gy(d) - 8.0), Align2::RIGHT_CENTER, format!("{d:+.0}"), body(10.5), DIM);
+            painter.text_tr(pos2(rect.right() - 6.0, gy(d) - 8.0), Align2::RIGHT_CENTER, format!("{d:+.0}"), body(10.5), DIM);
         }
 
         self.viz.draw_spectrum(&painter, rect, self.cfg.viz_bars);
@@ -494,7 +494,7 @@ impl App {
                 painter.rect_filled(box_r, Rounding::same(6.0), alpha(BG0, 230));
                 painter.galley(pos2(x, rect.top() + 38.0), g, Color32::WHITE);
             } else {
-                painter.text(rect.center(), Align2::CENTER_CENTER, "Fareyi grafiğin üstüne getir ya da bir bant seç", body(12.5), alpha(TEXT, 200));
+                painter.text_tr(rect.center(), Align2::CENTER_CENTER, "Fareyi grafiğin üstüne getir ya da bir bant seç", body(12.5), alpha(TEXT, 200));
             }
         }
         for (i, b) in self.preset.bands.iter().enumerate() {
@@ -516,10 +516,10 @@ impl App {
                 } else {
                     format!("#{} {} · {:.0} Hz · Q {:.2}", i + 1, b.kind.label(), b.freq, b.q)
                 };
-                painter.text(rect.left_top() + vec2(12.0, 12.0), Align2::LEFT_TOP, txt, bold(12.0), TEXT);
+                painter.text_tr(rect.left_top() + vec2(12.0, 12.0), Align2::LEFT_TOP, txt, bold(12.0), TEXT);
             }
         } else {
-            painter.text(
+            painter.text_tr(
                 rect.left_top() + vec2(12.0, 12.0),
                 Align2::LEFT_TOP,
                 "Sürükle: frekans/kazanç · Tekerlek: Q · Çift tık: ekle · Sağ tık: sil · S basılı: solo dinle",
@@ -545,17 +545,17 @@ impl App {
             ui.label(RichText::new(format!("tepe boost {:+.1} dB", boost)).font(body(12.0)).color(if boost + self.preset.preamp_db > 0.05 { AMBER } else { DIM }));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if pill_button(ui, "Solo", Some(Icon::Wave), self.solo_latch)
-                    .on_hover_text("S tuşunu basılı tutarak ya da bu düğmeyle: yalnızca seçili bandın bölgesini dinle (bant seçili değilse farenin üstündeki frekansı)")
+                    .on_hover_text_tr("S tuşunu basılı tutarak ya da bu düğmeyle: yalnızca seçili bandın bölgesini dinle (bant seçili değilse farenin üstündeki frekansı)")
                     .clicked()
                 {
                     self.solo_latch = !self.solo_latch;
                 }
-                if pill_button(ui, "Düzleştir", None, false).on_hover_text("Tüm kazançları 0 yap").clicked() {
+                if pill_button(ui, "Düzleştir", None, false).on_hover_text_tr("Tüm kazançları 0 yap").clicked() {
                     for b in &mut self.preset.bands {
                         b.gain_db = 0.0;
                     }
                 }
-                if pill_button(ui, "Oto preamp", None, false).on_hover_text("Kırpılmayı önleyen preamp").clicked() {
+                if pill_button(ui, "Oto preamp", None, false).on_hover_text_tr("Kırpılmayı önleyen preamp").clicked() {
                     self.preset.preamp_db = -((boost * 10.0).ceil() / 10.0);
                 }
             });
@@ -592,9 +592,9 @@ impl App {
                                     remove = Some(i);
                                 }
                             });
-                            egui::ComboBox::from_id_salt(("kind", i)).width(74.0).selected_text(b.kind.label()).show_ui(ui, |ui| {
+                            egui::ComboBox::from_id_salt(("kind", i)).width(74.0).selected_text_tr(b.kind.label()).show_ui(ui, |ui| {
                                 for k in FilterKind::ALL {
-                                    ui.selectable_value(&mut b.kind, k, k.label());
+                                    ui.selectable_value_tr(&mut b.kind, k, k.label());
                                 }
                             });
                             ui.spacing_mut().slider_width = 76.0;
@@ -615,7 +615,7 @@ impl App {
                 if self.preset.bands.len() < 32 {
                     ui.vertical(|ui| {
                         ui.add_space(60.0);
-                        if icon_button(ui, Icon::Plus, 36.0, false).on_hover_text("Bant ekle").clicked() {
+                        if icon_button(ui, Icon::Plus, 36.0, false).on_hover_text_tr("Bant ekle").clicked() {
                             self.preset.bands.push(Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 });
                             self.sel_band = Some(self.preset.bands.len() - 1);
                         }

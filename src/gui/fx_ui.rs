@@ -291,8 +291,8 @@ impl App {
                         let p = ui.painter();
                         p.rect_filled(rect, Rounding::same(12.0), lerp_color(BG1, BG3, h * 0.6));
                         draw_icon(p, icon, pos2(rect.center().x, rect.top() + 28.0), 17.0, SKY);
-                        p.text(pos2(rect.center().x, rect.top() + 56.0), Align2::CENTER_CENTER, fit(p, &title, bold(13.0), rect.width() - 12.0), bold(13.0), Color32::WHITE);
-                        p.text(pos2(rect.center().x, rect.top() + 75.0), Align2::CENTER_CENTER, fit(p, &sub, body(11.5), rect.width() - 12.0), body(11.5), DIM);
+                        p.text_tr(pos2(rect.center().x, rect.top() + 56.0), Align2::CENTER_CENTER, fit(p, &title, bold(13.0), rect.width() - 12.0), bold(13.0), Color32::WHITE);
+                        p.text_tr(pos2(rect.center().x, rect.top() + 75.0), Align2::CENTER_CENTER, fit(p, &sub, body(11.5), rect.width() - 12.0), body(11.5), DIM);
                         if *item == Item::Eq {
                             eq_rect = rect;
                             if resp.clicked() {
@@ -305,7 +305,7 @@ impl App {
                         let p = ui.painter();
                         p.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.4, if on { BLUE } else { alpha(DIM, 110) }));
                         p.rect_filled(rect, Rounding::same(12.0), if on { alpha(BLUE, 28) } else { Color32::TRANSPARENT });
-                        p.text(rect.center(), Align2::CENTER_CENTER, "Modülleri buraya sürükle", body(12.5), if on { SKY } else { DIM });
+                        p.text_tr(rect.center(), Align2::CENTER_CENTER, "Modülleri buraya sürükle", body(12.5), if on { SKY } else { DIM });
                     }
                     Item::Module(i) => {
                         let i = *i;
@@ -325,9 +325,9 @@ impl App {
                         }
                         p.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.2, if sel { BLUE } else { alpha(STROKE, 200) }));
                         fx_glyph(p, spec.kind, pos2(rect.left() + 28.0, rect.top() + 30.0), 26.0, alpha(if spec.enabled { SKY } else { DIM }, (255.0 * dim) as u8));
-                        p.text(pos2(rect.left() + 50.0, rect.top() + 24.0), Align2::LEFT_CENTER, fit(p, info.name, bold(13.5), nw - 60.0), bold(13.5), alpha(Color32::WHITE, (255.0 * dim) as u8));
-                        p.text(pos2(rect.left() + 50.0, rect.top() + 42.0), Align2::LEFT_CENTER, fit(p, info.tagline, body(11.5), nw - 60.0), body(11.5), alpha(DIM, (255.0 * dim) as u8));
-                        p.text(pos2(rect.left() + 16.0, rect.bottom() - 20.0), Align2::LEFT_CENTER, fit(p, &summary(spec), body(12.5), nw - 16.0 - 62.0), body(12.5), alpha(TEXT, (255.0 * dim) as u8));
+                        p.text_tr(pos2(rect.left() + 50.0, rect.top() + 24.0), Align2::LEFT_CENTER, fit(p, info.name, bold(13.5), nw - 60.0), bold(13.5), alpha(Color32::WHITE, (255.0 * dim) as u8));
+                        p.text_tr(pos2(rect.left() + 50.0, rect.top() + 42.0), Align2::LEFT_CENTER, fit(p, info.tagline, body(11.5), nw - 60.0), body(11.5), alpha(DIM, (255.0 * dim) as u8));
+                        p.text_tr(pos2(rect.left() + 16.0, rect.bottom() - 20.0), Align2::LEFT_CENTER, fit(p, &summary(spec), body(12.5), nw - 16.0 - 62.0), body(12.5), alpha(TEXT, (255.0 * dim) as u8));
 
                         let tr = Rect::from_center_size(pos2(rect.right() - 42.0, rect.bottom() - 20.0), vec2(26.0, 26.0));
                         let rr = Rect::from_center_size(pos2(rect.right() - 17.0, rect.bottom() - 20.0), vec2(26.0, 26.0));
@@ -337,7 +337,7 @@ impl App {
                         let rh = ui.ctx().animate_bool_with_time(rresp.id, rresp.hovered(), 0.1);
                         draw_icon(ui.painter(), Icon::Power, tr.center(), 11.5, lerp_color(if spec.enabled { SKY } else { DIM }, Color32::WHITE, th));
                         draw_icon(ui.painter(), Icon::Close, rr.center(), 10.5, lerp_color(DIM, RED, rh));
-                        tresp.clone().on_hover_text(if spec.enabled { "Devre dışı bırak" } else { "Etkinleştir" });
+                        tresp.clone().on_hover_text_tr(if spec.enabled { "Devre dışı bırak" } else { "Etkinleştir" });
                         if tresp.clicked() {
                             toggle = Some(i);
                         } else if rresp.clicked() {
@@ -450,15 +450,15 @@ impl App {
                 for (pi, pinfo) in info.params.iter().enumerate() {
                     ui.label(RichText::new(pinfo.name).font(body(13.5)).color(TEXT));
                     let mut v = self.cfg.chain[idx].params[pi].clamp(pinfo.min, pinfo.max);
-                    let suffix = if pinfo.unit == "%" { "%".to_string() } else { format!(" {}", pinfo.unit) };
+                    let suffix = if pinfo.unit == "%" { "%".to_string() } else { format!(" {}", crate::i18n::tr(pinfo.unit)) };
                     let mut slider = egui::Slider::new(&mut v, pinfo.min..=pinfo.max).fixed_decimals(pinfo.decimals).suffix(suffix);
 
                     let (min, max, dec, off) = (pinfo.min, pinfo.max, pinfo.decimals, pinfo.off);
-                    let unit = pinfo.unit;
+                    let unit = crate::i18n::tr(pinfo.unit);
                     if off != crate::fx::Off::No {
                         slider = slider.custom_formatter(move |x, _| match off {
-                            crate::fx::Off::AtMin(l) if x <= min as f64 => l.to_string(),
-                            crate::fx::Off::AtMax(l) if x >= max as f64 => l.to_string(),
+                            crate::fx::Off::AtMin(l) if x <= min as f64 => crate::i18n::tr(l),
+                            crate::fx::Off::AtMax(l) if x >= max as f64 => crate::i18n::tr(l),
                             _ => format!("{:.*} {}", dec, x, unit),
                         });
                     }
@@ -517,8 +517,8 @@ impl App {
                 fx_glyph(&p, info.kind, ir.center(), 30.0, SKY);
 
                 let tw = (rect.right() - 16.0 - 34.0 - 36.0) - (ir.right() + 14.0);
-                p.text(pos2(ir.right() + 14.0, rect.top() + 28.0), Align2::LEFT_CENTER, fit(&p, info.name, bold(14.5), tw), bold(14.5), Color32::WHITE);
-                p.text(pos2(ir.right() + 14.0, rect.top() + 47.0), Align2::LEFT_CENTER, fit(&p, info.tagline, body(12.0), tw), body(12.0), SKY);
+                p.text_tr(pos2(ir.right() + 14.0, rect.top() + 28.0), Align2::LEFT_CENTER, fit(&p, info.name, bold(14.5), tw), bold(14.5), Color32::WHITE);
+                p.text_tr(pos2(ir.right() + 14.0, rect.top() + 47.0), Align2::LEFT_CENTER, fit(&p, info.tagline, body(12.0), tw), body(12.0), SKY);
                 let g = p.layout(info.desc.to_string(), body(11.8), DIM, rect.width() - 32.0);
                 p.galley(pos2(rect.left() + 16.0, rect.top() + 72.0), g, DIM);
 
@@ -527,9 +527,9 @@ impl App {
                 let bh = ui.ctx().animate_bool_with_time(bresp.id, bresp.hovered(), 0.1);
                 ui.painter().rect_filled(br, Rounding::same(14.0), lerp_color(alpha(BLUE, 70), BLUE, bh));
                 draw_icon(ui.painter(), Icon::Plus, br.center(), 12.0, Color32::WHITE);
-                bresp.clone().on_hover_text("Zincirin sonuna ekle");
+                bresp.clone().on_hover_text_tr("Zincirin sonuna ekle");
                 if count > 0 {
-                    ui.painter().text(pos2(br.left() - 10.0, rect.top() + 28.0), Align2::RIGHT_CENTER, format!("×{count}"), body(11.5), DIM);
+                    ui.painter().text_tr(pos2(br.left() - 10.0, rect.top() + 28.0), Align2::RIGHT_CENTER, format!("×{count}"), body(11.5), DIM);
                 }
                 if bresp.clicked() {
                     add = Some(info.kind);
@@ -565,8 +565,8 @@ impl App {
                 pa.rect_filled(r, Rounding::same(12.0), alpha(BG3, 245));
                 pa.rect_stroke(r, Rounding::same(12.0), Stroke::new(1.4, BLUE));
                 fx_glyph(&pa, k, pos2(r.left() + 26.0, r.center().y), 24.0, SKY);
-                pa.text(pos2(r.left() + 48.0, r.center().y - 7.0), Align2::LEFT_CENTER, info.name, bold(13.0), Color32::WHITE);
-                pa.text(pos2(r.left() + 48.0, r.center().y + 10.0), Align2::LEFT_CENTER, info.tagline, body(11.0), DIM);
+                pa.text_tr(pos2(r.left() + 48.0, r.center().y - 7.0), Align2::LEFT_CENTER, info.name, bold(13.0), Color32::WHITE);
+                pa.text_tr(pos2(r.left() + 48.0, r.center().y + 10.0), Align2::LEFT_CENTER, info.tagline, body(11.0), DIM);
             }
         }
         ctx.set_cursor_icon(egui::CursorIcon::Grabbing);

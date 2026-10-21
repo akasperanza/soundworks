@@ -321,10 +321,12 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> egui::InnerRespon
 }
 
 pub fn section_label(ui: &mut Ui, text: &str) {
+    let text = &crate::i18n::tr(text);
     ui.label(egui::RichText::new(text.to_uppercase()).font(bold(11.0)).color(DIM));
 }
 
 pub fn chip(ui: &mut Ui, text: &str, color: Color32) -> Response {
+    let text = &crate::i18n::tr(text);
     let g = ui.painter().layout_no_wrap(text.to_string(), bold(11.0), color);
     let size = g.size() + vec2(12.0, 6.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
@@ -460,6 +462,7 @@ pub fn play_button(ui: &mut Ui, playing: bool, size: f32) -> Response {
 }
 
 pub fn pill_button(ui: &mut Ui, text: &str, icon: Option<Icon>, primary: bool) -> Response {
+    let text = &crate::i18n::tr(text);
     let g = ui.painter().layout_no_wrap(text.to_string(), if primary { bold(13.0) } else { body(13.5) }, TEXT);
     let icon_w = if icon.is_some() { 20.0 } else { 0.0 };
     let size = vec2(g.size().x + icon_w + 28.0, 32.0);
@@ -486,6 +489,7 @@ pub fn pill_button(ui: &mut Ui, text: &str, icon: Option<Icon>, primary: bool) -
 }
 
 pub fn locked_pill_button(ui: &mut Ui, text: &str, suffix: &str, locked: f32) -> Response {
+    let text = &crate::i18n::tr(text);
     let font = body(13.5);
 
     let wide = ui.painter().layout_no_wrap(format!("{text}  {suffix}"), font.clone(), TEXT);
@@ -506,6 +510,7 @@ pub fn locked_pill_button(ui: &mut Ui, text: &str, suffix: &str, locked: f32) ->
 }
 
 pub fn tab(ui: &mut Ui, text: &str, selected: bool) -> Response {
+    let text = &crate::i18n::tr(text);
     let g = ui.painter().layout_no_wrap(text.to_string(), body(14.5), TEXT);
     let size = vec2(g.size().x + 24.0, 32.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
@@ -540,6 +545,8 @@ pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
 }
 
 pub fn switch_row(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) -> bool {
+    let label = &crate::i18n::tr(label);
+    let hint = &crate::i18n::tr(hint);
     let mut changed = false;
     ui.horizontal(|ui| {
         changed = switch(ui, on).changed();
@@ -555,7 +562,7 @@ pub fn switch_row(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) -> bool {
 }
 
 pub fn view_switch<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &str)]) {
-    let gs: Vec<_> = items.iter().map(|(_, t)| ui.painter().layout_no_wrap(t.to_string(), bold(13.5), TEXT)).collect();
+    let gs: Vec<_> = items.iter().map(|(_, t)| ui.painter().layout_no_wrap(crate::i18n::tr(t), bold(13.5), TEXT)).collect();
     let ws: Vec<f32> = gs.iter().map(|g| g.size().x + 30.0).collect();
     let (rect, _) = ui.allocate_exact_size(vec2(ws.iter().sum::<f32>() + 6.0, 34.0), Sense::hover());
 
@@ -592,7 +599,7 @@ pub fn view_switch<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T,
 
 pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &str, Option<Icon>)]) {
     let mut total = 4.0;
-    let gs: Vec<_> = items.iter().map(|(_, t, _)| ui.painter().layout_no_wrap(t.to_string(), bold(12.0), TEXT)).collect();
+    let gs: Vec<_> = items.iter().map(|(_, t, _)| ui.painter().layout_no_wrap(crate::i18n::tr(t), bold(12.0), TEXT)).collect();
     for (g, (_, _, ic)) in gs.iter().zip(items) {
         total += g.size().x + 22.0 + if ic.is_some() { 18.0 } else { 0.0 };
     }
@@ -651,6 +658,7 @@ pub fn playing_bars(ui: &mut Ui, playing: bool, size: Vec2) {
 }
 
 pub fn toast(ctx: &Context, text: &str, age: f32) {
+    let text = &crate::i18n::tr(text);
     let a = if age < 0.15 { age / 0.15 } else if age > 2.4 { (2.8 - age) / 0.4 } else { 1.0 }.clamp(0.0, 1.0);
     egui::Area::new(Id::new("toast")).anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -70.0 + 8.0 * (1.0 - a))).interactable(false).show(ctx, |ui| {
         ui.set_opacity(a);
@@ -666,6 +674,7 @@ pub fn toast(ctx: &Context, text: &str, age: f32) {
 }
 
 pub fn tab_icon(ui: &mut Ui, text: &str, icon: Icon, selected: bool) -> Response {
+    let text = &crate::i18n::tr(text);
     let g = ui.painter().layout_no_wrap(text.to_string(), bold(14.0), TEXT);
     let size = vec2(g.size().x + 24.0 + 22.0, 32.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
@@ -692,6 +701,72 @@ pub fn appear(ctx: &Context, id: Id, delay: f32) -> f32 {
         ctx.request_repaint();
     }
     ease(t)
+}
+
+pub struct RichText;
+
+impl RichText {
+    pub fn new(text: impl Into<String>) -> egui::RichText {
+        egui::RichText::new(crate::i18n::tr(text.into()))
+    }
+}
+
+pub trait ResponseTr {
+    fn on_hover_text_tr(self, text: impl AsRef<str>) -> Self;
+    fn on_disabled_hover_text_tr(self, text: impl AsRef<str>) -> Self;
+}
+
+impl ResponseTr for Response {
+    fn on_hover_text_tr(self, text: impl AsRef<str>) -> Self {
+        self.on_hover_text(crate::i18n::tr(text))
+    }
+    fn on_disabled_hover_text_tr(self, text: impl AsRef<str>) -> Self {
+        self.on_disabled_hover_text(crate::i18n::tr(text))
+    }
+}
+
+pub trait TextEditTr {
+    fn hint_text_tr(self, text: impl AsRef<str>) -> Self;
+}
+
+impl TextEditTr for egui::TextEdit<'_> {
+    fn hint_text_tr(self, text: impl AsRef<str>) -> Self {
+        self.hint_text(crate::i18n::tr(text))
+    }
+}
+
+pub trait ComboBoxTr {
+    fn selected_text_tr(self, text: impl AsRef<str>) -> Self;
+}
+
+impl ComboBoxTr for egui::ComboBox {
+    fn selected_text_tr(self, text: impl AsRef<str>) -> Self {
+        self.selected_text(crate::i18n::tr(text))
+    }
+}
+
+pub trait UiTr {
+    fn button_tr(&mut self, text: impl AsRef<str>) -> Response;
+    fn selectable_value_tr<V: PartialEq>(&mut self, current: &mut V, selected: V, text: impl AsRef<str>) -> Response;
+}
+
+impl UiTr for Ui {
+    fn button_tr(&mut self, text: impl AsRef<str>) -> Response {
+        self.button(crate::i18n::tr(text))
+    }
+    fn selectable_value_tr<V: PartialEq>(&mut self, current: &mut V, selected: V, text: impl AsRef<str>) -> Response {
+        self.selectable_value_tr(current, selected, crate::i18n::tr(text))
+    }
+}
+
+pub trait PainterTr {
+    fn text_tr(&self, pos: Pos2, anchor: egui::Align2, text: impl ToString, font: egui::FontId, color: Color32) -> Rect;
+}
+
+impl PainterTr for Painter {
+    fn text_tr(&self, pos: Pos2, anchor: egui::Align2, text: impl ToString, font: egui::FontId, color: Color32) -> Rect {
+        self.text(pos, anchor, crate::i18n::tr(text.to_string()), font, color)
+    }
 }
 
 #[cfg(test)]

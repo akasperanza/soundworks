@@ -227,7 +227,7 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if scanning.is_none() && pill_button(ui, "Yeniden tara", Some(Icon::Undo), false)
-                    .on_hover_text("Dosyaların hâlâ yerinde olup olmadığına bakar ve izlenen klasörlerdeki yeni dosyaları ekler")
+                    .on_hover_text_tr("Dosyaların hâlâ yerinde olup olmadığına bakar ve izlenen klasörlerdeki yeni dosyaları ekler")
                     .clicked()
                 {
                     self.rescan_library(true);
@@ -235,7 +235,7 @@ impl App {
                 }
                 if !self.lib_missing.is_empty() {
                     let label = format!("Eksikleri temizle ({})", self.lib_missing.len());
-                    if pill_button(ui, &label, Some(Icon::Trash), false).on_hover_text("Diskte bulunamayan parçaları kütüphaneden çıkarır").clicked() {
+                    if pill_button(ui, &label, Some(Icon::Trash), false).on_hover_text_tr("Diskte bulunamayan parçaları kütüphaneden çıkarır").clicked() {
                         self.clean_missing();
                     }
                 }
@@ -280,21 +280,21 @@ impl App {
             ui.spacing_mut().item_spacing.x = 10.0;
             ui.spacing_mut().interact_size.y = 34.0;
             let hint = if tab == 0 { "Albüm ya da sanatçı filtrele…" } else { "Sanatçı filtrele…" };
-            ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text(hint).desired_width(230.0).margin(vec2(10.0, 7.0)));
+            ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text_tr(hint).desired_width(230.0).margin(vec2(10.0, 7.0)));
             if !genres.is_empty() {
                 let shown = self.lib_genre.clone().unwrap_or_else(|| "Tüm türler".to_string());
-                egui::ComboBox::from_id_salt("lib_genre").width(150.0).selected_text(shown).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.lib_genre, None, "Tüm türler");
+                egui::ComboBox::from_id_salt("lib_genre").width(150.0).selected_text_tr(shown).show_ui(ui, |ui| {
+                    ui.selectable_value_tr(&mut self.lib_genre, None, "Tüm türler");
                     for g in &genres {
-                        ui.selectable_value(&mut self.lib_genre, Some(g.clone()), g);
+                        ui.selectable_value_tr(&mut self.lib_genre, Some(g.clone()), g);
                     }
                 });
             }
             let names = if tab == 0 { ALBUM_SORTS } else { ARTIST_SORTS };
             let mut sort = self.lib_sort[tab];
-            egui::ComboBox::from_id_salt(("lib_sort", tab)).width(150.0).selected_text(format!("Sırala: {}", names[sort as usize % 4])).show_ui(ui, |ui| {
+            egui::ComboBox::from_id_salt(("lib_sort", tab)).width(150.0).selected_text_tr(format!("Sırala: {}", names[sort as usize % 4])).show_ui(ui, |ui| {
                 for (i, n) in names.iter().enumerate() {
-                    ui.selectable_value(&mut sort, i as u8, *n);
+                    ui.selectable_value_tr(&mut sort, i as u8, *n);
                 }
             });
             self.lib_sort[tab] = sort;
@@ -441,16 +441,16 @@ impl App {
         let album_paths = self.lib.albums[i].paths();
         let mut queue_req: Option<bool> = None;
         resp.context_menu(|ui| {
-            if ui.button("Sıradaki olarak ekle").clicked() {
+            if ui.button_tr("Sıradaki olarak ekle").clicked() {
                 queue_req = Some(true);
                 ui.close_menu();
             }
-            if ui.button("Sıraya ekle").clicked() {
+            if ui.button_tr("Sıraya ekle").clicked() {
                 queue_req = Some(false);
                 ui.close_menu();
             }
             ui.separator();
-            if ui.button("Kütüphaneden kaldır").clicked() {
+            if ui.button_tr("Kütüphaneden kaldır").clicked() {
                 remove = Some(key.clone());
                 ui.close_menu();
             }
@@ -684,14 +684,14 @@ impl App {
                             shuffle_play = true;
                         }
 
-                        let more = pill_button(ui, "···", None, false).on_hover_text("Diğer işlemler");
+                        let more = pill_button(ui, "···", None, false).on_hover_text_tr("Diğer işlemler");
                         let pid = more.id.with("more");
                         if more.clicked() {
                             ui.memory_mut(|m| m.toggle_popup(pid));
                         }
                         egui::popup_below_widget(ui, pid, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
                             ui.set_min_width(220.0);
-                            if ui.button("Kütüphaneden kaldır (dosyalar silinmez)").clicked() {
+                            if ui.button_tr("Kütüphaneden kaldır (dosyalar silinmez)").clicked() {
                                 remove = true;
                             }
                         });
@@ -743,12 +743,12 @@ impl App {
                 } else if h > 0.0 {
                     draw_icon(ui.painter(), Icon::Play, nc, 13.0, alpha(Color32::WHITE, (255.0 * h) as u8));
                 } else {
-                    ui.painter().text(nc, Align2::CENTER_CENTER, num, body(13.0), DIM);
+                    ui.painter().text_tr(nc, Align2::CENTER_CENTER, num, body(13.0), DIM);
                 }
                 let ty = rect.center().y - ttl_l.len() as f32 * lh_t * 0.5;
                 draw_lines(ui.painter(), pos2(rect.left() + 60.0 * sc, ty), Align2::LEFT_TOP, &ttl_l, &tfont, if is_missing { DIM } else if is_cur { Color32::WHITE } else { TEXT });
                 let d = t.duration as u64;
-                ui.painter().text(pos2(rect.right() - 18.0, rect.center().y), Align2::RIGHT_CENTER, format!("{}:{:02}", d / 60, d % 60), body(13.0 * sc), DIM);
+                ui.painter().text_tr(pos2(rect.right() - 18.0, rect.center().y), Align2::RIGHT_CENTER, format!("{}:{:02}", d / 60, d % 60), body(13.0 * sc), DIM);
                 ui.set_opacity(prev_op);
                 if resp.clicked() {
                     play_from = Some(i);
@@ -803,7 +803,7 @@ impl App {
                     ui.allocate_ui(vec2(w, 0.0), |ui| {
                         ui.add(egui::Label::new(RichText::new(&f).font(body(12.5)).color(TEXT)).wrap());
                     });
-                    if icon_button(ui, Icon::Trash, 26.0, false).on_hover_text("Listeden çıkar").clicked() {
+                    if icon_button(ui, Icon::Trash, 26.0, false).on_hover_text_tr("Listeden çıkar").clicked() {
                         remove = Some(f.clone());
                     }
                 });

@@ -75,7 +75,7 @@ impl App {
                         ui.label(RichText::new("Kuyruk").font(bold(18.0)).color(Color32::WHITE));
                         ui.label(RichText::new(format!("{} parça", list.len())).font(body(12.5)).color(DIM));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icon_button(ui, Icon::Close, 30.0, false).on_hover_text("Kapat").clicked() {
+                            if icon_button(ui, Icon::Close, 30.0, false).on_hover_text_tr("Kapat").clicked() {
                                 close = true;
                             }
                             if !list.is_empty() && pill_button(ui, "Temizle", Some(Icon::Trash), false).clicked() {
@@ -115,7 +115,7 @@ impl App {
                             } else if hov > 0.3 {
                                 draw_icon(ui.painter(), Icon::Play, nc, 12.0, alpha(Color32::WHITE, (255.0 * hov) as u8));
                             } else {
-                                ui.painter().text(nc, Align2::CENTER_CENTER, (i + 1).to_string(), body(12.5), DIM);
+                                ui.painter().text_tr(nc, Align2::CENTER_CENTER, (i + 1).to_string(), body(12.5), DIM);
                             }
                             let btn_w = if hov > 0.05 { 84.0 } else { 8.0 };
                             let tw = rect.width() - 46.0 - btn_w;

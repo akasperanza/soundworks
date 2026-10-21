@@ -20,6 +20,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 windows-core = "0.58"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
+  "Win32_Globalization",
   "Win32_Graphics_Dwm",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",

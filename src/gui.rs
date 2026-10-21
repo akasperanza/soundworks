@@ -11,7 +11,7 @@ use std::sync::mpsc::Receiver;
 use crate::ui::*;
 use crate::viz::{self, VizMode, VizState};
 use eframe::egui::{
-    self, pos2, vec2, Align2, Color32, ColorImage, Frame, Id, Margin, Rect, RichText, Rounding, Sense, Shape, Stroke,
+    self, pos2, vec2, Align2, Color32, ColorImage, Frame, Id, Margin, Rect, Rounding, Sense, Shape, Stroke,
     TextureHandle, TextureOptions,
 };
 use serde::{Deserialize, Serialize};
@@ -149,6 +149,8 @@ struct Config {
     lyr_offsets: BTreeMap<String, i32>,
 
     ui_zoom: u32,
+    #[serde(default)]
+    lang: Option<String>,
 
     dither: bool,
 
@@ -200,6 +202,7 @@ impl Default for Config {
             dsd_prefs: BTreeMap::new(),
             lyr_offsets: BTreeMap::new(),
             ui_zoom: 0,
+            lang: None,
             dither: true,
             chain: Vec::new(),
             eq_rules: Vec::new(),
@@ -480,6 +483,7 @@ impl App {
         if cfg.from.as_deref() == Some("__player__") {
             cfg.from = None;
         }
+        crate::i18n::set(cfg.lang.as_deref().and_then(crate::i18n::Lang::from_code).unwrap_or_else(crate::i18n::detect));
         let devices = engine::list_devices().unwrap_or_default();
 
         let migrated = engine::migrate_device_ref(&devices, &mut cfg.to) | engine::migrate_device_ref(&devices, &mut cfg.from);
@@ -732,6 +736,9 @@ impl App {
                 s.params = vec![w];
             }
         }
+        if let Some(l) = crate::devenv::dev_var("SW_LANG").ok().and_then(|v| crate::i18n::Lang::from_code(&v)) {
+            crate::i18n::set(l);
+        }
         if let Some(z) = crate::devenv::dev_var("SW_ZOOM").ok().and_then(|v| v.parse::<u32>().ok()) {
             app.cfg.ui_zoom = z;
         }
@@ -952,7 +959,7 @@ fn path_row(ui: &mut egui::Ui, title: &str, detail: &str, last: bool) {
         p.line_segment([pos2(x, rect.top() + 14.0), pos2(x, rect.bottom() + 4.0)], Stroke::new(1.0, STROKE));
     }
     p.circle_filled(pos2(x, rect.top() + 9.0), 3.0, SKY);
-    p.text(pos2(x + 14.0, rect.top() + 9.0), Align2::LEFT_CENTER, title, bold(12.0), TEXT);
+    p.text_tr(pos2(x + 14.0, rect.top() + 9.0), Align2::LEFT_CENTER, title, bold(12.0), TEXT);
     draw_lines(p, pos2(x + 14.0, rect.top() + 19.0), Align2::LEFT_TOP, &dl, &df, DIM);
 }
 
