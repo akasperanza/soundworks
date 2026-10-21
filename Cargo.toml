@@ -42,6 +42,12 @@ regex = "1"
 version = "0.4"
 optional = true
 
+[dev-dependencies]
+ab_glyph = "0.2"
+
+[build-dependencies]
+winres = "0.1"
+
 [features]
 # yalnızca doğrulama derlemesi: durum izi ve otomatik kapatma kancaları (`cargo build --features devtools`)
 devtools = ["dep:log"]

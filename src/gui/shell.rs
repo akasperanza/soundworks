@@ -37,7 +37,8 @@ pub fn run(start_hidden: bool) -> anyhow::Result<()> {
     let mut vp = egui::ViewportBuilder::default()
         .with_inner_size([1100.0, 690.0])
         .with_min_inner_size([820.0, 520.0])
-        .with_title("Soundworks");
+        .with_title("Soundworks")
+        .with_icon(std::sync::Arc::new(crate::appicon::window_icon()));
     if let Some(w) = crate::fsutil::read_json::<Config>(&config_path()).and_then(|c| c.win) {
         let [x, y, ww, hh, scale, maxed] = w;
         if ww >= 820.0 && hh >= 520.0 && window_on_screen(x, y, ww, hh, scale) {
@@ -75,29 +76,8 @@ pub fn run(start_hidden: bool) -> anyhow::Result<()> {
 }
 
 pub(super) fn make_tray(ctx: &egui::Context) -> Option<(TrayIcon, CheckMenuItem)> {
-    // 32x32 mavi yuvarlak kare + dalga
-    let n = 32usize;
-    let mut px = vec![0u8; n * n * 4];
-    for y in 0..n {
-        for x in 0..n {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            let (dx, dy) = ((fx - 16.0).abs() - 11.0, (fy - 16.0).abs() - 11.0);
-            let d = dx.max(0.0).hypot(dy.max(0.0)) + dx.max(dy).min(0.0) - 5.0;
-            if d < 0.0 {
-                let t = fy / n as f32;
-                let (r, g, b) = (40.0 + 20.0 * t, 110.0 + 40.0 * t, 235.0);
-                let wave = 16.0 + (fx / 32.0 * std::f32::consts::TAU * 1.5).sin() * 5.0 * (1.0 - ((fx - 16.0) / 16.0).abs() * 0.5);
-                let on = (fy - wave).abs() < 1.6 && fx > 5.0 && fx < 27.0;
-                let o = (y * n + x) * 4;
-                if on {
-                    px[o..o + 4].copy_from_slice(&[255, 255, 255, 255]);
-                } else {
-                    px[o..o + 4].copy_from_slice(&[r as u8, g as u8, b as u8, 255]);
-                }
-            }
-        }
-    }
-    let icon = tray_icon::Icon::from_rgba(px, n as u32, n as u32).ok()?;
+    // uygulama simgesiyle aynı çizim (SW monogramı)
+    let icon = crate::appicon::tray_icon()?;
     let menu = Menu::new();
     let show = MenuItem::new("Soundworks'ü göster", true, None);
     let eq = CheckMenuItem::new("EQ açık", true, true, None);

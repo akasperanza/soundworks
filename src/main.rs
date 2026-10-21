@@ -3,6 +3,7 @@ mod analyze;
 mod artist;
 mod autoeq;
 mod apo;
+mod appicon;
 mod biquad;
 mod devenv;
 mod dsd;
