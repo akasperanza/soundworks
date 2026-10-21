@@ -233,11 +233,11 @@ impl App {
             let identity = self.lyrics_identity();
             let key = identity.as_ref().map(|(t, a, _, _)| lyrics::key(a, t));
             let cached = key.as_ref().and_then(|k| self.lyr_cache.get(k)).cloned();
-            let lr = Rect::from_min_max(pos2(qx, content.top()), pos2(content.right(), content.bottom()));
+            let lr = Rect::from_min_max(pos2(qx, content.top() + 44.0), pos2(content.right(), content.bottom()));
             match (&cached, &key) {
                 (Some(l), Some(k)) if l.found() => {
                     let (l, k) = (l.clone(), k.clone());
-                    egui::Area::new(Id::new("ambient_lyrics")).order(egui::Order::Foreground).fixed_pos(lr.min).interactable(false).show(ctx, |ui| {
+                    egui::Area::new(Id::new("ambient_lyrics")).order(egui::Order::Tooltip).fixed_pos(lr.min).interactable(false).show(ctx, |ui| {
                         ui.set_opacity(e);
                         let (rect, resp) = ui.allocate_exact_size(lr.size(), Sense::hover());
                         let painter = ui.painter_at(rect);
