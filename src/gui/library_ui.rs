@@ -216,9 +216,6 @@ impl App {
         };
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 14.0;
-            let mut tab_v = self.lib_tab;
-            view_switch(ui, &mut tab_v, &[(0u8, "Albümler"), (1u8, "Sanatçılar")]);
-            self.lib_tab = tab_v;
             ui.label(
                 RichText::new(format!("{} albüm · {} parça", self.lib.albums.len(), self.lib.total_tracks()))
                     .font(body(13.5))
@@ -288,6 +285,7 @@ impl App {
         let active = !self.lib_q.trim().is_empty() || self.lib_genre.is_some();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
+            ui.spacing_mut().interact_size.y = 34.0; // kutu, menüler ve anahtar aynı yükseklikte
             let hint = if tab == 0 { "Albüm ya da sanatçı filtrele…" } else { "Sanatçı filtrele…" };
             ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text(hint).desired_width(230.0).margin(vec2(10.0, 7.0)));
             if !genres.is_empty() {
@@ -311,6 +309,12 @@ impl App {
                 self.lib_q.clear();
                 self.lib_genre = None;
             }
+            // görünüm anahtarı satırın sağ ucunda: filtre/tür/sıralama solda gruplu kalır
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut tab_v = self.lib_tab;
+                view_switch(ui, &mut tab_v, &[(0u8, "Albümler"), (1u8, "Sanatçılar")]);
+                self.lib_tab = tab_v;
+            });
         });
     }
 
