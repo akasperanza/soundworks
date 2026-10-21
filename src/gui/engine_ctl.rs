@@ -246,6 +246,27 @@ impl App {
         }
     }
 
+    /// Oynatıcı modunda motor boşta (duraklatıldı / liste bitti) kalırsa bir süre sonra kendiliğinden kapanır ve
+    /// (exclusive) cihazı diğer uygulamalara bırakır. Play'e basınca yeniden kendiliğinden başlar.
+    pub(super) fn tick_idle_release(&mut self) {
+        const IDLE_RELEASE: std::time::Duration = std::time::Duration::from_secs(30);
+        let idle = self.running.is_some()
+            && !self.cfg.use_loopback
+            && !self.player.playing.load(std::sync::atomic::Ordering::Relaxed)
+            && self.stopping.is_none()
+            && self.queued_start.is_none();
+        if !idle {
+            self.idle_since = None;
+            return;
+        }
+        let since = *self.idle_since.get_or_insert_with(Instant::now);
+        if since.elapsed() >= IDLE_RELEASE {
+            self.idle_since = None;
+            dev_trace("idle_release");
+            self.stop_async();
+        }
+    }
+
     /// Arka planda kapanan motor bitti mi? Bittiyse yönlendirmeyi geri alır, sıradaki başlatmayı yapar.
     pub(super) fn tick_stopping(&mut self) {
         if !self.stopping.as_ref().is_some_and(|h| h.is_finished()) {

@@ -438,7 +438,7 @@ impl App {
                                                 act = Some(Act::Listen(true));
                                             }
                                         } else {
-                                            ui.label(RichText::new("Motoru başlatınca dinleyerek deneyebilirsin.").font(body(12.0)).color(DIM));
+                                            ui.label(RichText::new("Müzik çalarken dinleyerek deneyebilirsin.").font(body(12.0)).color(DIM));
                                         }
                                         ui.add_space(10.0);
                                         if pill_button(ui, "Kaydet ve kullan", Some(Icon::Save), true).clicked() {

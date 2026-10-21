@@ -10,6 +10,10 @@ impl App {
             .show(ctx, |ui| {
                 self.paint_glow(ui, inner);
                 ui.set_opacity(fade);
+                // Oynatıcı modunda motor boştaysa (çalmıyor) Ayarlar açılırken hemen bırakılır: kilit yalnızca çalarken vardır
+                if !self.cfg.use_loopback && self.running.is_some() && !self.player.playing.load(Relaxed) {
+                    self.stop_async();
+                }
                 let running = self.running.is_some();
                 let cfg_before = self.cfg.clone();
                 let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
@@ -22,7 +26,8 @@ impl App {
                         ui.label(RichText::new("Ayarlar").font(bold(20.0)));
                         if running {
                             ui.add_space(10.0);
-                            ui.label(RichText::new("Motor çalışırken kaynak ve çıkış ayarları kilitli").font(body(12.5)).color(AMBER));
+                            let msg = if self.cfg.use_loopback { "Sistem DSP çalışırken kaynak ve çıkış ayarları kilitli" } else { "Çalarken kaynak ve çıkış ayarları kilitli" };
+                            ui.label(RichText::new(msg).font(body(12.5)).color(AMBER));
                         }
                     });
                     ui.set_max_width(ui.available_width().min(780.0));
@@ -226,8 +231,10 @@ impl App {
                 self.cfg.level_match_off = !lm;
             }
             ui.add_space(4.0);
-            switch_row(ui, "Açılışta motoru başlat", "", &mut self.cfg.autostart);
-            ui.add_space(4.0);
+            if self.cfg.use_loopback {
+                switch_row(ui, "Açılışta Sistem DSP'yi başlat", "", &mut self.cfg.autostart);
+                ui.add_space(4.0);
+            }
             switch_row(ui, "Kapatınca tepside çalışmaya devam et", "Sistem DSP için önerilir", &mut self.cfg.tray_on_close);
             ui.add_space(4.0);
             let mut login = self.cfg.run_at_login;

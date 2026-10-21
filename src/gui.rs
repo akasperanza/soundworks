@@ -331,8 +331,6 @@ pub struct App {
     meta: TrackMeta,
     cover_id: u64,
     cover_tex: Option<TextureHandle>,
-    /// Soundworks logosu (koyu zemin için beyaz yazılı sürüm; şekiller orijinalle birebir aynı)
-    logo_tex: Option<TextureHandle>,
     cover_t0: Instant,
     tint: Color32,
     tint_target: Color32,
@@ -367,6 +365,8 @@ pub struct App {
     eq_cache: Option<(Preset, u32, Arc<Vec<f64>>)>,
     /// motor arka planda kapanıyor (arayüz beklemez); bitince `finish_stop` çalışır
     stopping: Option<JoinHandle<()>>,
+    /// oynatıcı modunda motorun boşta kalmaya başladığı an (cihazı bırakmak için)
+    idle_since: Option<Instant>,
     /// kapanma bitince motoru yeniden başlat: (başlayınca çalmaya devam et?)
     queued_start: Option<bool>,
     loud: Arc<crate::loudness::Scanner>,
@@ -515,11 +515,6 @@ impl App {
             meta: TrackMeta::default(),
             cover_id: 0,
             cover_tex: None,
-            logo_tex: image::load_from_memory(include_bytes!("../assets/logo_dark.png")).ok().map(|im| {
-                let im = im.to_rgba8();
-                let (w, h) = im.dimensions();
-                ctx.load_texture("logo", ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &im), TextureOptions::LINEAR)
-            }),
             cover_t0: Instant::now(),
             tint: BLUE,
             tint_target: BLUE,
@@ -548,6 +543,7 @@ impl App {
             eq_cache: None,
             stopping: None,
             queued_start: None,
+            idle_since: None,
             loud: Arc::new(crate::loudness::Scanner::default()),
             loud_started: false,
             loud_cached: 0,
@@ -1100,6 +1096,7 @@ impl eframe::App for App {
             }
         }
         self.tick_stopping();
+        self.tick_idle_release();
         self.tick_proof();
         self.tick_eq_rules();
         if let Some(item) = &self.tray_eq {
