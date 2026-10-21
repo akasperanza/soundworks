@@ -23,12 +23,25 @@ impl App {
 
     pub(super) fn ambient_tick(&mut self, ctx: &egui::Context) {
         let now = Instant::now();
+        let last_ptr = &mut self.ambient_ptr;
         let (active, f11) = ctx.input(|i| {
-            let active = i.events.iter().any(|e| {
+            let mut moved = false;
+            for e in &i.events {
+                match e {
+                    egui::Event::PointerMoved(pos) => {
+                        if last_ptr.map_or(true, |l| l.distance(*pos) >= 2.0) {
+                            moved = true;
+                        }
+                        *last_ptr = Some(*pos);
+                    }
+                    egui::Event::PointerGone => *last_ptr = None,
+                    _ => {}
+                }
+            }
+            let active = moved || i.events.iter().any(|e| {
                 matches!(
                     e,
-                    egui::Event::PointerMoved(_)
-                        | egui::Event::PointerButton { .. }
+                    egui::Event::PointerButton { .. }
                         | egui::Event::MouseWheel { .. }
                         | egui::Event::Text(_)
                         | egui::Event::Touch { .. }
