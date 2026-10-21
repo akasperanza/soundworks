@@ -104,6 +104,17 @@ impl App {
 
     /// Çıkış hızını hazırla: eşleştirme açıksa cihazın desteklediği hızlar sorgulanır ve başlangıç hızı yüklü parçaya göre seçilir.
     pub(super) fn prepare_rate(&mut self, to: Option<&str>) {
+        // Hız parça değişiminden gelmiyorsa (ör. hedef cihaz değişti) açık parça eski hıza çevrilmiş çözülüyor; motor yeni hızda
+        // çalarsa şarkı hızlanır/yavaşlar. Hız değiştiyse parçayı kaldığı yerden yeni hızda yeniden aç.
+        let from_track_change = self.start_rate.is_some();
+        let before = self.player.rate();
+        self.prepare_rate_inner(to);
+        if !from_track_change && self.player.rate() != before {
+            self.player.reload_current();
+        }
+    }
+
+    fn prepare_rate_inner(&mut self, to: Option<&str>) {
         if self.cfg.use_loopback {
             return;
         }

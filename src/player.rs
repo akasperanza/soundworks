@@ -1212,6 +1212,45 @@ mod tests {
     }
 
     #[test]
+    fn reload_after_rate_change_converts_the_rest_to_the_new_rate() {
+        // hedef cihaz değişince çıkış hızı 44.1k -> 48k olur; açık parçanın kalanı yeni hızda çözülmeli (aksi halde şarkı hızlanır/yavaşlar)
+        let a = std::env::temp_dir().join("sw_reload_rate.wav");
+        write_wav_rate(&a, 44100, 44100 * 4);
+        let p = Player::new();
+        p.set_rate(44100);
+        p.add(vec![a]);
+        p.play_index(0);
+        let drain = |p: &Player| {
+            let mut q = p.ring.q.lock().unwrap();
+            let n = q.len();
+            q.clear();
+            n / 2
+        };
+        let t0 = std::time::Instant::now();
+        let mut before = 0usize;
+        while before < 44100 && t0.elapsed() < Duration::from_secs(5) {
+            before += drain(&p);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        p.set_rate(48000);
+        let pos = p.position();
+        p.reload_current();
+        let mut after = 0u64;
+        let t1 = std::time::Instant::now();
+        while t1.elapsed() < Duration::from_secs(8) {
+            after += drain(&p) as u64;
+            if !p.playing.load(Ordering::Relaxed) && p.current().is_none() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        after += drain(&p) as u64;
+        p.shutdown();
+        let expect = ((4.0 - pos) * 48000.0) as i64;
+        assert!((after as i64 - expect).abs() < 4000, "kalan {after} kare, beklenen ≈{expect} (48 kHz); eski hızda olsaydı ≈{}", ((4.0 - pos) * 44100.0) as i64);
+    }
+
+    #[test]
     fn rate_follow_off_never_requests() {
         let a = std::env::temp_dir().join("sw_follow_c.wav");
         write_wav_rate(&a, 44100, 22050);
