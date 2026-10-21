@@ -170,6 +170,7 @@ impl App {
         let mut pick = None;
         let mut del = None;
         let mut props: Option<String> = None;
+        let mut copy: Option<String> = None;
         ui.horizontal(|ui| {
             if pill_button(ui, "İçe aktar", Some(Icon::Import), false).clicked() {
                 self.import();
@@ -196,6 +197,10 @@ impl App {
                             resp.context_menu(|ui| {
                                 if ui.button("Özellikler…").clicked() {
                                     props = Some(name.clone());
+                                    ui.close_menu();
+                                }
+                                if ui.button("Kopya oluştur").clicked() {
+                                    copy = Some(name.clone());
                                     ui.close_menu();
                                 }
                                 if ui.button("Sil").clicked() {
@@ -227,6 +232,9 @@ impl App {
         }
         if let Some(n) = props {
             self.props_open(Some(&n));
+        }
+        if let Some(n) = copy {
+            self.duplicate_preset(&n);
         }
         if let Some(n) = del {
             self.delete_preset(&n);

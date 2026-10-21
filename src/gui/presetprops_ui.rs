@@ -105,6 +105,18 @@ pub(super) fn playing_target(now: &Playing, scope: RuleScope) -> Option<(String,
     }
 }
 
+/// "Ad (kopya).txt", doluysa "Ad (kopya 2).txt"…; `exists` verilen dosya adının var olup olmadığını söyler.
+pub(super) fn unique_copy_name(stem: &str, exists: impl Fn(&str) -> bool) -> String {
+    let mut n = 1;
+    loop {
+        let c = if n == 1 { format!("{stem} (kopya).txt") } else { format!("{stem} (kopya {n}).txt") };
+        if !exists(&c) {
+            return c;
+        }
+        n += 1;
+    }
+}
+
 fn since_text(t: SystemTime) -> String {
     let days = SystemTime::now().duration_since(t).map(|d| d.as_secs() / 86400).unwrap_or(0);
     match days {
@@ -217,25 +229,32 @@ impl App {
         Ok(())
     }
 
-    /// Ön ayarın bir kopyasını oluşturur ("Ad (kopya).txt").
+    /// Ön ayarın kopyasını oluşturur ("Ad (kopya).txt"). Çalan ön ayarın kaydedilmemiş düzenlemesi varsa kopya o hâliyle
+    /// ("farklı kaydet" gibi) yazılır ve orijinal diskteki hâliyle kalır. Kopyalanan ön ayar çalan ise kopya seçilir
+    /// (düzenlemeye kopyada devam edilir); başka bir ön ayarsa çalan EQ'ya dokunulmaz.
     pub(super) fn duplicate_preset(&mut self, file: &str) {
-        let stem = file.trim_end_matches(".txt");
-        let mut n = 1;
-        let copy = loop {
-            let c = if n == 1 { format!("{stem} (kopya).txt") } else { format!("{stem} (kopya {n}).txt") };
-            if !presets_dir().join(&c).exists() {
-                break c;
-            }
-            n += 1;
+        let copy = unique_copy_name(file.trim_end_matches(".txt"), |c| presets_dir().join(c).exists());
+        let is_current = self.preset_name.as_deref() == Some(file);
+        let target = presets_dir().join(&copy);
+        let written = if is_current && self.dirty {
+            std::fs::write(&target, apo::to_text(&self.preset)).is_ok()
+        } else {
+            std::fs::copy(presets_dir().join(file), &target).is_ok()
         };
-        if std::fs::copy(presets_dir().join(file), presets_dir().join(&copy)).is_ok() {
-            if let Some(m) = self.cfg.preset_meta.get(file).cloned() {
-                self.cfg.preset_meta.insert(copy.clone(), m);
-            }
-            self.refresh_library();
-            self.save_cfg();
-            self.say(format!("Kopya oluşturuldu: {}", copy.trim_end_matches(".txt")));
+        if !written {
+            self.say("Kopya oluşturulamadı");
+            return;
         }
+        if let Some(m) = self.cfg.preset_meta.get(file).cloned() {
+            self.cfg.preset_meta.insert(copy.clone(), m);
+        }
+        self.refresh_library();
+        if is_current {
+            self.select(&copy, false);
+        }
+        self.save_cfg();
+        let name = copy.trim_end_matches(".txt");
+        self.say(if is_current { format!("Kopya oluşturuldu ve seçildi: {name}") } else { format!("Kopya oluşturuldu: {name}") });
     }
 
     pub(super) fn export_preset(&mut self, file: &str) {
@@ -375,7 +394,7 @@ impl App {
                             if pill_button(ui, "Klasörde göster", Some(Icon::Folder), false).clicked() {
                                 act = PropsAct::Reveal;
                             }
-                            if pill_button(ui, "Çoğalt", Some(Icon::Plus), false).clicked() {
+                            if pill_button(ui, "Kopya oluştur", Some(Icon::Plus), false).clicked() {
                                 act = PropsAct::Duplicate;
                             }
                             if pill_button(ui, "Dışa aktar", Some(Icon::Upload), false).clicked() {
@@ -608,6 +627,15 @@ mod tests {
         m.artist = " ".into();
         assert!(playing_target(&m, RuleScope::Album).is_none(), "kütüphanede olmayan albüm");
         assert!(playing_target(&m, RuleScope::Artist).is_none(), "adsız sanatçı");
+    }
+
+    #[test]
+    fn copy_names_are_unique() {
+        let taken = ["Rock (kopya).txt", "Rock (kopya 2).txt"];
+        assert_eq!(unique_copy_name("Rock", |c| taken.contains(&c)), "Rock (kopya 3).txt");
+        assert_eq!(unique_copy_name("Jazz", |c| taken.contains(&c)), "Jazz (kopya).txt");
+        // kopyanın kopyası da ayrı bir ad alır
+        assert_eq!(unique_copy_name("Rock (kopya)", |c| taken.contains(&c)), "Rock (kopya) (kopya).txt");
     }
 
     #[test]
