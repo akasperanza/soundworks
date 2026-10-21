@@ -31,9 +31,20 @@ impl App {
                         }
                     });
                     ui.set_max_width(ui.available_width().min(780.0));
-                    category(ui, "Ses");
-                    self.settings_left(ui, running);
-                    self.settings_right(ui);
+                    ui.add_space(8.0);
+                    let mut tab = self.settings_tab;
+                    view_switch(ui, &mut tab, &[(0u8, "Ses"), (1u8, "Kütüphane"), (2u8, "Ekolayzır"), (3u8, "Uygulama")]);
+                    self.settings_tab = tab;
+                    ui.add_space(14.0);
+                    match self.settings_tab {
+                        0 => {
+                            self.settings_left(ui, running);
+                            self.settings_audio_more(ui);
+                        }
+                        1 => self.settings_library(ui),
+                        2 => self.settings_eq(ui),
+                        _ => self.settings_app(ui),
+                    }
                     ui.add_space(12.0);
                 });
                 if self.cfg != cfg_before {
@@ -131,7 +142,8 @@ impl App {
         });
     }
 
-    pub(super) fn settings_right(&mut self, ui: &mut egui::Ui) {
+    /// Ses sekmesinin devamı: DSD ve ses dengeleme.
+    pub(super) fn settings_audio_more(&mut self, ui: &mut egui::Ui) {
         self.dsd_card(ui);
         ui.add_space(10.0);
         card(ui, |ui| {
@@ -179,7 +191,9 @@ impl App {
             }
         });
         ui.add_space(10.0);
-        category(ui, "Kütüphane");
+    }
+
+    pub(super) fn settings_library(&mut self, ui: &mut egui::Ui) {
         self.library_folders_card(ui);
         ui.add_space(10.0);
         card(ui, |ui| {
@@ -216,12 +230,16 @@ impl App {
             }
         });
         ui.add_space(10.0);
-        category(ui, "Ekolayzır");
+    }
+
+    pub(super) fn settings_eq(&mut self, ui: &mut egui::Ui) {
         self.presets_manager_card(ui);
         ui.add_space(10.0);
         self.eq_rules_card(ui);
         ui.add_space(10.0);
-        category(ui, "Uygulama");
+    }
+
+    pub(super) fn settings_app(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Genel");
@@ -259,6 +277,7 @@ impl App {
         });
         ui.add_space(10.0);
         self.tips_settings(ui);
+    
     }
 
     pub(super) fn device_combo(ui: &mut egui::Ui, id: &str, devices: &[DeviceInfo], value: &mut Option<String>, none_label: &str, reserve: f32) {
@@ -278,14 +297,4 @@ impl App {
             }
         });
     }
-}
-
-/// Ayarlar sayfasında kategori başlığı: kalın başlık ve altında ince çizgi.
-fn category(ui: &mut egui::Ui, text: &str) {
-    ui.add_space(14.0);
-    ui.label(RichText::new(text).font(bold(18.0)).color(Color32::WHITE));
-    ui.add_space(2.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(r, 0.0, alpha(DIM, 70));
-    ui.add_space(8.0);
 }

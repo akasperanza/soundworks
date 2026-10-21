@@ -419,6 +419,8 @@ pub struct App {
     proof_alt_at: Instant,
     /// cihazın son yoklamada kabul ettiği exclusive hızlar (makbuzda hız dönüşümünün nedenini göstermek için)
     probe_rates: Vec<u32>,
+    /// Ayarlar sayfasında seçili sekme (0 Ses, 1 Kütüphane, 2 Ekolayzır, 3 Uygulama)
+    settings_tab: u8,
     /// ön ayar seçici listesindeki arama metni ve odak isteği
     preset_q: String,
     preset_q_focus: bool,
@@ -591,6 +593,7 @@ impl App {
             proof_alt_seen: 0,
             proof_alt_at: Instant::now() - std::time::Duration::from_secs(10),
             probe_rates: Vec::new(),
+            settings_tab: 0,
             preset_q: String::new(),
             preset_q_focus: false,
             proof_cause_at: [Instant::now() - std::time::Duration::from_secs(10); 6],
@@ -764,6 +767,10 @@ impl App {
         // SW_RULE_TRACK=yol: o dosya için "test.txt" ön ayarını otomatik uygulayan şarkı kuralı ekler (doğrulama)
         if let Ok(path) = crate::devenv::dev_var("SW_RULE_TRACK") {
             app.cfg.eq_rules.push(eqrules_ui::EqRule { scope: eqrules_ui::RuleScope::Track, key: path, label: "Test".into(), sub: String::new(), preset: Some("test.txt".into()) });
+        }
+        // SW_SETTAB=<0..3>: Ayarlar sekmesini seçer (doğrulama)
+        if let Some(t) = crate::devenv::dev_var("SW_SETTAB").ok().and_then(|v| v.parse::<u8>().ok()) {
+            app.settings_tab = t;
         }
         // SW_PROPS=yeni | <ön ayar dosyası>: ön ayar özellikleri penceresini açar (doğrulama)
         if let Ok(v) = crate::devenv::dev_var("SW_PROPS") {
