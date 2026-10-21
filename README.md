@@ -1,9 +1,4 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo_dark.png">
-    <img src="assets/logo.png" alt="Soundworks" width="320">
-  </picture>
-</p>
+# Soundworks
 
 Windows için, odyofiller düşünülerek yazılmış bir masaüstü müzik çalar ve ses işleme motoru. Rust ve egui ile yazıldı.
 

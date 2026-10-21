@@ -55,8 +55,7 @@ impl App {
                     if ub.clicked() {
                         self.upload_open = !self.upload_open;
                     }
-                    ui.label(RichText::new("Soundworks").font(bold(17.0)));
-                    ui.add_space(18.0);
+                    ui.add_space(8.0);
                     for (v, n) in [(View::Library, "Kütüphane"), (View::Motor, "Motor")] {
                         if tab(ui, n, self.view == v).clicked() {
                             self.set_view(v);
@@ -68,6 +67,9 @@ impl App {
                     }
                     left_end = ui.min_rect().right();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // uygulama adı her zaman en sağ köşede; motor ikonu (açıksa) onun soluna gelir
+                        ui.label(RichText::new("Soundworks").font(bold(17.0)));
+                        ui.add_space(8.0);
                         let on = self.running.is_some();
                         // Yalnızca ikon: oynatıcı modunda motor zaten kendiliğinden yönetilir (Play'de başlar, boşta kalınca cihazı
                         // bırakır); düğme elle erken bırakmak ya da önceden başlatmak içindir. Sistem DSP'de yakalamayı açıp kapatır.
