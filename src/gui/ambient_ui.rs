@@ -295,7 +295,7 @@ impl App {
         }
         if self.ambient_on && ctl_a > 0.0 {
             let icons = [Icon::Lyrics, Icon::List, Icon::Close];
-            let h = 38.0;
+            let h = 30.0;
             let mut x = rect.right() - margin;
             let y0 = rect.top() + (margin * 0.35).max(14.0);
             let ptr = ctx.input(|i| i.pointer.hover_pos());
@@ -305,12 +305,17 @@ impl App {
             ps.set_opacity(e * ctl_a);
             for (i, icon) in icons.iter().enumerate().rev() {
                 let r = Rect::from_min_max(pos2(x - h, y0), pos2(x, y0 + h));
-                x = r.left() - 8.0;
+                x = r.left() - 4.0;
                 let hov = ptr.map_or(false, |q| r.contains(q));
                 let on = (i == 0 && side == 1) || (i == 1 && side == 2);
-                let fill = if on { alpha(accent, 90) } else { alpha(Color32::WHITE, if hov { 40 } else { 18 }) };
-                ps.circle_filled(r.center(), h * 0.5, fill);
-                draw_icon(&ps, *icon, r.center(), 20.0, if on || hov { Color32::WHITE } else { TEXT });
+                if hov {
+                    ps.rect_filled(r, Rounding::same(8.0), alpha(Color32::WHITE, 20));
+                }
+                let col = if on { accent } else if hov { Color32::WHITE } else { alpha(TEXT, 170) };
+                draw_icon(&ps, *icon, r.center(), 16.0, col);
+                if on {
+                    ps.circle_filled(pos2(r.center().x, r.bottom() - 1.5), 1.8, accent);
+                }
                 if clicked && hov {
                     hit = Some(i);
                 }
