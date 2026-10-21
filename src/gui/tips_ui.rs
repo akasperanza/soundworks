@@ -15,8 +15,16 @@ fn tip_color(i: TipIcon) -> Color32 {
 /// Uyarı simgesi: yuvarlak zemin üstüne küçük çizim (ikon dosyası gerekmez).
 fn tip_glyph(p: &egui::Painter, icon: TipIcon, c: Pos2, r: f32) {
     let col = tip_color(icon);
+    // yarım piksele oturt: ince çizgiler bulanıklaşmasın
+    let c = pos2(c.x.round(), c.y.round());
     p.circle_filled(c, r, alpha(col, 34));
+    p.circle_stroke(c, r - 0.6, Stroke::new(1.2, alpha(col, 130)));
     let st = Stroke::new(1.8, col);
+    let bar = |top: f32, bottom: f32| {
+        let w = (r * 0.17).max(2.2);
+        p.rect_filled(Rect::from_min_max(pos2(c.x - w * 0.5, c.y + top), pos2(c.x + w * 0.5, c.y + bottom)), Rounding::same(w * 0.5), col);
+    };
+    let dot = |dy: f32| p.circle_filled(pos2(c.x, c.y + dy), (r * 0.12).max(1.7), col);
     match icon {
         TipIcon::Bluetooth => {
             // Bluetooth rünü: 24'lük ızgarada 7,7 → 17,17 → 12,22 → 12,2 → 17,7 → 7,17
@@ -28,12 +36,12 @@ fn tip_glyph(p: &egui::Painter, icon: TipIcon, c: Pos2, r: f32) {
             p.add(Shape::line(pts, st));
         }
         TipIcon::Info => {
-            p.circle_filled(pos2(c.x, c.y - r * 0.38), 1.8, col);
-            p.line_segment([pos2(c.x, c.y - r * 0.05), pos2(c.x, c.y + r * 0.42)], st);
+            dot(-r * 0.40);
+            bar(-r * 0.10, r * 0.44);
         }
         TipIcon::Warning => {
-            p.line_segment([pos2(c.x, c.y - r * 0.42), pos2(c.x, c.y + r * 0.1)], st);
-            p.circle_filled(pos2(c.x, c.y + r * 0.42), 1.8, col);
+            bar(-r * 0.46, r * 0.12);
+            dot(r * 0.44);
         }
     }
 }
