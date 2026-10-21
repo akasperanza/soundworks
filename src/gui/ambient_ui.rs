@@ -105,6 +105,7 @@ impl App {
         if t <= 0.003 {
             return;
         }
+        let settled = self.ambient_since.elapsed().as_secs_f32() > 0.35;
         let ctl_age = self.ambient_ctl.elapsed().as_secs_f32();
         let ctl_a = (1.0 - (ctl_age - 2.6) / 0.6).clamp(0.0, 1.0);
         if self.ambient_on && ctl_a <= 0.0 {
@@ -299,7 +300,7 @@ impl App {
             let mut x = rect.right() - margin;
             let y0 = rect.top() + (margin * 0.35).max(14.0);
             let ptr = ctx.input(|i| i.pointer.hover_pos());
-            let clicked = ctx.input(|i| i.pointer.primary_clicked());
+            let clicked = settled && ctx.input(|i| i.pointer.primary_clicked());
             let mut hit: Option<usize> = None;
             let mut ps = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("ambient_layer")));
             ps.set_opacity(e * ctl_a);
@@ -327,7 +328,7 @@ impl App {
                 None if clicked => self.ambient_on = false,
                 None => {}
             }
-        } else if self.ambient_on && ctx.input(|i| i.pointer.primary_clicked()) {
+        } else if self.ambient_on && settled && ctx.input(|i| i.pointer.primary_clicked()) {
             self.ambient_on = false;
         }
         ctx.request_repaint_after(Duration::from_millis(33));
