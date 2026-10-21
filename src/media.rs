@@ -1,7 +1,3 @@
-//! Klavyedeki medya tuşları (oynat/duraklat, sonraki, önceki, durdur).
-//! Ayrı bir iş parçacığı global kısayol (RegisterHotKey) kaydeder. Tuşlar YALNIZCA motor çalışırken yakalanır:
-//! Soundworks boştayken tuşları (ör. Spotify için) çalmayız.
-
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -20,7 +16,6 @@ pub const VK_MEDIA_PREV_TRACK: u32 = 0xB1;
 pub const VK_MEDIA_STOP: u32 = 0xB2;
 pub const VK_MEDIA_PLAY_PAUSE: u32 = 0xB3;
 
-/// (sanal tuş, kısayol kimliği, komut)
 const KEYS: [(u32, i32, MediaCmd); 4] = [
     (VK_MEDIA_PLAY_PAUSE, 1, MediaCmd::PlayPause),
     (VK_MEDIA_NEXT_TRACK, 2, MediaCmd::Next),
@@ -37,7 +32,6 @@ fn queue() -> &'static Mutex<VecDeque<MediaCmd>> {
     Q.get_or_init(|| Mutex::new(VecDeque::new()))
 }
 
-/// Tuşların dinlenip dinlenmeyeceği (arayüz motor çalışırken true yapar).
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -45,12 +39,10 @@ pub fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
 }
 
-/// Gelen komutlar (arayüz her karede boşaltır).
 pub fn drain() -> Vec<MediaCmd> {
     queue().lock().unwrap().drain(..).collect()
 }
 
-/// Dinleyici iş parçacığını bir kez başlat. `wake`: komut gelince arayüzü uyandır (pencere gizliyken de).
 pub fn start(wake: impl Fn() + Send + 'static) {
     if STARTED.swap(true, Ordering::SeqCst) {
         return;
@@ -64,7 +56,7 @@ pub fn start(wake: impl Fn() + Send + 'static) {
             if want && !registered {
                 for (vk, id, _) in KEYS {
                     unsafe {
-                        // başka uygulama aynı tuşu almışsa kayıt başarısız olur; o tuşu atla
+
                         let _ = RegisterHotKey(None, id, MOD_NOREPEAT, vk);
                     }
                 }
@@ -106,7 +98,7 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), 4);
-        // Windows sanal tuş kodları
+
         assert_eq!((VK_MEDIA_NEXT_TRACK, VK_MEDIA_PREV_TRACK, VK_MEDIA_STOP, VK_MEDIA_PLAY_PAUSE), (0xB0, 0xB1, 0xB2, 0xB3));
     }
 
@@ -120,7 +112,6 @@ mod tests {
         assert!(drain().is_empty());
     }
 
-    /// Kısayolları kaydedip hemen bırakır: API çağrısının geçerli olduğunu doğrular, tuşlara basmaz.
     #[test]
     fn hotkey_api_register_and_release() {
         use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};
@@ -130,7 +121,7 @@ mod tests {
                 let _ = UnregisterHotKey(None, 77);
             }
         }
-        // başka bir uygulama tuşu tutuyorsa kayıt reddedilebilir; bu hata değildir
+
         println!("medya tusu kaydi: {}", if ok { "basarili" } else { "baska uygulama tutuyor" });
     }
 }

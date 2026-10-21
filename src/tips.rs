@@ -1,6 +1,3 @@
-//! İpuçları ve uyarılar: bir odyofilin unutabileceği ya da bilmesi gereken durumlar.
-//! `evaluate` saf bir fonksiyondur: durum bilgisinden (Facts) o an geçerli uyarıları öncelik sırasıyla üretir.
-
 use crate::engine::DeviceKind;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -12,39 +9,37 @@ pub enum TipIcon {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Tip {
-    /// kalıcı gizleme anahtarı
+
     pub id: &'static str,
     pub icon: TipIcon,
     pub title: String,
     pub body: String,
 }
 
-/// Uyarıların karar verdiği anlık durum.
 #[derive(Clone, Default, Debug)]
 pub struct Facts {
     pub running: bool,
     pub loopback: bool,
     pub exclusive: bool,
-    /// kullanıcı Exclusive'i bilerek kapattı mı (Ayarlar)
+
     pub exclusive_pref_off: bool,
     pub out_bits: u16,
     pub out_float: bool,
     pub dev_kind: Option<DeviceKindOpt>,
     pub dev_name: String,
-    /// cihazın exclusive modda kabul ettiği hızlar (bilinmiyorsa boş)
+
     pub supported: Vec<u32>,
     pub src_bits: u32,
     pub resampled: bool,
-    /// 0..1 yazılım ses seviyesi
+
     pub volume: f32,
-    /// oturumda 0 dBFS'e çarpan örnek sayısı
+
     pub clips: u32,
     pub has_limiter: bool,
-    /// cihazın istenen hızı kabul etmeyip başka hızda açıldığı: (istenen, açılan)
+
     pub rate_notice: Option<(u32, u32)>,
 }
 
-/// `Option<DeviceKind>` Default için sarmalayıcı.
 pub type DeviceKindOpt = DeviceKind;
 
 fn khz(r: u32) -> String {
@@ -56,7 +51,6 @@ fn khz(r: u32) -> String {
     }
 }
 
-/// O an geçerli uyarılar, en önemlisi başta.
 pub fn evaluate(f: &Facts) -> Vec<Tip> {
     let mut out: Vec<Tip> = vec![];
     if !f.running {
@@ -194,9 +188,9 @@ mod tests {
         assert!(!ids(&f).contains(&"bt_handsfree"));
         f.dev_name = "Hands-Free AG Audio (MOMENTUM 4)".into();
         let v = ids(&f);
-        assert_eq!(v[0], "bt_handsfree"); // en önemlisi başta
+        assert_eq!(v[0], "bt_handsfree");
         assert!(v.contains(&"bluetooth"));
-        // Bluetooth olmayan cihazda yok
+
         f.dev_kind = Some(DeviceKind::Usb);
         assert!(!ids(&f).contains(&"bluetooth") && !ids(&f).contains(&"bt_handsfree"));
     }
@@ -233,10 +227,10 @@ mod tests {
         f.volume = 0.5;
         let v = ids(&f);
         assert!(v.contains(&"bit16") && v.contains(&"single_rate") && v.contains(&"soft_volume"));
-        // 16 bit kaynak 16 bit'e inerken uyarı gerekmez
+
         f.src_bits = 16;
         assert!(!ids(&f).contains(&"bit16"));
-        // float çıkışta yok
+
         f.src_bits = 24;
         f.out_float = true;
         assert!(!ids(&f).contains(&"bit16"));
@@ -249,7 +243,7 @@ mod tests {
         f.volume = 0.2;
         let v = ids(&f);
         assert!(v.contains(&"loopback_format"));
-        assert!(!v.contains(&"soft_volume") && !v.contains(&"exclusive_note")); // dahili oynatıcıya özgü
+        assert!(!v.contains(&"soft_volume") && !v.contains(&"exclusive_note"));
         let mut g = base();
         g.rate_notice = Some((96000, 48000));
         let t = evaluate(&g);

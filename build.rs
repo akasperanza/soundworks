@@ -1,4 +1,3 @@
-// Windows'ta .exe dosyasına uygulama simgesini gömer (Gezgin ve görev çubuğunda görünür).
 fn main() {
     println!("cargo:rerun-if-changed=assets/app.ico");
     #[cfg(windows)]
@@ -8,7 +7,7 @@ fn main() {
         res.set("ProductName", "Soundworks");
         res.set("FileDescription", "Soundworks");
         if let Err(e) = res.compile() {
-            // simge gömülemese de derleme başarısız olmasın
+
             println!("cargo:warning=exe simgesi gömülemedi: {e}");
         }
     }

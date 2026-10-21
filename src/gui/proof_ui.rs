@@ -1,9 +1,6 @@
-//! Bit-perfect ışığı ve makbuzu: alt çubukta kuyruk düğmesinin yanındaki ışık, üzerine gelince ölçüm makbuzu.
-
 use super::*;
 use crate::proof::{self, Counters, Light, LightIn};
 
-/// Makbuzda gösterilen her şey önceden hesaplanır (ipucu penceresi `self`'e dokunmadan çizilebilsin).
 pub(super) struct Receipt {
     light: Light,
     title: &'static str,
@@ -14,7 +11,7 @@ pub(super) struct Receipt {
 }
 
 impl App {
-    /// Her karede: parça başı sayaç tabanını ayarlar, son saniyedeki değişiklikleri ve kesintileri izler.
+
     pub(super) fn tick_proof(&mut self) {
         let Some(ctl) = self.running.as_ref().map(|r| r.ctl.clone()) else {
             self.proof_view = Counters::default();
@@ -33,8 +30,7 @@ impl App {
             self.proof_frames_seen = cur.ok + cur.alt;
             ctl.proof.causes.store(0, Relaxed);
         }
-        // nedenler "yapışmaz": her neden son görüldüğü andan itibaren 1,5 sn geçerlidir. Yalnızca çerçeve yazılırken (çalarken) süre
-        // işler; duraklatınca son bilinen durum korunur.
+
         let fresh = ctl.proof.causes.swap(0, Relaxed);
         let now = Instant::now();
         for (i, t) in self.proof_cause_at.iter_mut().enumerate() {
@@ -50,7 +46,7 @@ impl App {
         let causes = self.proof_cause_mask;
         let b = self.proof_base;
         let v = Counters { ok: cur.ok.saturating_sub(b.ok), ramp: cur.ramp.saturating_sub(b.ramp), alt: cur.alt.saturating_sub(b.alt), dry: cur.dry.saturating_sub(b.dry), causes };
-        // parça sonunda halka doğal olarak boşalır: son saniyedeki boşalmalar kesinti sayılmaz
+
         let dur = self.player.duration();
         if dur <= 0.0 || self.player.position() < dur - 1.0 {
             self.proof_dry_shown = v.dry;
@@ -130,7 +126,6 @@ impl App {
         Receipt { light, title, source: self.format_badge().unwrap_or_default(), device, rows, counts }
     }
 
-    /// Alt çubuktaki ışık. Üzerine gelince makbuz açılır.
     pub(super) fn proof_light(&mut self, ui: &mut egui::Ui) {
         let light = self.proof_light_state();
         let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 32.0), Sense::hover());

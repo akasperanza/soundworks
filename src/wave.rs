@@ -1,5 +1,3 @@
-//! Parçanın gerçek dalga biçimi: dosyayı çözüp 50 ms'lik pencerelerden zarf çıkarır, 1200 değere indirger, diske önbellekler.
-
 use std::collections::VecDeque;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -40,13 +38,12 @@ fn save_cached(path: &Path, v: &[f32]) {
     let _ = std::fs::write(cache_file(path), bytes);
 }
 
-/// 0..1 aralığında BUCKETS adet genlik değeri.
 pub fn compute(path: &Path) -> Option<Vec<f32>> {
     if let Some(c) = load_cached(path) {
         return Some(c);
     }
     let env: Vec<f32> = if crate::dsd::is_dsd(path) {
-        // DSD: PCM'e çevrilmiş akıştan zarf (352.8 kHz'de 50 ms pencereler)
+
         let (mut peak, mut sum_sq, mut cnt) = (0f32, 0f64, 0usize);
         let mut env: Vec<f32> = vec![];
         crate::player::decode_native(path, |chunk, rate| {
@@ -84,7 +81,7 @@ pub fn compute(path: &Path) -> Option<Vec<f32>> {
         let rate = t.codec_params.sample_rate? as usize;
         let mut dec = symphonia::default::get_codecs().make(&t.codec_params, &DecoderOptions::default()).ok()?;
 
-        let win = (rate / 20).max(1); // 50 ms
+        let win = (rate / 20).max(1);
         let (mut peak, mut sum_sq, mut cnt) = (0f32, 0f64, 0usize);
         let mut env: Vec<f32> = vec![];
         while let Ok(p) = format.next_packet() {
@@ -119,7 +116,7 @@ pub fn compute(path: &Path) -> Option<Vec<f32>> {
     if env.len() < 4 {
         return None;
     }
-    // BUCKETS değere indir (kova başına ortalama)
+
     let mut out = vec![0f32; BUCKETS];
     for (i, o) in out.iter_mut().enumerate() {
         let a = i * env.len() / BUCKETS;
@@ -127,7 +124,7 @@ pub fn compute(path: &Path) -> Option<Vec<f32>> {
         let s = &env[a.min(env.len() - 1)..b];
         *o = s.iter().sum::<f32>() / s.len() as f32;
     }
-    // normalize: %98'lik dilime göre, algısal eğri
+
     let mut sorted = out.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let ref_v = sorted[(sorted.len() as f32 * 0.98) as usize].max(1e-4);

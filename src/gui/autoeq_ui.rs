@@ -1,11 +1,8 @@
-//! AutoEQ mağazası: kulaklığa özel EQ profili ara, eğrisini gör, dinleyerek dene, kaydet.
-
 use super::*;
 use crate::autoeq::{self, Entry, IndexState, Profile};
 use egui::{FontId, Pos2, Vec2};
 use std::time::Duration;
 
-/// Mağaza penceresinin durumu.
 pub(super) struct AeUi {
     pub open: bool,
     pub query: String,
@@ -13,11 +10,11 @@ pub(super) struct AeUi {
     shown_q: String,
     shown_n: usize,
     sel: Option<usize>,
-    /// seçili profil çalan sese (kaydedilmeden) uygulanıyor
+
     pub listening: bool,
-    /// dinlemede uygulanan profilin yolu
+
     applied: Option<String>,
-    /// dinlemeden önceki EQ (geri dönmek için): (ön ayar, ad, değişmiş mi)
+
     backup: Option<(Preset, Option<String>, bool)>,
     focus: bool,
     t0: Instant,
@@ -57,7 +54,6 @@ enum Act {
     Close,
 }
 
-/// Bir profilin frekans yanıtı (dB), 20 Hz–20 kHz arası logaritmik 200 nokta (48 kHz'de tasarlanır).
 fn response_curve(p: &Preset) -> Vec<f64> {
     let fs = 48000.0;
     let coeffs: Vec<Coeffs> = p.bands.iter().filter(|b| b.freq < fs * 0.5).map(|b| Coeffs::design(b, fs)).collect();
@@ -69,7 +65,6 @@ fn response_curve(p: &Preset) -> Vec<f64> {
         .collect()
 }
 
-/// Eğriyi ızgarayla çizer: 0 dB çizgisi, dB ve frekans işaretleri.
 fn draw_curve(ui: &mut egui::Ui, size: Vec2, curve: &[f64]) {
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter_at(rect);
@@ -111,7 +106,7 @@ fn chip_text(e: &Entry) -> String {
 }
 
 impl App {
-    /// Çıkış cihazının adından kulaklık modeli ("Kulaklıklar (2- MOMENTUM 4)" -> "MOMENTUM 4").
+
     pub(super) fn ae_device_query(&self) -> String {
         let dev = match &self.cfg.to {
             Some(id) => self.devices.iter().find(|d| &d.id == id),
@@ -136,7 +131,6 @@ impl App {
         self.autoeq.ensure_index();
     }
 
-    /// Mağazayı kapatır; dinleme açıksa ve kaydedilmediyse önceki EQ'ya döner.
     pub(super) fn ae_close(&mut self, keep_applied: bool) {
         if !keep_applied {
             self.ae_revert_preview();
@@ -185,7 +179,6 @@ impl App {
             return;
         }
 
-        // sonuçları sorgu ya da indeks değişince yeniden hesapla
         if self.ae.shown_q != self.ae.query || self.ae.shown_n != self.autoeq.entries.len() {
             self.ae.results = autoeq::search(&self.autoeq.entries, &self.ae.query, 60);
             self.ae.shown_q = self.ae.query.clone();
@@ -195,7 +188,7 @@ impl App {
                 self.ae.sel = None;
             }
         }
-        // sorgu durulduktan sonra ilk sonucu seç (her tuşta indirme başlamasın)
+
         if self.ae.sel.is_none() && !self.ae.results.is_empty() {
             if self.ae.q_at.elapsed() > Duration::from_millis(450) {
                 self.ae.sel = self.ae.results.first().copied();
@@ -203,7 +196,7 @@ impl App {
                 ctx.request_repaint_after(Duration::from_millis(120));
             }
         }
-        // ok tuşlarıyla gezinme
+
         let n = self.ae.results.len();
         if n > 0 {
             let cur = self.ae.sel.and_then(|s| self.ae.results.iter().position(|r| *r == s));
@@ -260,7 +253,6 @@ impl App {
                     ui.set_width(w - 40.0);
                     ui.set_height(h - 40.0);
 
-                    // ---- başlık
                     ui.horizontal(|ui| {
                         let (ir, _) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
                         draw_icon(ui.painter(), Icon::Headphones, ir.center(), 20.0, SKY);
@@ -276,7 +268,6 @@ impl App {
                     });
                     ui.add_space(14.0);
 
-                    // ---- arama satırı
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         let field_w = ui.available_width() - 44.0;
@@ -314,7 +305,6 @@ impl App {
                     });
                     ui.add_space(12.0);
 
-                    // ---- gövde: sonuçlar | önizleme
                     let body_h = ui.available_height() - 34.0;
                     ui.horizontal_top(|ui| {
                         let list_w = ((w - 40.0) * 0.46).floor();
@@ -342,7 +332,7 @@ impl App {
                                 }
                                 IndexState::Ready { .. } => {
                                     if self.ae.query.trim().is_empty() {
-                                        // boş: yazmaya davet eden metin yok, alan kendiliğinden anlaşılır
+
                                     } else if rows.is_empty() {
                                         ui.add_space(50.0);
                                         ui.vertical_centered(|ui| {
@@ -381,7 +371,7 @@ impl App {
                             Frame::none().fill(BG2).rounding(Rounding::same(12.0)).inner_margin(Margin::same(16.0)).show(ui, |ui| {
                                 ui.set_width(prev_w - 32.0);
                                 ui.set_min_height(body_h - 32.0);
-                                // içerik pencereye sığmazsa kart içinde kayar (pencere taşmasın)
+
                                 egui::ScrollArea::vertical().id_salt("ae_prev").max_height(body_h - 32.0).auto_shrink([false, false]).show(ui, |ui| {
                                 let (Some(en), Some(pr)) = (&sel_entry, &profile) else {
                                     return;
@@ -416,7 +406,7 @@ impl App {
                                                 .color(TEXT),
                                         );
                                         ui.add_space(14.0);
-                                        // dinleyerek dene
+
                                         if listening {
                                             ui.horizontal(|ui| {
                                                 chip(ui, "ŞU AN DİNLİYORSUN", GREEN);
@@ -451,7 +441,6 @@ impl App {
                         });
                     });
 
-                    // ---- alt bilgi
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         let status = match &state {
@@ -476,7 +465,7 @@ impl App {
         if let Some(i) = clicked {
             self.ae.sel = Some(i);
         }
-        // dinleme açıksa seçili profili uygula (seçim değişince yenisine geç)
+
         if self.ae.listening {
             if let (Some(e), Some(Profile::Ready(p))) = (&sel_entry, &profile) {
                 if self.ae.applied.as_deref() != Some(e.path.as_str()) {
@@ -514,7 +503,7 @@ impl App {
                     let _ = std::fs::create_dir_all(presets_dir());
                     let name = e.file_name();
                     if std::fs::write(presets_dir().join(&name), apo::to_text(p)).is_ok() {
-                        // geçici dinleme zaten uygulandıysa geri dönmeden kalıcı seçilir
+
                         self.ae_close(true);
                         self.cfg.preset_meta.insert(
                             name.clone(),
@@ -533,7 +522,6 @@ impl App {
     }
 }
 
-/// Metni verilen genişliğe sığacak şekilde sonuna "…" koyarak kısaltır.
 fn fit_text(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) -> String {
     let w = |t: &str| painter.layout_no_wrap(t.to_string(), font.clone(), Color32::WHITE).size().x;
     if w(s) <= max_w {

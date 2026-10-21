@@ -1,10 +1,8 @@
-//! Kuyruk yan paneli, "sıraya ekle" istekleri ve kaldığın yerden devam.
-
 use super::*;
 use std::time::Duration;
 
 impl App {
-    /// "Sıraya ekle" isteklerini uygula ve kaldığın yeri düzenli aralıkla kaydet.
+
     pub(super) fn tick_queue_and_resume(&mut self) {
         if let Some((paths, next)) = self.pending_queue.take() {
             let n = paths.len();
@@ -22,11 +20,10 @@ impl App {
         }
     }
 
-    /// Çalan/yüklü parçanın sırası ve konumu (saniye) yapılandırmaya yazılır.
     pub(super) fn update_resume(&mut self) {
         let new = match self.player.current() {
             Some(i) if self.player.duration() > 0.0 => Some((i, self.player.position().floor())),
-            Some(_) => return, // henüz yüklenmedi: eski kaydı bozma
+            Some(_) => return,
             None if self.player.playlist.lock().unwrap().is_empty() => None,
             None => return,
         };

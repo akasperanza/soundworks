@@ -1,5 +1,3 @@
-//! Şarkı sözleri: sorgu, yerleşim ve çizim.
-
 use super::*;
 
 impl App {
@@ -41,7 +39,7 @@ impl App {
             return;
         }
         if dur <= 0.0 {
-            return; // süre henüz bilinmiyor
+            return;
         }
         if !self.lyr_failed.contains(&k) && !self.lyr_fetcher.is_pending(&k) {
             self.lyr_fetcher.request(k, title, artist, album, dur);
@@ -56,7 +54,7 @@ impl App {
         let mut lines = vec![];
         let mut y = 0.0f32;
         for line in &l.lines {
-            // jeton: (metin, kelime indeksi, sonrasında boşluk, arka vokal mi)
+
             let raw: Vec<(String, Option<usize>, bool, bool)> = if !line.words.is_empty() {
                 line.words.iter().enumerate().map(|(i, w)| (w.text.clone(), Some(i), w.sp, w.bg)).collect()
             } else {
@@ -224,8 +222,6 @@ impl App {
         }
     }
 
-    /// Çark düğmesinin açtığı küçük pencere: sözler müzikten erken/geç kalıyorsa düzeltir; şarkı başına saklanır.
-    /// `−`/`+` basılı tutulunca hızlanır; değer kutusuna tıklayıp klavyeden de yazılabilir (ör. -2,35).
     fn lyric_offset_popup(&mut self, ui: &mut egui::Ui, gear: &egui::Response, key: &str) {
         const STEP: i32 = 100;
         let id = gear.id.with("lyr_off");
@@ -300,7 +296,6 @@ impl App {
         let synced = l.kind != "plain";
         let dt = ctx.input(|i| i.unstable_dt).clamp(0.001, 0.1);
 
-        // pürüzsüz zaman: gerçek konuma yumuşakça yaklaşan kendi saatimiz
         let actual = self.player.position();
         if self.player.playing.load(Relaxed) {
             let est = self.lyr_pos + dt as f64;
@@ -313,7 +308,7 @@ impl App {
         let cur: Option<usize> = if synced { l.lines.iter().rposition(|x| x.t as i64 <= pos_ms) } else { None };
 
         let lay = self.lyr_layout.as_ref().unwrap();
-        // aktif satır, görünür alanın üst üçte birinde (Apple Music gibi)
+
         let anchor = rect.height() * 0.32;
         let target = match cur {
             Some(i) => lay.lines[i].y + lay.lines[i].h * 0.5,
@@ -349,14 +344,14 @@ impl App {
                 continue;
             }
             let dist = cur.map(|c| (i as i32 - c as i32).abs()).unwrap_or(1);
-            // üst ve alt kenarda yazılar kendiliğinden solar (arkasında karartma yok)
+
             let mid_y = top + line.h * 0.5;
             let edge = smoothstep((mid_y - rect.top()) / 90.0) * smoothstep((rect.bottom() - mid_y) / 120.0);
             let base = if !synced { 0.8 } else if Some(i) == cur { 1.0 } else { (0.36 - 0.06 * (dist as f32 - 1.0)).max(0.14) };
             let a = ctx.animate_value_with_time(Id::new(("lyr", i)), base, 0.45) * edge;
             let is_cur = Some(i) == cur;
             let data = &l.lines[i];
-            // kelime senkronlu satırda: sönük zemin -> kelime kelime beyaza dolum
+
             let word_fill = is_cur && l.kind == "word";
             let dim_a = if word_fill { 0.36 * edge } else { a };
 
@@ -386,13 +381,12 @@ impl App {
             self.lyr_manual = 0.0;
         }
         if synced {
-            // hemen yeniden çizim istemek döngüyü %100 CPU'ya çıkarır; ~40 fps akıcı kayma için yeter
+
             ctx.request_repaint_after(std::time::Duration::from_millis(40));
         }
     }
 }
 
-/// Basılı tutma tekrarı: 0,4 sn sonra başlar, uzadıkça hızlanır. Dönen değer o an uygulanacak adım (ms); henüz sırası değilse `None`.
 fn hold_repeat(held: std::time::Duration, since_last: std::time::Duration) -> Option<i32> {
     use std::time::Duration as D;
     let (interval, step) = if held < D::from_millis(400) {

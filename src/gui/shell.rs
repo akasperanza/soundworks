@@ -1,8 +1,5 @@
-//! Pencere kabuğu: tek örnek denetimi, tepsi simgesi, gizleme/gösterme, açılışta başlatma, kapanış.
-
 use super::*;
 
-/// Aynı anda yalnızca bir Soundworks: ikincisi açılırsa mevcut pencereyi öne getirip çıkar.
 pub(super) fn single_instance_ok() -> bool {
     use windows::core::w;
     use windows::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
@@ -15,7 +12,7 @@ pub(super) fn single_instance_ok() -> bool {
             Ok(h) => {
                 let exists = GetLastError() == ERROR_ALREADY_EXISTS;
                 if !exists {
-                    // tutamağı işlem boyunca açık tut
+
                     std::mem::forget(h);
                 }
                 !exists
@@ -52,7 +49,7 @@ pub fn run(start_hidden: bool) -> anyhow::Result<()> {
     let mut opts = eframe::NativeOptions { viewport: vp, ..Default::default() };
     #[cfg(feature = "devtools")]
     if crate::devenv::dev_var("SW_NOVSYNC").is_ok() {
-        opts.vsync = false; // doğrulama: CPU yükü sürücünün dikey eşitleme beklemesinden mi?
+        opts.vsync = false;
     }
     let opts = if crate::devenv::dev_var("SW_OFFSCREEN").is_ok() {
         eframe::NativeOptions { viewport: opts.viewport.with_position([-6000.0, 100.0]), ..opts }
@@ -76,7 +73,7 @@ pub fn run(start_hidden: bool) -> anyhow::Result<()> {
 }
 
 pub(super) fn make_tray(ctx: &egui::Context) -> Option<(TrayIcon, CheckMenuItem)> {
-    // uygulama simgesiyle aynı çizim (SW monogramı)
+
     let icon = crate::appicon::tray_icon()?;
     let menu = Menu::new();
     let show = MenuItem::new("Soundworks'ü göster", true, None);
@@ -107,8 +104,6 @@ pub(super) fn make_tray(ctx: &egui::Context) -> Option<(TrayIcon, CheckMenuItem)
     Some((tray, eq))
 }
 
-/// Tepsiden "Çıkış": önce temiz kapanış isteği (arayüz kapanışı görür, `Drop` ayarları kaydedip motoru durdurur);
-/// arayüz (gizli pencere vb.) 3 sn içinde yanıt vermezse eski yoldan zorla çıkılır.
 pub(super) fn request_quit(ctx: &egui::Context) {
     dev_trace("quit_request");
     QUIT_REQ.store(true, Relaxed);
@@ -116,7 +111,7 @@ pub(super) fn request_quit(ctx: &egui::Context) {
     std::thread::spawn(|| {
         for _ in 0..30 {
             if QUIT_ACK.load(Relaxed) {
-                // kapanış başladı; takılırsa 8 sn sonra zorla bitir
+
                 std::thread::sleep(std::time::Duration::from_secs(8));
                 dev_trace("force_exit_after_ack");
                 std::process::exit(0);
@@ -128,7 +123,6 @@ pub(super) fn request_quit(ctx: &egui::Context) {
     });
 }
 
-/// Temiz kapanış çalışmazsa: varsayılan çıkışı geri alıp süreci sonlandırır.
 pub(super) fn force_quit() -> ! {
     if let Some(mut c) = crate::fsutil::read_json::<Config>(&config_path()) {
         if let Some(id) = c.restore_default.take() {
@@ -141,7 +135,6 @@ pub(super) fn force_quit() -> ! {
     std::process::exit(0)
 }
 
-/// Kayıtlı pencere konumu şu an bağlı ekranların içinde mi (monitör çıkarıldıysa görünmez pencere olmasın).
 pub(super) fn window_on_screen(x: f32, y: f32, w: f32, h: f32, scale: f32) -> bool {
     use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN};
     let s = if scale > 0.1 { scale } else { 1.0 };
@@ -157,11 +150,10 @@ pub(super) fn window_on_screen(x: f32, y: f32, w: f32, h: f32, scale: f32) -> bo
         return true;
     }
     let (px, py, pw) = (x * s, y * s, w * s);
-    // başlık çubuğunun en az bir parçası görünür olmalı
+
     px + pw > vx + 120.0 && px < vx + vw - 120.0 && py >= vy - 10.0 && py < vy + vh - 80.0 && h > 0.0
 }
 
-/// Windows 11 başlık çubuğunu uygulamanın rengine boya (koyu mod + başlık/metin/kenar rengi).
 pub(super) fn style_titlebar() -> bool {
     use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
     let Some(h) = find_window() else { return false };
@@ -184,12 +176,8 @@ pub(super) fn find_window() -> Option<windows::Win32::Foundation::HWND> {
     unsafe { FindWindowW(PCWSTR::null(), w!("Soundworks")).ok() }
 }
 
-/// Tepsiye gizlenirken pencerenin eski konumu ve durumu: (x, y, büyütülmüş mü).
 pub(super) static HIDDEN_AT: std::sync::Mutex<Option<(i32, i32, bool)>> = std::sync::Mutex::new(None);
 
-/// Pencereyi tepsiye gizler. `SW_HIDE` KULLANILMAZ: gizli bir pencere için Windows çizim isteği iletmez ve arayüz döngüsü
-/// durur (tepsiden çıkış, medya tuşları, hız değişimi gibi arayüze bağlı işler çalışmaz). Bunun yerine pencere ekran dışına
-/// taşınır ve araç penceresi stiline alınır (görev çubuğunda / Alt+Tab'da görünmez) ama "görünür" kalır, döngü sürer.
 pub(super) fn hide_window() {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -207,7 +195,7 @@ pub(super) fn hide_window() {
         let mut r = RECT::default();
         let _ = GetWindowRect(h, &mut r);
         *HIDDEN_AT.lock().unwrap() = Some((r.left, r.top, IsZoomed(h).as_bool()));
-        // stil değişikliğinin görev çubuğuna yansıması için önce gizle, sonra ekran dışında yeniden göster
+
         let _ = ShowWindow(h, SW_HIDE);
         let ex = GetWindowLongW(h, GWL_EXSTYLE) as u32;
         SetWindowLongW(h, GWL_EXSTYLE, ((ex | WS_EX_TOOLWINDOW.0) & !WS_EX_APPWINDOW.0) as i32);
@@ -215,7 +203,6 @@ pub(super) fn hide_window() {
     }
 }
 
-/// Tepsideki pencereyi eski konumunda geri getirir.
 pub(super) fn show_window() {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongW, IsIconic, SetForegroundWindow, SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,

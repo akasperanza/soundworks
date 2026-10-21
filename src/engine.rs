@@ -1,5 +1,3 @@
-//! WASAPI: kaynak cihazın loopback'ini yakala -> EQ -> hedef cihaza (tercihen exclusive) yaz.
-
 use crate::apo::Preset;
 use crate::biquad::Equalizer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -16,55 +14,54 @@ use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
 use windows::Win32::System::Com::*;
 use windows::Win32::System::Threading::*;
 
-pub static STOP: AtomicBool = AtomicBool::new(false); // Ctrl+C (CLI)
-/// Tepsi menüsünden: EQ'yu kalıcı olarak devre dışı bırak.
+pub static STOP: AtomicBool = AtomicBool::new(false);
+
 pub static EQ_OFF: AtomicBool = AtomicBool::new(false);
 
-/// Çalışan motoru dışarıdan yönetmek için ortak durum.
 pub struct Control {
     pub stop: AtomicBool,
     version: std::sync::atomic::AtomicU64,
     preset: Mutex<Preset>,
     pub status: Mutex<String>,
-    /// A/B: true iken EQ atlanır.
+
     pub bypass: AtomicBool,
-    /// A/B'de EQ'süz sesi preamp kadar kıs (adil karşılaştırma).
+
     pub level_match: AtomicBool,
-    /// Görselleştirici için son çıkış örnekleri (mono, çıkış hızında).
+
     pub viz: Mutex<VecDeque<f32>>,
     pub viz_seq: std::sync::atomic::AtomicU64,
     pub viz_rate: std::sync::atomic::AtomicU32,
-    /// -1..1 (f32 bit)
+
     pub balance: std::sync::atomic::AtomicU32,
-    /// 0..1 (f32 bit)
+
     pub crossfeed: std::sync::atomic::AtomicU32,
     pub mono: AtomicBool,
-    /// Son okumadan beri tepe değerler (f32 bit, >=0 olduğu için bit sırası = değer sırası)
+
     pub peak_l: std::sync::atomic::AtomicU32,
     pub peak_r: std::sync::atomic::AtomicU32,
     pub clips: std::sync::atomic::AtomicU32,
     pub out_info: Mutex<OutInfo>,
-    /// bit-perfect kanıtı: cihaza yazılan çerçevelerin ölçümü
+
     pub proof: crate::proof::Proof,
-    /// Kaynak (sanal) cihazın Windows ses seviyesi/mute'u; loopback bunu içermediği için biz uygularız.
+
     pub src_gain: std::sync::atomic::AtomicU32,
-    /// Arayüzde gösterilecek tek seferlik bildirim.
+
     pub notice: Mutex<Option<String>>,
-    /// 16 bit çıkışta TPDF dither (yalnızca sinyale dokunulmuşsa uygulanır).
+
     pub dither: AtomicBool,
-    /// Sinyal zinciri modülleri (EQ'dan sonra, ses seviyesinden önce).
+
     chain: Mutex<Vec<crate::fx::FxSpec>>,
     chain_ver: std::sync::atomic::AtomicU64,
-    /// Band solo: açıkken yalnızca `solo_freq` (Hz) çevresi, `solo_q` bant genişliğiyle çalar.
+
     pub solo: AtomicBool,
-    /// motor, çıkış cihazı kaybolduğu için (çıkarıldı/bağlantı koptu) sonlandı
+
     pub gone: AtomicBool,
-    /// Canlı ölçümler (f32 bit; < -150 = ölçülemedi): anlık/kısa vadeli/bütünleşik LUFS ve gerçek tepe dBTP.
+
     pub m_lufs: std::sync::atomic::AtomicU32,
     pub s_lufs: std::sync::atomic::AtomicU32,
     pub i_lufs: std::sync::atomic::AtomicU32,
     pub tp_db: std::sync::atomic::AtomicU32,
-    /// arayüz isteği: ölçümleri sıfırla
+
     pub meter_reset: AtomicBool,
     pub solo_freq: std::sync::atomic::AtomicU32,
     pub solo_q: std::sync::atomic::AtomicU32,
@@ -77,7 +74,7 @@ pub struct OutInfo {
     pub bits: u16,
     pub float: bool,
     pub device: String,
-    /// DoP (DSD over PCM) çıkışı: ses seviyesi, EQ, dither ve modüller devre dışıdır
+
     pub dop: bool,
 }
 
@@ -117,12 +114,12 @@ impl Control {
             solo_q: std::sync::atomic::AtomicU32::new(2f32.to_bits()),
         })
     }
-    /// Çalışırken preseti değiştir (EQ yeniden kurulur).
+
     pub fn set_preset(&self, p: Preset) {
         *self.preset.lock().unwrap() = p;
         self.version.fetch_add(1, Ordering::SeqCst);
     }
-    /// Modül zincirini değiştir (yalnızca parametre değiştiyse durum korunur, yapı değiştiyse çapraz geçiş yapılır).
+
     pub fn set_chain(&self, v: Vec<crate::fx::FxSpec>) {
         *self.chain.lock().unwrap() = v;
         self.chain_ver.fetch_add(1, Ordering::SeqCst);
@@ -143,8 +140,6 @@ impl Control {
 const GUID_FLOAT: GUID = GUID::from_u128(0x00000003_0000_0010_8000_00aa00389b71);
 const GUID_PCM: GUID = GUID::from_u128(0x00000001_0000_0010_8000_00aa00389b71);
 const E_NOT_ALIGNED: i32 = 0x88890019u32 as i32;
-
-// ---------------------------------------------------------------- formatlar
 
 #[derive(Debug, Clone, Copy)]
 struct Fmt {
@@ -218,14 +213,12 @@ fn read_sample(b: &[u8], f: &Fmt) -> f32 {
     v as f32 / 2147483648.0
 }
 
-/// 4 noktalı kübik (Catmull-Rom) interpolasyon: p1 ile p2 arasında, t in [0, 1]. t=0'da tam p1.
 fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
     let t2 = t * t;
     let t3 = t2 * t;
     0.5 * (2.0 * p1 + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
 }
 
-/// TPDF dither üreteci: iki düzgün dağılımın farkı, [-1, 1) LSB.
 struct Dither {
     s: u32,
 }
@@ -235,7 +228,7 @@ impl Dither {
         Dither { s: seed.max(1) }
     }
     fn next_u(&mut self) -> f32 {
-        // xorshift32
+
         let mut x = self.s;
         x ^= x << 13;
         x ^= x >> 17;
@@ -248,8 +241,6 @@ impl Dither {
     }
 }
 
-/// Üstel yaklaşım; hedefe yeterince yaklaşınca tam hedefe oturur. f32'de `cur += (tgt - cur) * k` hedefin
-/// ~4e-5 altında takılır (artım yarım ULP'nin altına düşer); bu da %100 seviyede bile bit-perfect yolu bozardı.
 fn approach(cur: f32, tgt: f32, k: f32) -> f32 {
     let n = cur + (tgt - cur) * k;
     if (tgt - n).abs() < 1.0e-4 * tgt.max(1.0e-3) {
@@ -259,12 +250,10 @@ fn approach(cur: f32, tgt: f32, k: f32) -> f32 {
     }
 }
 
-/// Sinyale dokunulmuşsa (EQ/DSP, ses ≠ %100, fade) dither uygulanır; bit-perfect yolda uygulanmaz.
 fn needs_dither(dither_on: bool, chain_touched: bool, gain_cur: f32, gate_cur: f32) -> bool {
     dither_on && (chain_touched || (gain_cur - 1.0).abs() > 1e-6 || gate_cur < 1.0)
 }
 
-/// `dither`: LSB biriminde eklenecek gürültü (0 = yok).
 fn write_sample(b: &mut [u8], s: f32, f: &Fmt, dither: f32) {
     let s = s.clamp(-1.0, 1.0);
     if f.float {
@@ -274,23 +263,20 @@ fn write_sample(b: &mut [u8], s: f32, f: &Fmt, dither: f32) {
     let max = (1i64 << (f.valid_bits - 1)) - 1;
     let v = (s as f64 * max as f64 + dither as f64).round() as i64;
     let v = v.clamp(-max - 1, max);
-    // sol hizalı 32 bit değer; container kadar üst baytı yaz
+
     let left = ((v << (32 - f.valid_bits)) as i32).to_le_bytes();
     let bytes = f.container_bits as usize / 8;
     b[..bytes].copy_from_slice(&left[4 - bytes..]);
 }
 
-// ----------------------------------------------------------------- cihazlar
-
-/// Çıkış cihazının bağlantı türü (uyarılar ve hız eşleştirme için).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DeviceKind {
     Bluetooth,
     Usb,
     Hdmi,
-    /// anakart / dahili ses (HD Audio, Intel SST...)
+
     Builtin,
-    /// sanal kablo, yazılım cihazı
+
     Virtual,
     Unknown,
 }
@@ -302,14 +288,13 @@ pub struct DeviceInfo {
     pub kind: DeviceKind,
 }
 
-/// Cihaz türünü bus adından (PKEY_Device_EnumeratorName), form faktöründen ve addan çıkarır.
 pub fn kind_from(enumerator: &str, form_factor: Option<u32>, name: &str) -> DeviceKind {
     let en = enumerator.to_uppercase();
     let nm = name.to_lowercase();
     if en.contains("BTH") || nm.contains("bluetooth") || nm.contains("hands-free") || nm.contains("handsfree") {
         return DeviceKind::Bluetooth;
     }
-    // form faktör 9 = HDMI, 8 = S/PDIF, 10 = DisplayPort...
+
     if form_factor == Some(9) || nm.contains("hdmi") || nm.contains("displayport") || nm.contains("nvidia high definition") {
         return DeviceKind::Hdmi;
     }
@@ -408,7 +393,6 @@ pub fn list_devices() -> Result<Vec<DeviceInfo>> {
     }
 }
 
-/// Aramayla eşleşen cihaz: önce tam kimlik, sonra tam ad, en son ad parçası (ilk eşleşen). Saf; test edilebilir.
 fn pick_device(devs: Vec<DeviceInfo>, q: &str) -> Option<DeviceInfo> {
     let ql = q.to_lowercase();
     let idx = devs
@@ -419,7 +403,6 @@ fn pick_device(devs: Vec<DeviceInfo>, q: &str) -> Option<DeviceInfo> {
     devs.into_iter().nth(idx)
 }
 
-/// `None` -> varsayılan; aksi halde cihaz kimliği (arayüz) ya da ad / ad parçası (komut satırı).
 pub fn resolve(query: Option<&str>) -> Result<DeviceInfo> {
     let devs = list_devices()?;
     let found = match query {
@@ -429,8 +412,6 @@ pub fn resolve(query: Option<&str>) -> Result<DeviceInfo> {
     found.ok_or_else(|| anyhow!("cihaz bulunamadı: {}", query.unwrap_or("<varsayılan>")))
 }
 
-/// Eski yapılandırmalarda cihaz adla saklanıyordu: ad bağlı bir cihaza denk geliyorsa kimliğine çevirir.
-/// Cihaz şu an bağlı değilse (ad belirsiz) olduğu gibi bırakır.
 pub fn migrate_device_ref(devs: &[DeviceInfo], stored: &mut Option<String>) -> bool {
     let Some(s) = stored.as_ref() else { return false };
     if devs.iter().any(|d| &d.id == s) {
@@ -458,17 +439,15 @@ unsafe fn open(id: &str) -> Result<IMMDevice> {
     Ok(enumerator()?.GetDevice(PCWSTR(wide.as_ptr()))?)
 }
 
-// ------------------------------------------------------------------ halka
-
 pub struct Ring {
-    pub q: Mutex<VecDeque<f32>>, // interleaved stereo
-    /// false: motor sesi birkaç ms'de sıfıra indirir ve halkayı tüketmeden bekler (duraklatma).
+    pub q: Mutex<VecDeque<f32>>,
+
     pub gate: Arc<AtomicBool>,
-    /// true: seek/parça değişiminde halka temizlenirken geçici kapı.
+
     pub hold: AtomicBool,
-    /// Motor tamamen sessizliğe indiğinde true (halka güvenle temizlenebilir).
+
     pub muted: AtomicBool,
-    /// Doğrusal ses kazancı (f32 bit); motor yumuşatarak uygular.
+
     pub vol: std::sync::atomic::AtomicU32,
 }
 
@@ -486,8 +465,6 @@ impl Ring {
         })
     }
 }
-
-// ---------------------------------------------------------------- yakalama
 
 fn capture_thread(src_id: String, ctl: Arc<Control>, ring: Arc<Ring>, tx: mpsc::Sender<Result<u32>>) {
     let run = || -> Result<()> {
@@ -508,7 +485,7 @@ fn capture_thread(src_id: String, ctl: Arc<Control>, ring: Arc<Ring>, tx: mpsc::
 
             let ch = fmt.channels as usize;
             let sb = fmt.container_bits as usize / 8;
-            let cap_limit = fmt.rate as usize * 2 * 2; // ~2 sn sınır
+            let cap_limit = fmt.rate as usize * 2 * 2;
             let mut tmp: Vec<f32> = Vec::new();
 
             while !ctl.stopped() {
@@ -561,8 +538,6 @@ fn capture_thread(src_id: String, ctl: Arc<Control>, ring: Arc<Ring>, tx: mpsc::
     }
 }
 
-// ------------------------------------------------------------------ çıkış
-
 struct RenderStream {
     client: IAudioClient,
     fmt: Fmt,
@@ -579,7 +554,7 @@ unsafe fn init_render(dev: &IMMDevice, src_rate: u32, allow_exclusive: bool) -> 
         let mut rates = vec![src_rate, mix_fmt.rate, 48000, 44100, 96000, 192000, 88200];
         let mut seen = std::collections::HashSet::new();
         rates.retain(|r| seen.insert(*r));
-        // (container, valid, float)
+
         let formats = [(32u16, 32u16, true), (32, 32, false), (32, 24, false), (24, 24, false), (16, 16, false)];
         for rate in rates {
             for &(container, valid, float) in &formats {
@@ -628,11 +603,8 @@ unsafe fn try_init_exclusive(dev: &IMMDevice, f: &Fmt) -> Result<IAudioClient> {
     Ok(client)
 }
 
-/// Standart hızlar (cihaz desteği sorgusu).
 pub const STD_RATES: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000, 352800, 384000];
 
-/// Cihazın exclusive modda kabul ettiği hızlar. Cihaz başka bir uygulamada kullanımdaysa ya da sorgulanamazsa boş döner
-/// (çağıran sabit hıza düşer). COM için ayrı bir iş parçacığı kullanır; arayüz thread'inden güvenle çağrılabilir.
 pub fn supported_rates(dev_id: &str) -> Vec<u32> {
     let id = dev_id.to_string();
     std::thread::spawn(move || -> Vec<u32> {
@@ -662,8 +634,6 @@ pub fn supported_rates(dev_id: &str) -> Vec<u32> {
     .unwrap_or_default()
 }
 
-/// Parça hızına en uygun çıkış hızı: cihaz destekliyorsa aynısı; yoksa aynı aileden (44.1k/48k) en yakın üst kat;
-/// o da yoksa herhangi bir üst hız; hiçbiri yoksa en yüksek desteklenen. Liste boşsa `fallback`.
 pub fn choose_rate(src: u32, supported: &[u32], fallback: u32) -> u32 {
     if supported.is_empty() {
         return fallback;
@@ -676,15 +646,15 @@ pub fn choose_rate(src: u32, supported: &[u32], fallback: u32) -> u32 {
     };
     let mut sorted: Vec<u32> = supported.to_vec();
     sorted.sort_unstable();
-    // aynı ailede tam kat, kaynağın üstünde, en düşük
+
     if let Some(r) = sorted.iter().copied().find(|r| *r > src && family(*r) != 0 && family(*r) == family(src)) {
         return r;
     }
-    // aynı ailede kaynağın altı (ör. 192k dosya, cihaz 96k'ya kadar): en yüksek
+
     if let Some(r) = sorted.iter().rev().copied().find(|r| *r < src && family(*r) != 0 && family(*r) == family(src)) {
         return r;
     }
-    // başka aile: kaynağın üstündeki en yakın, yoksa en yüksek
+
     sorted.iter().copied().find(|r| *r > src).unwrap_or(*sorted.last().unwrap())
 }
 
@@ -692,9 +662,9 @@ pub struct Options {
     pub from: Option<String>,
     pub to: Option<String>,
     pub shared: bool,
-    /// Some ise kaynak loopback değil, dahili oynatıcıdır.
+
     pub player: Option<Arc<crate::player::Player>>,
-    /// DSD'yi DoP olarak çıkar (yalnızca exclusive, oynatıcı kaynağıyla)
+
     pub dop: bool,
 }
 
@@ -736,8 +706,6 @@ pub fn run(ctl: Arc<Control>, opts: Options) -> Result<()> {
     result
 }
 
-/// Halkadan okuma adımı (1.0 = her çıkış çerçevesi tam bir kaynak çerçevesi). Telafi yalnızca kaynağın kendi saati varsa
-/// (loopback) ve doluluk hedeften çok saptıysa uygulanır; aksi halde adım sabittir ve örnekler birebir geçer.
 fn read_step(drift_comp: bool, base_step: f64, dev_ratio: f64) -> f64 {
     if !drift_comp || (dev_ratio.abs() < 0.5 && (base_step - 1.0).abs() < 1e-9) {
         base_step
@@ -746,8 +714,6 @@ fn read_step(drift_comp: bool, base_step: f64, dev_ratio: f64) -> f64 {
     }
 }
 
-/// `drift_comp`: kaynağın kendi saati varsa (loopback yakalama) halka doluluğuna göre hız telafisi yapılır. Dahili oynatıcıda kaynak
-/// saati yoktur (çözücü halkayı ihtiyaca göre doldurur), telafi yapılmaz: örnekler birebir geçer.
 unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32, ring: &Arc<Ring>, exclusive: bool, drift_comp: bool) -> Result<()> {
     let dev = open(dst_id)?;
     let mut tries = 0;
@@ -762,7 +728,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
             Err(err) => return Err(err),
         }
     };
-    // Hedef cihaz Windows'ta sessize alınmışsa (özellikle exclusive'de) hiç ses duyulmaz: otomatik aç.
+
     if let Ok(v) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
         if v.GetMute().map(|m| m.as_bool()).unwrap_or(false) {
             if v.SetMute(false, std::ptr::null()).is_ok() {
@@ -776,7 +742,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         }
     }
     let fmt = rs.fmt;
-    // Exclusive modda Windows ses seviyesi uygulanmaz; donanım sesi yoksa yazılımla biz uygularız.
+
     let vol: Option<IAudioEndpointVolume> = if rs.exclusive {
         match dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
             Ok(v) if v.QueryHardwareSupport().map(|h| h & 1 == 0).unwrap_or(true) => Some(v),
@@ -801,20 +767,19 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
     let buf_frames = rs.client.GetBufferSize()?;
     let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 
-    // ilk buffer sessiz
     let p = render.GetBuffer(buf_frames)?;
     std::ptr::write_bytes(p, 0, buf_frames as usize * fmt.frame_bytes());
     render.ReleaseBuffer(buf_frames, 0)?;
     rs.client.Start()?;
 
-    let target = (src_rate as usize * 40 / 1000).max(buf_frames as usize * 2); // kaynak frame
+    let target = (src_rate as usize * 40 / 1000).max(buf_frames as usize * 2);
     let base_step = src_rate as f64 / fmt.rate as f64;
     let mut frac = 0.0f64;
-    let mut prev = (0f32, 0f32); // kübik interpolasyon için bir önceki çerçeve
+    let mut prev = (0f32, 0f32);
     let mut primed = false;
     let fb = fmt.frame_bytes();
     let sb = fmt.container_bits as usize / 8;
-    let mut gain_cur = 0f32; // sessizden yumuşak giriş (ani yüksek ses olmasın)
+    let mut gain_cur = 0f32;
     let mut gain_tgt = 1f32;
     let mut last_poll = std::time::Instant::now() - Duration::from_secs(1);
     let mut ver = ctl.version.load(Ordering::SeqCst);
@@ -830,21 +795,21 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
     };
     let mut cf = Crossfeed::new(fmt.rate as f32);
     let mut vbuf: Vec<f32> = Vec::with_capacity(4096);
-    let mut gate_cur = 0f32; // duraklatma/seek kapısı (0..1, ~6 ms rampa)
+    let mut gate_cur = 0f32;
     let gate_step = 1.0 / (0.006 * fmt.rate as f32);
     let mut muted_flag = false;
     let mut dith = [Dither::new(0x9E37_79B9), Dither::new(0x85EB_CA6B)];
-    let mut old_eq: Option<(Equalizer, u32)> = None; // yapı değişiminde eski EQ ile kısa çapraz geçiş
+    let mut old_eq: Option<(Equalizer, u32)> = None;
     let xf_len = ((fmt.rate as f32 * 0.03) as u32).max(1);
     let mut chain = crate::fx::FxChain::new(&ctl.chain.lock().unwrap(), fmt.rate as f32);
     let mut chain_ver = ctl.chain_ver.load(Ordering::SeqCst);
     let mut old_chain: Option<(crate::fx::FxChain, u32)> = None;
     let mut meter = crate::loudness::LiveMeter::new(fmt.rate);
     let mut solo = crate::biquad::BandSolo::new();
-    let mut solo_cur = 0f32; // 0..1 yumuşak geçiş (~10 ms)
+    let mut solo_cur = 0f32;
     let mut solo_last = (0f32, 0f32);
-    const SOLO_MAKEUP: f32 = 2.0; // +6 dB: dar bir bant kısık duyulur
-    let mut mix_cur = 1f32; // 1 = EQ'lu, 0 = EQ'süz (yumuşak geçiş)
+    const SOLO_MAKEUP: f32 = 2.0;
+    let mut mix_cur = 1f32;
 
     while !ctl.stopped() {
         if WaitForSingleObject(event, 200) != WAIT_OBJECT_0 {
@@ -862,7 +827,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         if v != ver {
             ver = v;
             let pr = ctl.preset.lock().unwrap();
-            // bant sayısı aynıysa filtre durumu korunur ve katsayılar yumuşakça kayar (tık yok)
+
             if !eq.retarget(&pr, fmt.rate as f64) {
                 let new = Equalizer::new(&pr, fmt.rate as f64, 2);
                 old_eq = Some((std::mem::replace(&mut eq, new), xf_len));
@@ -875,7 +840,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
             if chain.same_structure(&specs) {
                 chain.update(&specs);
             } else {
-                // modül eklendi/çıkarıldı/sırası değişti: eski zincirle kısa çapraz geçiş (tık olmasın)
+
                 let new = crate::fx::FxChain::new(&specs, fmt.rate as f32);
                 old_chain = Some((std::mem::replace(&mut chain, new), xf_len));
             }
@@ -892,14 +857,14 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 solo_last = (sf, sq);
             }
             if solo_cur < 0.0005 {
-                solo.reset(); // başlarken eski durumdan geçiş sesi gelmesin
+                solo.reset();
             }
         }
         let gate_tgt = if ring.gate.load(Ordering::Relaxed) && !ring.hold.load(Ordering::Relaxed) { 1f32 } else { 0f32 };
         let vol_g = f32::from_bits(ring.vol.load(Ordering::Relaxed)).clamp(0.0, 1.0);
         let dither_on = ctl.dither.load(Ordering::Relaxed) && !fmt.float && fmt.valid_bits <= 16;
         let src_gain = f32::from_bits(ctl.src_gain.load(Ordering::Relaxed)).clamp(0.0, 1.0);
-        // seviyeye bağlı modüller (Loudness) çalar ses seviyesini bilir
+
         let level = gain_tgt * src_gain * vol_g;
         chain.set_level(level);
         if let Some((o, _)) = old_chain.as_mut() {
@@ -912,9 +877,9 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         let (mut pk_l, mut pk_r, mut clips) = (0f32, 0f32, 0u32);
         let mut pf = crate::proof::Counters::default();
         let mix_tgt = if ctl.bypass.load(Ordering::Relaxed) || EQ_OFF.load(Ordering::Relaxed) { 0f32 } else { 1f32 };
-        // seviye eşleme yalnızca A/B karşılaştırması içindir (basılı tut); EQ kalıcı kapatılınca sinyale dokunulmaz
+
         let dry_gain = if ctl.level_match.load(Ordering::Relaxed) && ctl.bypass.load(Ordering::Relaxed) { eq.preamp_gain() } else { 1.0 };
-        // sinyale dokunulmuyorsa (bit-perfect yol) dither eklenmez
+
         let chain_touched = (!eq.is_identity() && mix_tgt > 0.0)
             || chain.any_enabled()
             || old_chain.is_some()
@@ -944,7 +909,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
             }
         }
         if primed {
-            // clock drift telafisi: doluluk hedeften saptıkça çok küçük hız ayarı
+
             let dev_ratio = (fill as f64 - target as f64) / target as f64;
             let step = read_step(drift_comp, base_step, dev_ratio);
             if step == 1.0 {
@@ -953,7 +918,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
             for i in 0..n as usize {
                 gate_cur = if gate_cur < gate_tgt { (gate_cur + gate_step).min(gate_tgt) } else { (gate_cur - gate_step).max(gate_tgt) };
                 if gate_cur <= 0.0 && gate_tgt == 0.0 {
-                    // tam sessiz: halka tüketilmez (duraklatma sonrası kaldığı yerden devam eder)
+
                     if !muted_flag {
                         muted_flag = true;
                         ring.muted.store(true, Ordering::SeqCst);
@@ -966,7 +931,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 }
                 if q.len() < 4 {
                     primed = false;
-                    gate_cur = 0.0; // sonraki başlangıçta yumuşak giriş
+                    gate_cur = 0.0;
                     pf.dry += 1;
                     break;
                 }
@@ -974,7 +939,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 let gain_goal = gain_tgt * src_gain * vol_g;
                 gain_cur = approach(gain_cur, gain_goal, 0.0008);
                 let t = frac as f32;
-                // kesirli konumda (hız farkı/saat kayması) kübik, yoksa birebir örnek: bit-perfect yol bozulmaz
+
                 let (dl, dr) = if t == 0.0 {
                     (l0, r0)
                 } else if q.len() >= 6 {
@@ -1026,13 +991,12 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                     l = m;
                     r = m;
                 }
-                // Solo yalnızca dinlenen sesi değiştirir: karışım zincirden SONRA yapılır ve analizör (grafik arka planı) solosuz
-                // sinyali (vl, vr) görmeye devam eder; yani solo açılınca grafik değişmez.
+
                 let (mut vl, mut vr) = (l, r);
                 if solo_cur > 0.0005 {
-                    // EQ yerine, ham (EQ'suz) sinyalin yalnızca seçili bölgesi
+
                     let (sl, sr) = (solo.process(0, dl) * SOLO_MAKEUP, solo.process(1, dr) * SOLO_MAKEUP);
-                    // zincir (limiter) atlandığı için kırpılma güvenliği: tam ölçeğe sıkıştır
+
                     l = (l * (1.0 - solo_cur) + sl * solo_cur).clamp(-1.0, 1.0);
                     r = (r * (1.0 - solo_cur) + sr * solo_cur).clamp(-1.0, 1.0);
                 }
@@ -1058,7 +1022,7 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                 let o = &mut out[i * fb..];
                 let dith_on = needs_dither(dither_on, chain_touched, gain_cur, gate_cur);
                 let (dl_, dr_) = if dith_on { (dith[0].tpdf(), dith[1].tpdf()) } else { (0.0, 0.0) };
-                // kanıt: yumuşak geçişler dışında, yazılan değer halkadan gelen örnekle aynı mı?
+
                 if gate_cur < 1.0 || gain_cur != gain_goal {
                     pf.ramp += 1;
                 } else if crate::proof::frame_exact(dl, dr, l, r, t == 0.0, dith_on) {
@@ -1105,13 +1069,8 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
     Ok(())
 }
 
-
-// ------------------------------------------------------------------ DoP (DSD over PCM)
-
-/// DoP'ta denenen biçimler (container, geçerli bit): 24 bitlik DoP sözcüğü sola yaslı yazılır.
 const DOP_FORMATS: [(u16, u16); 3] = [(32, 24), (24, 24), (32, 32)];
 
-/// DoP sözcüğünü (24 bit) biçime göre bayt dizisine yazar. Sola yaslı: 32 bit kapta üst 24 bit.
 fn write_dop(b: &mut [u8], word: u32, f: &Fmt) {
     if f.container_bits == 32 {
         b[..4].copy_from_slice(&(word << 8).to_le_bytes());
@@ -1120,7 +1079,6 @@ fn write_dop(b: &mut [u8], word: u32, f: &Fmt) {
     }
 }
 
-/// `n` çerçeve DoP yazar: işaret baytı çerçeve başına dönüşümlü, (sol, sağ) 16 bitlik DSD değerleri `next`'ten gelir.
 fn fill_dop(out: &mut [u8], n: usize, f: &Fmt, odd: &mut bool, mut next: impl FnMut() -> (u16, u16)) {
     let (fb, sb) = (f.frame_bytes(), f.container_bits as usize / 8);
     for i in 0..n {
@@ -1146,11 +1104,8 @@ unsafe fn init_render_dop(dev: &IMMDevice, rate: u32) -> Result<RenderStream> {
     bail!("Cihaz {rate} Hz / 24 bit exclusive biçimini kabul etmiyor (DoP için gerekli)")
 }
 
-/// DoP için denenen PCM hızları: 44.1 ailesinde DSD64/128/256 = 176.4/352.8/705.6 kHz, 48 ailesinde 192/384/768 kHz.
 pub const DOP_RATES: &[u32] = &[176_400, 192_000, 352_800, 384_000, 705_600, 768_000];
 
-/// Cihazın DoP için gereken biçimi (24 bit, exclusive) kabul ettiği hızlar. En düşük DoP hızı 176.4 kHz olduğundan cihaz
-/// 96 kHz'e kadar destekliyorsa liste boş döner (DoP imkânsız). Cihazın DoP'u *anladığını* göstermez, yalnızca biçimi kabul ettiğini.
 pub fn dop_rates(dev_id: &str) -> Vec<u32> {
     let id = dev_id.to_string();
     std::thread::spawn(move || -> Vec<u32> {
@@ -1177,9 +1132,6 @@ pub fn dop_rates(dev_id: &str) -> Vec<u32> {
     .unwrap_or_default()
 }
 
-/// DAC'a `secs` saniye boyunca yalnızca DoP **sessizliği** (DSD sessizlik deseni) gönderir: müzik içermez. DAC DoP'u
-/// tanıyorsa DSD moduna geçer (ekranında/ışığında görünür); tanımıyorsa yalnızca çok kısık bir ton duyulabilir.
-/// Çağıran, aynı cihazı kullanan motoru önce durdurmalıdır.
 pub fn dop_probe(dev_id: &str, rate: u32, secs: f32) -> Result<()> {
     com_init()?;
     unsafe {
@@ -1210,9 +1162,6 @@ pub fn dop_probe(dev_id: &str, rate: u32, secs: f32) -> Result<()> {
     Ok(())
 }
 
-/// DoP render döngüsü: halka yalnızca 16 bitlik DSD değerleri (f32 içinde tam sayı) taşır; işaret baytını burada ekleriz,
-/// böylece duraklatma / arabellek boşalması / parça geçişinde DSD sessizliği (0x69) gönderilir ve işaret düzeni hiç bozulmaz.
-/// Ses seviyesi, EQ, dither, modüller ve ölçümler uygulanmaz (bit-exact).
 unsafe fn render_loop_dop(ctl: &Control, dst_id: &str, dst_name: &str, rate: u32, ring: &Arc<Ring>) -> Result<()> {
     let dev = open(dst_id)?;
     let mut tries = 0;
@@ -1239,7 +1188,7 @@ unsafe fn render_loop_dop(ctl: &Control, dst_id: &str, dst_name: &str, rate: u32
     let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
     let silence = (crate::dsd::DSD_SILENCE as u16) << 8 | crate::dsd::DSD_SILENCE as u16;
     let mut odd = false;
-    // ilk arabellek DSD sessizliği (sıfır PCM değil: DAC DoP kilidini kaybetmesin)
+
     let p = render.GetBuffer(buf_frames as u32)?;
     fill_dop(std::slice::from_raw_parts_mut(p, buf_frames * fmt.frame_bytes()), buf_frames, &fmt, &mut odd, || (silence, silence));
     render.ReleaseBuffer(buf_frames as u32, 0)?;
@@ -1265,7 +1214,7 @@ unsafe fn render_loop_dop(ctl: &Control, dst_id: &str, dst_name: &str, rate: u32
                 sent_data = true;
                 (l as u16, r as u16)
             } else {
-                primed = false; // boşaldı ya da duraklatıldı: yeniden dolana kadar sessizlik
+                primed = false;
                 (silence, silence)
             }
         });
@@ -1289,7 +1238,6 @@ pub fn install_ctrlc() {
     }
 }
 
-/// Bir cihazın loopback'ini `secs` saniye dinleyip RMS (dBFS, sol kanal) döndürür.
 pub fn measure(dev_query: Option<&str>, secs: u64) -> Result<f64> {
     com_init()?;
     let d = resolve(dev_query)?;
@@ -1335,8 +1283,6 @@ pub fn measure(dev_query: Option<&str>, secs: u64) -> Result<f64> {
     }
 }
 
-
-/// Basit kulaklık crossfeed'i: karşı kanalın alçak geçirilmiş, hafif geciktirilmiş kısmı.
 struct Crossfeed {
     dl: Vec<f32>,
     dr: Vec<f32>,
@@ -1372,9 +1318,6 @@ impl Crossfeed {
     }
 }
 
-
-// ------------------------------------------------- sanal cihaz ve varsayılan çıkış
-
 #[windows::core::interface("F8679F50-850A-41CF-9C72-430F290290C8")]
 unsafe trait IPolicyConfig: windows::core::IUnknown {
     fn GetMixFormat(&self, a: PCWSTR, b: *mut *mut WAVEFORMATEX) -> windows::core::HRESULT;
@@ -1393,14 +1336,13 @@ unsafe trait IPolicyConfig: windows::core::IUnknown {
 
 const VIRTUAL_HINTS: &[&str] = &["cable input", "vb-audio", "voicemeeter", "virtual", "soundworks", "hi-fi cable"];
 
-/// Bilinen sanal ses kablosu/cihazı (render ucu) varsa döndürür.
 pub fn find_virtual() -> Option<DeviceInfo> {
     let devs = list_devices().ok()?;
     let is_virtual = |d: &DeviceInfo| {
         let n = d.name.to_lowercase();
         VIRTUAL_HINTS.iter().any(|h| n.contains(h))
     };
-    // önce klasik 2 kanallı kablo, sonra diğer sanal cihazlar (16 kanallı sürüm en sona)
+
     let rank = |d: &DeviceInfo| {
         let n = d.name.to_lowercase();
         if n.contains("cable input") {
@@ -1421,7 +1363,6 @@ pub fn default_render_id() -> Result<String> {
     }
 }
 
-/// Windows varsayılan çıkış cihazını (tüm roller) değiştirir.
 pub fn set_default_render(id: &str) -> Result<()> {
     unsafe {
         let policy: IPolicyConfig =
@@ -1435,8 +1376,6 @@ pub fn set_default_render(id: &str) -> Result<()> {
     }
 }
 
-
-/// Hata ayıklama: her çıkış cihazının endpoint ses durumunu yazdır.
 pub fn volumes() -> Result<()> {
     com_init()?;
     unsafe {
@@ -1455,8 +1394,6 @@ pub fn volumes() -> Result<()> {
     Ok(())
 }
 
-
-/// Hata ayıklama: bir çıkış cihazının Windows mute durumunu ayarla.
 pub fn set_mute(query: &str, mute: bool) -> Result<()> {
     com_init()?;
     let d = resolve(Some(query))?;
@@ -1468,12 +1405,10 @@ pub fn set_mute(query: &str, mute: bool) -> Result<()> {
     Ok(())
 }
 
-
 fn hresult_of(e: &anyhow::Error) -> Option<u32> {
     e.chain().find_map(|c| c.downcast_ref::<windows::core::Error>()).map(|w| w.code().0 as u32)
 }
 
-/// Hata, çıkış cihazının kaybolduğu türden mi (bağlantı koptu, cihaz çıkarıldı/değişti, bulunamadı)?
 pub fn is_gone(e: &anyhow::Error) -> bool {
     matches!(hresult_of(e), Some(0x88890004) | Some(0x88890026)) || crate::recover::text_means_gone(&format!("{e:#}"))
 }
@@ -1482,7 +1417,6 @@ pub fn is_in_use(e: &anyhow::Error) -> bool {
     hresult_of(e) == Some(0x8889000A)
 }
 
-/// WASAPI hata kodlarını anlaşılır Türkçe'ye çevir.
 pub fn explain_error(e: &anyhow::Error) -> String {
     match hresult_of(e) {
         Some(0x8889000A) => "Cihaz başka bir uygulamada özel (exclusive) kullanımda. Tepsideki başka bir Soundworks ya da cihazı kilitleyen bir oynatıcıyı kapat. (0x8889000A)".to_string(),
@@ -1501,11 +1435,11 @@ mod dsp_tests {
 
     #[test]
     fn player_mode_never_nudges_the_read_step() {
-        // dahili oynatıcıda halka hedefin kat kat üstünde dolu olsa bile adım tam 1.0 kalır (aksi halde ara değer = bit-perfect değil)
+
         for ratio in [-1.0, -0.4, 0.0, 0.4, 2.75, 10.0] {
             assert_eq!(read_step(false, 1.0, ratio), 1.0, "doluluk sapması {ratio}");
         }
-        // loopback'te küçük sapma sabit, büyük sapma telafi edilir
+
         assert_eq!(read_step(true, 1.0, 0.3), 1.0);
         assert!(read_step(true, 1.0, 2.75) > 1.0);
         assert!(read_step(true, 1.0, -2.0) < 1.0);
@@ -1543,13 +1477,13 @@ mod dsp_tests {
         }
         assert!(mx <= 1.0);
         assert!((sum / n as f64).abs() < 0.01, "ortalama {}", sum / n as f64);
-        // üçgensel dağılımın varyansı 1/6
+
         assert!((sq / n as f64 - 1.0 / 6.0).abs() < 0.01, "varyans {}", sq / n as f64);
     }
 
     #[test]
     fn dither_preserves_sub_lsb_signal_on_average() {
-        // 0.25 LSB'lik DC: dither'sız her örnek 0'a yuvarlanır (bilgi kaybolur), dither'lı ortalama 0.25'e yaklaşır
+
         let f = fmt16();
         let s = 0.25f32 / 32767.0;
         assert_eq!(pcm16(&f, s, 0.0), 0);
@@ -1573,7 +1507,7 @@ mod dsp_tests {
     fn cubic_interpolation_is_exact_at_nodes_and_beats_linear() {
         assert_eq!(catmull_rom(0.1, 0.2, 0.3, 0.4, 0.0), 0.2);
         assert!((catmull_rom(0.1, 0.2, 0.3, 0.4, 1.0) - 0.3).abs() < 1e-7);
-        // 5 kHz sinüsü 48 kHz'den kesirli konumlarda yeniden örnekle: kübik hata doğrusaldan çok küçük
+
         let fs = 48000.0f64;
         let f = 5000.0f64;
         let s = |n: f64| (2.0 * std::f64::consts::PI * f * n / fs).sin() as f32;
@@ -1594,7 +1528,6 @@ mod dsp_tests {
         assert!(r_cub < r_lin / 8.0, "kübik {r_cub} vs doğrusal {r_lin}");
     }
 
-
     #[test]
     fn gain_smoothing_reaches_unity_exactly() {
         let mut g = 0f32;
@@ -1602,10 +1535,10 @@ mod dsp_tests {
             g = approach(g, 1.0, 0.0008);
         }
         assert_eq!(g, 1.0);
-        // 24 bit tam ölçek örnek değişmeden geçer
+
         let s = 8388607f32 / 8388608.0;
         assert_eq!((s * g * 8388608.0).round(), 8388607.0);
-        // kıs ve geri aç
+
         let mut m = 1f32;
         for _ in 0..200_000 {
             m = approach(m, 0.0, 0.004);
@@ -1618,7 +1551,6 @@ mod dsp_tests {
         assert!(!needs_dither(true, false, g, 1.0));
     }
 
-
     #[test]
     fn dop_samples_are_written_left_aligned_with_alternating_markers() {
         let f32c = Fmt { rate: 176400, channels: 2, container_bits: 32, valid_bits: 24, float: false, mask: 3 };
@@ -1628,35 +1560,35 @@ mod dsp_tests {
         let data = [(0x1234u16, 0xABCDu16), (0xFFFF, 0x0001)];
         let mut it = data.iter();
         fill_dop(&mut buf, 2, &f32c, &mut odd, || *it.next().unwrap());
-        // çerçeve 0 (işaret 0x05): 0x051234 << 8 ; çerçeve 1 (işaret 0xFA): 0xFAFFFF << 8
+
         assert_eq!(&buf[0..4], &(0x0512_3400u32).to_le_bytes());
         assert_eq!(&buf[4..8], &(0x05AB_CD00u32).to_le_bytes());
         assert_eq!(&buf[8..12], &(0xFAFF_FF00u32).to_le_bytes());
         assert_eq!(&buf[12..16], &(0xFA00_0100u32).to_le_bytes());
-        assert!(odd == false); // iki çerçeve sonra başa döner
-        // 24 bit kapta üç bayt
+        assert!(odd == false);
+
         let mut b24 = vec![0u8; 3 * 2];
         let mut o2 = true;
         fill_dop(&mut b24, 1, &f24c, &mut o2, || (0x6969, 0x6969));
         assert_eq!(b24, vec![0x69, 0x69, 0xFA, 0x69, 0x69, 0xFA]);
-        // işaret düzeni çağrılar arasında korunur
+
         let mut o3 = false;
         let mut x = vec![0u8; 8];
         for _ in 0..3 {
             fill_dop(&mut x, 1, &f32c, &mut o3, || (0, 0));
         }
-        assert!(o3); // 3 çerçeve: tek
+        assert!(o3);
     }
 
     #[test]
     fn dither_decision() {
-        // bit-perfect yol: ses %100, EQ/DSP yok, kapı açık -> dither yok
+
         assert!(!needs_dither(true, false, 1.0, 1.0));
-        // ses kısık, EQ açık, fade sırasında -> var
+
         assert!(needs_dither(true, false, 0.64, 1.0));
         assert!(needs_dither(true, true, 1.0, 1.0));
         assert!(needs_dither(true, false, 1.0, 0.5));
-        // ayar kapalı -> hiç
+
         assert!(!needs_dither(false, true, 0.5, 0.5));
     }
 }
@@ -1665,7 +1597,6 @@ mod dsp_tests {
 mod device_tests {
     use super::*;
 
-    /// Gerçek cihaz yoklaması (ses çalmaz, yalnızca biçim sorar): `SW_PROBE_ID=<cihaz kimliği> cargo test probe_real -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn probe_real_device() {
@@ -1679,7 +1610,6 @@ mod device_tests {
         println!("44.1 kHz parça için seçilen: {}", choose_rate(44100, &rates, 48000));
     }
 
-
     fn dev(id: &str, name: &str) -> DeviceInfo {
         DeviceInfo { id: id.into(), name: name.into(), is_default: false, kind: DeviceKind::Unknown }
     }
@@ -1688,7 +1618,7 @@ mod device_tests {
     fn device_lookup_prefers_id_then_exact_name() {
         let d = || vec![dev("{1}", "Speakers (Realtek)"), dev("{2}", "Speakers (Realtek) 2"), dev("{3}", "FiiO K5")];
         assert_eq!(pick_device(d(), "{2}").unwrap().id, "{2}");
-        // tam ad, daha uzun addan önce gelir
+
         assert_eq!(pick_device(d(), "speakers (realtek)").unwrap().id, "{1}");
         assert_eq!(pick_device(d(), "fiio").unwrap().id, "{3}");
         assert!(pick_device(d(), "yok").is_none());
@@ -1700,13 +1630,13 @@ mod device_tests {
         let mut s = Some("FiiO K5 Pro".to_string());
         assert!(migrate_device_ref(&devs, &mut s));
         assert_eq!(s.as_deref(), Some("{3}"));
-        // zaten kimlik: dokunma
+
         assert!(!migrate_device_ref(&devs, &mut s));
-        // belirsiz ad parçası ("speakers" iki cihaza uyar): olduğu gibi kalır
+
         let mut amb = Some("speakers".to_string());
         assert!(!migrate_device_ref(&devs, &mut amb));
         assert_eq!(amb.as_deref(), Some("speakers"));
-        // bağlı olmayan cihaz
+
         let mut gone = Some("Başka".to_string());
         assert!(!migrate_device_ref(&devs, &mut gone));
         let mut none: Option<String> = None;
@@ -1728,18 +1658,18 @@ mod device_tests {
     #[test]
     fn rate_choice() {
         let bt = [44100, 48000];
-        assert_eq!(choose_rate(44100, &bt, 48000), 44100); // aynısı
-        assert_eq!(choose_rate(96000, &bt, 48000), 48000); // aynı aile, desteklenen en yüksek altı
-        assert_eq!(choose_rate(88200, &bt, 48000), 44100); // 44.1 ailesi
+        assert_eq!(choose_rate(44100, &bt, 48000), 44100);
+        assert_eq!(choose_rate(96000, &bt, 48000), 48000);
+        assert_eq!(choose_rate(88200, &bt, 48000), 44100);
         assert_eq!(choose_rate(192000, &bt, 48000), 48000);
         let dac = [44100, 48000, 88200, 96000, 176400, 192000];
         assert_eq!(choose_rate(88200, &dac, 48000), 88200);
         assert_eq!(choose_rate(176400, &dac, 48000), 176400);
-        // 44.1k ailesi: cihaz yalnız 48k ailesini destekliyorsa üstteki en yakın
+
         let only48 = [48000, 96000];
         assert_eq!(choose_rate(44100, &only48, 48000), 48000);
         assert_eq!(choose_rate(88200, &only48, 48000), 96000);
-        // sorgulanamadı: sabit hıza düş
+
         assert_eq!(choose_rate(44100, &[], 48000), 48000);
     }
 }

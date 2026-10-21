@@ -1,6 +1,3 @@
-//! Otomatik EQ kuralları: belirli bir şarkı, albüm ya da sanatçı çalınca ekolayzır kendiliğinden seçilen ön ayara geçer.
-//! Öncelik şarkı > albüm > sanatçı; kural olmayan parçalarda kullanıcının seçili ön ayarına dönülür.
-
 use super::*;
 use egui::FontId;
 
@@ -9,7 +6,7 @@ pub(super) enum RuleScope {
     Track,
     Album,
     Artist,
-    /// çıkış cihazı: o cihaz seçiliyken (çalan parçadan bağımsız) uygulanır
+
     Device,
 }
 
@@ -38,7 +35,7 @@ impl RuleScope {
             RuleScope::Device => Color32::from_rgb(190, 150, 255),
         }
     }
-    /// Öncelik: küçük sayı önce kazanır.
+
     fn rank(self) -> u8 {
         match self {
             RuleScope::Track => 0,
@@ -52,18 +49,17 @@ impl RuleScope {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub(super) struct EqRule {
     pub scope: RuleScope,
-    /// şarkı: dosya yolu, albüm: kütüphane anahtarı, sanatçı: küçük harfli ad
+
     pub key: String,
-    /// listede gösterilen ad
+
     pub label: String,
-    /// ikinci satır (ör. albümün sanatçısı)
+
     #[serde(default)]
     pub sub: String,
-    /// ön ayar dosya adı; `None` = EQ'yu düz bırak
+
     pub preset: Option<String>,
 }
 
-/// Çalan parçanın kimliği (kuralları eşleştirmek için).
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Playing {
     pub path: String,
@@ -77,8 +73,6 @@ pub(super) fn artist_key(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
-/// Çalan parçaya ve çıkış cihazına uyan kuralı seçer: şarkı > albüm > sanatçı > cihaz.
-/// Cihaz kuralı çalan parça olmadan da uygulanır (ör. kulaklık seçilince o kulaklığın düzeltmesi).
 pub(super) fn resolve_rule<'a>(rules: &'a [EqRule], now: Option<&Playing>, device: Option<&str>) -> Option<&'a EqRule> {
     let ak = now.map(|n| artist_key(&n.artist)).unwrap_or_default();
     rules
@@ -92,7 +86,6 @@ pub(super) fn resolve_rule<'a>(rules: &'a [EqRule], now: Option<&Playing>, devic
         .min_by_key(|r| r.scope.rank())
 }
 
-/// Kural ekler; aynı kapsam ve anahtar için olan varsa onu günceller.
 pub(super) fn upsert_rule(rules: &mut Vec<EqRule>, rule: EqRule) {
     match rules.iter_mut().find(|r| r.scope == rule.scope && r.key == rule.key) {
         Some(r) => *r = rule,
@@ -100,7 +93,6 @@ pub(super) fn upsert_rule(rules: &mut Vec<EqRule>, rule: EqRule) {
     }
 }
 
-/// Ayarlar'daki "kural ekle" formunun durumu.
 pub(super) struct RuleNew {
     scope: RuleScope,
     query: String,
@@ -131,14 +123,12 @@ pub(super) fn fit(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) ->
     chars[..lo].iter().collect::<String>() + "…"
 }
 
-/// Kapsam rozeti (ŞARKI / ALBÜM / SANATÇI).
 pub(super) fn scope_badge(ui: &mut egui::Ui, scope: RuleScope) {
     let (rect, _) = ui.allocate_exact_size(vec2(64.0, 22.0), Sense::hover());
     ui.painter().rect_filled(rect, Rounding::same(6.0), alpha(scope.color(), 28));
     ui.painter().text(rect.center(), Align2::CENTER_CENTER, scope.name(), bold(10.5), scope.color());
 }
 
-/// İki satırlı, tam genişlikte menü satırı.
 pub(super) fn menu_row(ui: &mut egui::Ui, title: &str, sub: &str, enabled: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(280.0), 42.0), if enabled { Sense::click() } else { Sense::hover() });
     let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered() && enabled, 0.1);
@@ -151,7 +141,7 @@ pub(super) fn menu_row(ui: &mut egui::Ui, title: &str, sub: &str, enabled: bool)
 }
 
 impl App {
-    /// Çalan parçanın kimliği; kütüphanede yoksa etiketlerden (albüm anahtarı olmadan).
+
     pub(super) fn playing_identity(&self) -> Option<Playing> {
         let path = self.current_path()?;
         for a in &self.lib.albums {
@@ -162,7 +152,6 @@ impl App {
         Some(Playing { path, title: self.meta.title.clone(), album_key: None, album_title: self.meta.album.clone(), artist: self.meta.artist.clone() })
     }
 
-    /// Ön ayarı kalıcı seçimi (cfg.preset) değiştirmeden yükler: kural geçişi kullanıcının varsayılanını bozmaz.
     fn load_preset_quiet(&mut self, name: Option<&str>) -> bool {
         match name {
             None => {
@@ -183,7 +172,6 @@ impl App {
         true
     }
 
-    /// Parça değişince (ya da kurallar değişince) uygun kuralı uygular; kural yoksa varsayılan ön ayara döner.
     pub(super) fn tick_eq_rules(&mut self) {
         let id = self.player.meta_id.load(Relaxed);
         let dev = self.current_device_id();
@@ -220,7 +208,6 @@ impl App {
         }
     }
 
-    /// Hedef çıkış cihazının kimliği (Windows varsayılanı seçiliyse o an varsayılan olan cihaz).
     pub(super) fn current_device_id(&self) -> Option<String> {
         match &self.cfg.to {
             Some(id) => Some(id.clone()),
@@ -238,7 +225,6 @@ impl App {
         self.say(format!("Kural eklendi: {} {} → {}", scope.lower(), label, short_preset(&Some(preset))));
     }
 
-    /// Motor > Ekolayzır'daki "Otomatik" düğmesi: şu anki ön ayarı çalan şarkı/albüm/sanatçı için otomatik kullan.
     pub(super) fn auto_eq_button(&mut self, ui: &mut egui::Ui) {
         let now = self.playing_identity();
         let active = self.rule_active.is_some();
@@ -296,7 +282,6 @@ impl App {
         }
     }
 
-    /// Kuralı siler ("Geri al" ile geri getirilebilir).
     pub(super) fn remove_rule(&mut self, r: &EqRule) {
         if let Some(i) = self.cfg.eq_rules.iter().position(|x| x == r) {
             let rule = self.cfg.eq_rules.remove(i);
@@ -307,7 +292,6 @@ impl App {
         }
     }
 
-    /// Eşleşen kural varsa Motor sekmesinde gösterilen küçük bilgi çipi.
     pub(super) fn auto_eq_chip(&self, ui: &mut egui::Ui) {
         if let Some(r) = &self.rule_active {
             chip(ui, &format!("OTOMATİK EQ · {}", r.scope.name()), GREEN).on_hover_text(format!("{} \"{}\" için {} ön ayarı uygulanıyor", r.scope.lower(), r.label, short_preset(&r.preset)));
@@ -316,7 +300,7 @@ impl App {
 
     pub(super) fn rule_candidates(&self, scope: RuleScope, q: &str) -> Vec<(String, String, String)> {
         let q = q.trim().to_lowercase();
-        // cihaz listesi kısa: boş aramada hepsi gösterilir
+
         if q.chars().count() < 2 && scope != RuleScope::Device {
             return vec![];
         }
@@ -358,7 +342,6 @@ impl App {
         out
     }
 
-    /// Ayarlar > Ekolayzır: kural listesi ve kural ekleme formu.
     pub(super) fn eq_rules_card(&mut self, ui: &mut egui::Ui) {
         let choices: Vec<(Option<String>, String)> = std::iter::once((None, "EQ yok (düz)".to_string()))
             .chain(self.library.iter().map(|(n, _)| (Some(n.clone()), n.trim_end_matches(".txt").to_string())))
@@ -546,11 +529,11 @@ mod tests {
     fn rules_only_match_their_own_target() {
         let rules = vec![rule(RuleScope::Track, "başka.flac", "x.txt"), rule(RuleScope::Album, "k2", "y.txt"), rule(RuleScope::Artist, "başka sanatçı", "z.txt")];
         assert!(resolve_rule(&rules, Some(&now()), None).is_none());
-        // albüm anahtarı olmayan (kütüphanede olmayan) parçaya albüm kuralı uygulanmaz
+
         let mut n = now();
         n.album_key = None;
         assert!(resolve_rule(&[rule(RuleScope::Album, "k1", "y.txt")], Some(&n), None).is_none());
-        // sanatçı adı boşsa eşleşme olmaz
+
         n.artist = "  ".into();
         assert!(resolve_rule(&[rule(RuleScope::Artist, "", "z.txt")], Some(&n), None).is_none());
     }
@@ -565,11 +548,11 @@ mod tests {
     #[test]
     fn device_rule_is_lowest_priority_and_needs_no_track() {
         let rules = vec![rule(RuleScope::Device, "dev1", "kulaklik.txt"), rule(RuleScope::Artist, "teddy picker", "art.txt")];
-        // çalan parça yokken cihaz kuralı uygulanır
+
         assert_eq!(resolve_rule(&rules, None, Some("dev1")).unwrap().preset.as_deref(), Some("kulaklik.txt"));
-        // parça kuralı cihaz kuralını geçer
+
         assert_eq!(resolve_rule(&rules, Some(&now()), Some("dev1")).unwrap().preset.as_deref(), Some("art.txt"));
-        // başka cihazda cihaz kuralı yok
+
         assert!(resolve_rule(&rules[..1], Some(&now()), Some("dev2")).is_none());
         assert!(resolve_rule(&rules[..1], None, None).is_none());
     }

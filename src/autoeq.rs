@@ -1,9 +1,3 @@
-//! AutoEq profil arama: kulaklık adından EQ ön ayarı bulur.
-//!
-//! Veri kaynağı: AutoEq projesi (github.com/jaakkopasanen/AutoEq, MIT lisansı). Bir indeks dosyası (profil listesi) ve her profil için
-//! Equalizer APO uyumlu bir `ParametricEQ.txt` vardır. İndeks bir kez indirilip yerelde saklanır; profil dosyaları seçilince indirilir.
-//! Ölçümler oratory1990, crinacle, Rtings vb. kaynaklara aittir; profil bir kulaklık *modeli* içindir, tek bir ürünün farkını telafi etmez.
-
 use crate::apo::{self, Preset};
 use std::collections::HashMap;
 use std::io::Read;
@@ -12,32 +6,30 @@ use std::sync::mpsc::{channel, Receiver};
 use std::time::{Duration, SystemTime};
 
 const BASE: &str = "https://raw.githubusercontent.com/jaakkopasanen/AutoEq/master/results";
-/// İndeks bu kadar günden eskiyse arka planda yenilenir (eskisi o sırada kullanılabilir).
+
 const INDEX_MAX_AGE_DAYS: u64 = 30;
 
-/// İndeksteki bir profil.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
-    /// kulaklık adı (ör. "Sennheiser Momentum 4 Wireless", hedef parantez içinde olabilir)
+
     pub name: String,
-    /// ölçümü yapan kaynak (oratory1990, crinacle, Rtings …)
+
     pub source: String,
-    /// ölçüm düzeneği (ör. "GRAS 43AG-7"); yoksa boş
+
     pub rig: String,
-    /// "over-ear", "in-ear" ya da "earbud"
+
     pub form: String,
-    /// indeksteki, URL kodlu klasör yolu ("oratory1990/over-ear/Sennheiser%20Momentum%204%20Wireless")
+
     pub path: String,
 }
 
 impl Entry {
-    /// Profil dosyasının adresi.
+
     pub fn url(&self) -> String {
         let last = self.path.rsplit('/').next().unwrap_or("");
         format!("{BASE}/{}/{last}%20ParametricEQ.txt", self.path)
     }
 
-    /// Kaydedilecek dosya adı ("Sennheiser Momentum 4 Wireless (oratory1990).txt"); dosya sistemine uygun.
     pub fn file_name(&self) -> String {
         let raw = format!("{} ({})", self.name, self.source);
         let clean: String = raw.chars().map(|c| if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') { '-' } else { c }).collect();
@@ -64,16 +56,15 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// INDEX.md metnini ayrıştırır. Satır biçimi: `- [Ad](./kaynak/biçim/Ad) by kaynak (on düzenek)`.
 pub fn parse_index(text: &str) -> Vec<Entry> {
     let mut out = vec![];
     for line in text.lines() {
         let Some(rest) = line.strip_prefix("- [") else { continue };
         let Some(split) = rest.find("](./") else { continue };
         let after = &rest[split + 4..];
-        // yol boşluk içermez (boşluklar %20); ilk boşlukta biter ve ")" ile kapanır
+
         let path_end = after.find(' ').unwrap_or(after.len());
-        // yalnızca bağlantının kapanış parantezi atılır (adın kendi ")" karakteri, ör. "(passive)", kalır)
+
         let tok = &after[..path_end];
         let path = tok.strip_suffix(')').unwrap_or(tok).to_string();
         let parts: Vec<&str> = path.split('/').collect();
@@ -92,15 +83,14 @@ pub fn parse_index(text: &str) -> Vec<Entry> {
     out
 }
 
-/// Windows cihaz adından kulaklık modelini çıkarır: "Kulaklıklar (2- MOMENTUM 4)" -> "MOMENTUM 4".
 pub fn device_query(name: &str) -> String {
-    // parantez içi asıl model adıdır ("Kulaklıklar (…)" gibi genel öntakı atılır)
+
     let inner = match (name.find('('), name.rfind(')')) {
         (Some(a), Some(b)) if b > a => &name[a + 1..b],
         _ => name,
     };
     let mut s = inner.trim().to_string();
-    // Windows'un aynı adlı cihazlara eklediği "2- " öneki
+
     let digits = s.chars().take_while(|c| c.is_ascii_digit()).count();
     if digits > 0 {
         let rest = s[digits..].trim_start();
@@ -108,7 +98,7 @@ pub fn device_query(name: &str) -> String {
             s = r.trim().to_string();
         }
     }
-    // model adı olmayan genel sözcükler
+
     const NOISE: [&str; 12] = ["hands-free", "handsfree", "stereo", "a2dp", "headset", "headphones", "headphone", "kulaklıklar", "kulaklık", "ag audio", "bluetooth", "audio"];
     let mut words: Vec<&str> = s.split_whitespace().collect();
     words.retain(|w| !NOISE.contains(&w.to_lowercase().as_str()));
@@ -119,7 +109,6 @@ fn words(s: &str) -> Vec<String> {
     s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(|w| w.to_string()).collect()
 }
 
-/// Kaynak güvenilirliği: düşük sayı önce. Bilinen kaynaklar öne alınır.
 fn source_rank(source: &str) -> u32 {
     match source {
         "oratory1990" => 0,
@@ -130,8 +119,6 @@ fn source_rank(source: &str) -> u32 {
     }
 }
 
-/// Sorgudaki her sözcüğün geçtiği profilleri, en alakalıdan başlayarak döndürür (indeks sırası değil, `entries` içindeki konum).
-/// Sözcükler tam kelime ya da (3+ harfliyse) kelimenin başı olarak eşleşir, böylece "4" yalnızca "4" ile eşleşir ("1.4" ile değil).
 pub fn search(entries: &[Entry], query: &str, limit: usize) -> Vec<usize> {
     let q = words(query);
     if q.is_empty() {
@@ -155,7 +142,7 @@ pub fn search(entries: &[Entry], query: &str, limit: usize) -> Vec<usize> {
         if !ok {
             continue;
         }
-        // ad ne kadar kısa ve sorguya yakınsa o kadar iyi: sorguda olmayan fazladan kelimeler puan düşürür
+
         let extra = w.iter().filter(|x| !q.iter().any(|t| *x == t || x.starts_with(t.as_str()))).count() as i64;
         score = score * 10 - extra * 6 - source_rank(&e.source) as i64;
         hits.push((score, i));
@@ -164,13 +151,11 @@ pub fn search(entries: &[Entry], query: &str, limit: usize) -> Vec<usize> {
     hits.into_iter().take(limit).map(|(_, i)| i).collect()
 }
 
-// ------------------------------------------------------------------ ağ ve önbellek
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum IndexState {
     Idle,
     Loading,
-    /// hazır; `cached`: ağ yerine yerel kopyadan, `stale`: kopya eski (yenileme denendi ya da sürüyor)
+
     Ready { cached: bool },
     Failed(String),
 }
@@ -194,7 +179,6 @@ fn get_text(url: &str, max: u64) -> Result<String, String> {
     Ok(s)
 }
 
-/// Profil dosyası metnini ön ayara çevirir; boşsa hata.
 pub fn parse_profile(text: &str) -> Result<Preset, String> {
     let p = apo::parse(text);
     if p.bands.is_empty() {
@@ -204,13 +188,12 @@ pub fn parse_profile(text: &str) -> Result<Preset, String> {
     }
 }
 
-/// İndeks ve profil indirmelerini arka planda yürüten istemci. Arayüz her karede `poll` çağırır.
 pub struct Client {
     cache: PathBuf,
     pub state: IndexState,
     pub entries: Vec<Entry>,
     rx_index: Option<Receiver<Result<String, String>>>,
-    /// yerel kopya eskiyse arka planda yenileme
+
     refreshing: bool,
     profiles: HashMap<String, Profile>,
     rx_profiles: Vec<(String, Receiver<Result<Preset, String>>)>,
@@ -234,7 +217,6 @@ impl Client {
         self.rx_index = Some(rx);
     }
 
-    /// İlk açılışta: yerel kopya varsa hemen kullanır (eskiyse arkadan yeniler); yoksa indirir.
     pub fn ensure_index(&mut self) {
         if self.state != IndexState::Idle {
             return;
@@ -255,7 +237,6 @@ impl Client {
         self.spawn_index();
     }
 
-    /// Hata sonrası ya da kullanıcı isteğiyle yeniden dene.
     pub fn retry(&mut self) {
         if self.entries.is_empty() {
             self.state = IndexState::Loading;
@@ -269,7 +250,6 @@ impl Client {
         self.refreshing
     }
 
-    /// Profil durumu; hiç istenmediyse indirmeyi başlatır.
     pub fn profile(&mut self, e: &Entry) -> &Profile {
         if !self.profiles.contains_key(&e.path) {
             self.profiles.insert(e.path.clone(), Profile::Loading);
@@ -283,12 +263,10 @@ impl Client {
         &self.profiles[&e.path]
     }
 
-    /// Başarısız bir profili yeniden denemek için unut.
     pub fn forget_profile(&mut self, e: &Entry) {
         self.profiles.remove(&e.path);
     }
 
-    /// Bitenleri işler. Arayüzün yeniden çizmesi gerekiyorsa `true`.
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
         if let Some(rx) = &self.rx_index {
@@ -309,7 +287,7 @@ impl Client {
                     changed = true;
                 }
                 Ok(Err(msg)) => {
-                    // yerel kopya varsa sessizce onu kullanmaya devam et
+
                     if self.entries.is_empty() {
                         self.state = IndexState::Failed(msg);
                     }
@@ -403,22 +381,22 @@ mod tests {
         let e = parse_index(SAMPLE);
         let r = search(&e, "MOMENTUM 4", 10);
         let names: Vec<(&str, &str)> = r.iter().map(|&i| (e[i].name.as_str(), e[i].source.as_str())).collect();
-        // Momentum 3 gelmemeli; en alakalı: oratory1990'ın "Momentum 4 Wireless"i, sonra crinacle, en sonda "(passive)"
+
         assert_eq!(names.len(), 3, "{names:?}");
         assert_eq!(names[0], ("Sennheiser Momentum 4 Wireless", "oratory1990"));
         assert_eq!(names[1], ("Sennheiser Momentum 4 Wireless", "crinacle"));
         assert!(names[2].0.contains("passive"));
-        // "4" yalnızca bütün kelime olarak eşleşir
+
         assert!(search(&e, "momentum 4", 10).iter().all(|&i| !e[i].name.contains("Momentum 3")));
-        // marka ve model karışık, parçalı sorgu
+
         assert_eq!(search(&e, "wh-1000xm5", 10).len(), 1);
         assert_eq!(search(&e, "sony", 10).len(), 2);
-        // kelime başı eşleşmesi (3+ harf)
+
         assert_eq!(search(&e, "momen", 10).len(), 4);
-        // boş / alakasız
+
         assert!(search(&e, "   ", 10).is_empty());
         assert!(search(&e, "xyzzy", 10).is_empty());
-        // limit
+
         assert_eq!(search(&e, "sennheiser", 2).len(), 2);
     }
 
@@ -441,7 +419,6 @@ mod tests {
         assert_eq!(percent_decode("%C3%A9"), "é");
     }
 
-    /// Canlı doğrulama (ağ gerekir): `cargo test --release live_autoeq -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn live_autoeq_index_and_profile() {

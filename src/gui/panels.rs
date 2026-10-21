@@ -1,9 +1,7 @@
-//! Pencerenin ana panelleri: üst çubuk, alt çubuk, yan panel, sinyal yolu, Motor görünümü.
-
 use super::*;
 
 impl App {
-    /// Alt çubuktaki biçim rozeti: "FLAC 24/96", "MP3 44.1 kHz". Parça yoksa `None`.
+
     pub(super) fn format_badge(&self) -> Option<String> {
         let m = &self.meta;
         if m.title.is_empty() || m.codec.is_empty() || m.src_rate == 0 {
@@ -67,7 +65,7 @@ impl App {
                     }
                     left_end = ui.min_rect().right();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // uygulama adı her zaman en sağ köşede; motor ikonu (açıksa) onun soluna gelir
+
                         match &self.wordmark_tex {
                             Some((t, aspect)) => {
                                 let h = 17.0;
@@ -79,8 +77,7 @@ impl App {
                         }
                         ui.add_space(8.0);
                         let on = self.running.is_some();
-                        // Yalnızca ikon: oynatıcı modunda motor zaten kendiliğinden yönetilir (Play'de başlar, boşta kalınca cihazı
-                        // bırakır); düğme elle erken bırakmak ya da önceden başlatmak içindir. Sistem DSP'de yakalamayı açıp kapatır.
+
                         if self.cfg.show_engine_btn {
                             let what = if self.cfg.use_loopback { "Sistem DSP" } else { "Ses motoru" };
                             let tip = if on { format!("{what} açık: durdur (cihazı serbest bırakır)") } else { format!("{what} kapalı: başlat") };
@@ -112,7 +109,7 @@ impl App {
                             None => self.message.clone(),
                         };
                         let err = status.starts_with("Hata");
-                        // normal çalışmada format bilgisi/yeşil nokta gösterilmez; yalnızca hata görünür
+
                         if err {
                             status_dot(ui, true, RED);
                         }
@@ -126,7 +123,6 @@ impl App {
                     });
                 });
 
-                // ortada arama kutusu
                 let rr = row.response.rect;
                 let cx = rr.center().x;
                 let half = (cx - left_end - 24.0).min(right_start - cx - 24.0).min(170.0);
@@ -154,7 +150,7 @@ impl App {
                         }
                     }
                 } else {
-                    // dar pencerede sadece ikon
+
                     let r = Rect::from_center_size(pos2(cx, rr.center().y), vec2(32.0, 32.0));
                     let resp = ui.interact(r, Id::new("search_box"), Sense::click());
                     draw_icon(ui.painter(), Icon::Search, r.center(), 14.0, if resp.hovered() { TEXT } else { DIM });
@@ -168,7 +164,6 @@ impl App {
         self.upload_menu(ctx, upload_rect);
     }
 
-    /// Yükle menüsü: ok düğmesinin altında açılır; "Yükle"ye basınca sağ tarafta Klasör / Parça alt menüsü açılır.
     pub(super) fn upload_menu(&mut self, ctx: &egui::Context, btn: Rect) {
         let t = ctx.animate_bool_with_time(Id::new("upload_anim"), self.upload_open, 0.16);
         if t <= 0.001 {
@@ -209,7 +204,6 @@ impl App {
             ui.painter().text(pos2(row.left() + 40.0, row.center().y), Align2::LEFT_CENTER, "Yükle", bold(14.0), Color32::WHITE);
             draw_icon(ui.painter(), Icon::ChevronRight, pos2(row.right() - 16.0, row.center().y), 12.0, lerp_color(DIM, Color32::WHITE, hv));
 
-            // Ayarlar satırı
             let row2 = Rect::from_min_size(rect.min + vec2(6.0, 50.0), vec2(mw - 12.0, 44.0));
             let resp2 = ui.interact(row2, Id::new("settings_row"), Sense::click());
             if resp2.clicked() {
@@ -271,7 +265,7 @@ impl App {
             self.upload_sub = false;
             self.set_view(View::Settings);
         }
-        // dış tıklama: kapat
+
         if ctx.input(|i| i.pointer.any_click()) {
             if let Some(p) = ctx.input(|i| i.pointer.interact_pos()) {
                 let in_sub = self.upload_sub && sub_full.contains(p);
@@ -304,7 +298,7 @@ impl App {
     }
 
     pub(super) fn bottom_bar(&mut self, ctx: &egui::Context) {
-        // Sistem DSP modunda alt çubuk yok; durum başlıktaki ikonla gösterilir
+
         if self.cfg.use_loopback {
             return;
         }
@@ -313,7 +307,7 @@ impl App {
             .frame(Frame::none().fill(Color32::TRANSPARENT).inner_margin(Margin::symmetric(36.0, 14.0)))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    // kapak
+
                     let (r, _) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::hover());
                     match &self.cover_tex {
                         Some(t) => rounded_image(ui.painter(), t.id(), r, 6.0, Color32::WHITE),
@@ -336,7 +330,7 @@ impl App {
                     });
                     let playing = self.player.playing.load(Relaxed);
                     ui.add_space(8.0);
-                    // karıştır
+
                     let sh = self.player.shuffle.load(Relaxed);
                     if icon_button(ui, Icon::Shuffle, 30.0, sh).on_hover_text("Karıştır").clicked() {
                         self.player.shuffle.store(!sh, Relaxed);
@@ -351,7 +345,7 @@ impl App {
                     if icon_button(ui, Icon::Next, 30.0, false).clicked() {
                         self.player.next();
                     }
-                    // tekrar: kapalı -> hepsi -> tek parça
+
                     let all = self.player.repeat.load(Relaxed);
                     let one = self.player.repeat_one.load(Relaxed);
                     let (ric, tip) = if one { (Icon::Repeat1, "Tek parçayı tekrarla") } else if all { (Icon::Repeat, "Listeyi tekrarla") } else { (Icon::Repeat, "Tekrar kapalı") };
@@ -375,7 +369,7 @@ impl App {
                     }
                     let wave = cur.as_ref().and_then(|p| self.wave_cache.get(p).cloned());
                     let progress = self.wave_drag.unwrap_or(if dur > 0.0 { (pos / dur) as f32 } else { 0.0 });
-                    // parça yokken (bitti / kuyruk boş) ya da dalga biçimi hesaplanamadıysa yükleniyor animasyonu çizilmez
+
                     let (wresp, preview, commit) =
                         waveform_seek(ui, vec2(seek_w, 36.0), wave.as_ref().map(|v| v.as_slice()), progress, dur > 0.0 && cur.is_some());
                     self.wave_drag = preview;
@@ -393,7 +387,7 @@ impl App {
                     }
                     ui.label(RichText::new(fmt_time(dur)).font(body(12.0)).color(DIM));
                     ui.add_space(4.0);
-                    // ses: ikon + yukarı açılan dikey kaydırıcı
+
                     let vol = self.player.volume();
                     let vic = if vol <= 0.001 { Icon::VolumeX } else if vol < 0.5 { Icon::Volume1 } else { Icon::Volume };
                     let vresp = icon_button(ui, vic, 32.0, self.vol_open);
@@ -409,7 +403,7 @@ impl App {
                             self.cfg.volume = Some(v);
                         }
                     }
-                    // sözler: sağ yan panel
+
                     let lb = icon_button(ui, Icon::Lyrics, 32.0, self.lyrics_open).on_hover_text("Sözler");
                     if lb.clicked() {
                         self.lyrics_open = !self.lyrics_open;
@@ -428,7 +422,6 @@ impl App {
                 });
             });
 
-        // ses açılır kaydırıcısı (üzerine gelince yukarı doğru açılır)
         let pointer = ctx.pointer_hover_pos();
         let in_btn = pointer.map(|p| vol_btn_rect.expand(3.0).contains(p)).unwrap_or(false);
         let in_pop = pointer.map(|p| self.vol_popup_rect.contains(p)).unwrap_or(false);
@@ -463,7 +456,7 @@ impl App {
                         });
                     });
             });
-            // fare düğmeden açılır pencereye geçerken kapanmasın
+
             self.vol_popup_rect = area.response.rect.union(vol_btn_rect);
         } else {
             self.vol_popup_rect = Rect::NOTHING;
@@ -487,7 +480,7 @@ impl App {
                 ui.set_opacity(fade);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    // seviye
+
                     ui.horizontal(|ui| {
                         section_label(ui, "Seviye");
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -502,7 +495,6 @@ impl App {
                     ui.separator();
                     ui.add_space(4.0);
 
-                    // ses işleme
                     section_label(ui, "Ses işleme");
                     ui.add_space(2.0);
                     ui.label(RichText::new("Crossfeed").font(body(12.5)).color(DIM));
@@ -533,7 +525,6 @@ impl App {
             });
     }
 
-    /// Gerçek tepe ve LUFS göstergeleri (çıkış sinyali).
     pub(super) fn loudness_readout(&mut self, ui: &mut egui::Ui) {
         let get = |a: &std::sync::atomic::AtomicU32| -> Option<f32> {
             let v = f32::from_bits(a.load(std::sync::atomic::Ordering::Relaxed));
@@ -606,7 +597,7 @@ impl App {
             reasons.push("ReplayGain");
         }
         if dop {
-            // DoP: bitler olduğu gibi gider; EQ / seviye / modül zinciri uygulanmaz
+
             reasons.clear();
         }
         let active_fx: Vec<&str> = self.cfg.chain.iter().filter(|s| s.enabled).map(|s| crate::fx::info(s.kind).name).collect();
@@ -684,7 +675,7 @@ impl App {
                         if pill_button(ui, if on { "Ekolayzır açık" } else { "Ekolayzır kapalı" }, Some(Icon::Power), on).on_hover_text(tip).clicked() {
                             engine::EQ_OFF.store(on, Relaxed);
                         }
-                        // devrede bir otomatik EQ kuralı varsa nedenini göster
+
                         self.auto_eq_chip(ui);
                     });
                 });

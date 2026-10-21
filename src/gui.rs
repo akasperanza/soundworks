@@ -1,5 +1,3 @@
-//! Soundworks arayüzü: EQ Stüdyosu, Presetler, Ayarlar.
-
 use crate::apo::{self, Band, FilterKind, Preset};
 use crate::biquad::Coeffs;
 use crate::engine::{self, Control, DeviceInfo, Options};
@@ -25,13 +23,10 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
-/// tepsiden "Çıkış" istendi / arayüz isteği gördü
-/// pencere tepsiye gizlendi (`hide_window`)
 static WINDOW_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static QUIT_REQ: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static QUIT_ACK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Doğrulama derlemesi için olay izi: `SW_TRACE=dosya` ayarlıysa satır satır yazar. Özellik kapalıyken boş işlemdir.
 #[cfg(feature = "devtools")]
 fn dev_trace(msg: &str) {
     use std::io::Write;
@@ -46,7 +41,6 @@ fn dev_trace(msg: &str) {
 #[cfg(not(feature = "devtools"))]
 fn dev_trace(_: &str) {}
 
-/// Doğrulama derlemesi: eframe / winit günlük iletilerini (trace) sayar; sürekli çizimin hangi olaydan geldiğini bulmak için.
 #[cfg(feature = "devtools")]
 mod devlog {
     use std::collections::HashMap;
@@ -77,7 +71,6 @@ mod devlog {
     }
 }
 
-/// Doğrulama derlemesi: `SW_SKIP=ad1,ad2` ile adı geçen bölümlerin çizimi atlanır (CPU maliyetini bölümlere ayırmak için).
 #[cfg(feature = "devtools")]
 fn dev_skip(name: &str) -> bool {
     crate::devenv::dev_var("SW_SKIP").map(|v| v.split(',').any(|x| x == name)).unwrap_or(false)
@@ -87,7 +80,6 @@ fn dev_skip(_: &str) -> bool {
     false
 }
 
-/// `update` süresini ölçer (yalnızca doğrulama derlemesi): düşünce süresi `UPDATE_US`'a eklenir.
 #[cfg(feature = "devtools")]
 static UPDATE_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(feature = "devtools")]
@@ -113,9 +105,9 @@ struct Config {
     use_loopback: bool,
     exclusive_off: bool,
     autostart: bool,
-    /// başlık çubuğunda motoru açıp kapatan ikon düğmesi görünsün
+
     show_engine_btn: bool,
-    /// yalnızca eski sürümden göç için okunur; kuyruk artık queue.json'da
+
     #[serde(skip_serializing)]
     playlist: Vec<String>,
     volume: Option<f32>,
@@ -124,48 +116,48 @@ struct Config {
     repeat_one: bool,
     shuffle: bool,
     player_rate: u32,
-    /// çıkış hızını parçanın hızına göre ayarla (cihaz destekliyorsa)
+
     match_rate: bool,
-    /// kaldığın yer: (kuyruktaki sıra, saniye)
+
     resume: Option<(usize, f64)>,
-    /// ReplayGain: 0 kapalı, 1 parça, 2 albüm
+
     rg_mode: u32,
     rg_preamp: f32,
     rg_prevent: bool,
-    /// ipuçları/uyarılar açık mı
+
     tips_on: bool,
-    /// "Bir daha gösterme" denen uyarılar
+
     tips_dismissed: Vec<String>,
     crossfeed: f32,
     balance: f32,
     mono: bool,
     viz_bars: bool,
     viz_mode: u8,
-    /// Sistem DSP: Windows varsayılan çıkışını sanal cihaza yönlendir
+
     auto_route: bool,
-    /// Yönlendirmeden önceki varsayılan cihaz (çökme sonrası geri almak için)
+
     restore_default: Option<String>,
     tray_on_close: bool,
     run_at_login: bool,
     fetch_genres: bool,
     group_by_genre: bool,
-    /// açılışta izlenen klasörlerdeki yeni dosyaları tara
+
     scan_on_start: bool,
-    /// DSD çalma tercihi, cihaz kimliğine göre: 0 = PCM'e çevir, 1 = DoP
+
     dsd_prefs: BTreeMap<String, u8>,
-    /// şarkı anahtarı -> söz kayması (ms); pozitif = sözler daha erken gösterilir
+
     lyr_offsets: BTreeMap<String, i32>,
-    /// arayüz ölçeği (yüzde); 0 = otomatik
+
     ui_zoom: u32,
-    /// 16 bit çıkışta dither
+
     dither: bool,
-    /// ses motoru modül zinciri
+
     chain: Vec<crate::fx::FxSpec>,
-    /// otomatik EQ kuralları (şarkı / albüm / sanatçı -> ön ayar)
+
     eq_rules: Vec<eqrules_ui::EqRule>,
-    /// ön ayar dosya adı -> kulaklık etiketi, not, kaynak (APO dosyasının dışında tutulur)
+
     preset_meta: BTreeMap<String, presetprops_ui::PresetMeta>,
-    /// pencere: x, y, genişlik, yükseklik (mantıksal), ekran ölçeği, büyütülmüş mü
+
     win: Option<[f32; 6]>,
 }
 
@@ -253,7 +245,6 @@ use shell::{hide_window, make_tray, set_run_at_login, style_titlebar};
 #[cfg(feature = "devtools")]
 use shell::request_quit;
 
-/// Geri alınabilir silme: bildirimde "Geri al" düğmesiyle birkaç saniye geçerlidir (onay penceresi yerine).
 enum Undo {
     Album(library::Album, usize),
     Preset(String, Vec<u8>),
@@ -263,11 +254,10 @@ enum Undo {
 struct Running {
     ctl: Arc<Control>,
     handle: JoinHandle<()>,
-    /// motor DoP modunda başlatıldı
+
     dop: bool,
 }
 
-/// DSD uyarı penceresi: kullanıcı DSD çalmak istediğinde, DoP'a izin verilen cihazlarda sorulur.
 struct DsdDialog {
     files: Vec<PathBuf>,
     start: usize,
@@ -281,12 +271,11 @@ struct DsdDialog {
 enum DsdProbe {
     Idle,
     Running(std::sync::mpsc::Receiver<Result<(), String>>),
-    /// DoP sessizliği gönderildi; kullanıcıya DAC'ın DSD'yi tanıyıp tanımadığı sorulur
+
     Ask,
     Failed(String),
 }
 
-/// DoP seçeneğinin kilidi açılmadan önce beklenen süre (sn).
 const DOP_LOCK_SECS: f32 = 3.0;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -322,19 +311,19 @@ pub struct App {
     view_t0: Instant,
     rtab: RTab,
     sel_band: Option<usize>,
-    /// band solo: (frekans Hz, Q); None = kapalı. Her karede EQ grafiği ayarlar.
+
     solo_target: Option<(f64, f64)>,
-    /// solo kilidi (S'ye basılı tutmak yerine aç/kapa)
+
     solo_latch: bool,
     drag_band: Option<usize>,
     viz: VizState,
     viz_mode: VizMode,
     last_frame: Instant,
-    // kapak / tema
+
     meta: TrackMeta,
     cover_id: u64,
     cover_tex: Option<TextureHandle>,
-    /// başlıktaki "Soundworks" kelime işareti (vektörden, 4 kat çözünürlükte çizilir)
+
     wordmark_tex: Option<(TextureHandle, f32)>,
     cover_t0: Instant,
     tint: Color32,
@@ -342,13 +331,13 @@ pub struct App {
     toast: Option<(String, Instant)>,
     frames: u32,
     _tray: Option<TrayIcon>,
-    /// tepsideki "EQ açık" işareti; arayüzdeki düğmeyle senkron tutulur
+
     tray_eq: Option<CheckMenuItem>,
     start_hidden: bool,
     quitting: bool,
     lib: Library,
     lib_scans: Vec<(Receiver<ScanMsg>, usize, usize)>,
-    /// diskte artık bulunmayan kütüphane dosyaları
+
     lib_missing: HashSet<String>,
     missing_rx: Option<Receiver<HashSet<String>>>,
     lib_added: usize,
@@ -359,20 +348,20 @@ pub struct App {
     titlebar_done: bool,
     chain_sent: Vec<crate::fx::FxSpec>,
     rate_cache: HashMap<String, Vec<u32>>,
-    /// cihaz koptu: (kopmadan önce çalıyor muydu, son deneme zamanı)
+
     recover: Option<(bool, Instant)>,
     dsd_dialog: Option<DsdDialog>,
-    /// cihaz kimliği -> DoP için kabul edilen PCM hızları (sorgu her başlatmada tekrarlanmaz)
+
     dop_rate_cache: HashMap<String, Vec<u32>>,
-    /// DoP'ta ses seviyesi uyarısı için son görülen seviye
+
     last_vol: f32,
-    /// EQ eğrisi önbelleği: (ön ayar, çıkış hızı, dB değerleri); ön ayar ya da hız değişmedikçe yeniden hesaplanmaz
+
     eq_cache: Option<(Preset, u32, Arc<Vec<f64>>)>,
-    /// motor arka planda kapanıyor (arayüz beklemez); bitince `finish_stop` çalışır
+
     stopping: Option<JoinHandle<()>>,
-    /// oynatıcı modunda motorun boşta kalmaya başladığı an (cihazı bırakmak için)
+
     idle_since: Option<Instant>,
-    /// kapanma bitince motoru yeniden başlat: (başlayınca çalmaya devam et?)
+
     queued_start: Option<bool>,
     loud: Arc<crate::loudness::Scanner>,
     loud_started: bool,
@@ -387,7 +376,7 @@ pub struct App {
     tip_eval: Instant,
     rate_checked: bool,
     start_rate: Option<u32>,
-    /// cihazın istenen hızı kabul etmeyip başka hızda açıldığı bilgisi: (istenen, açılan)
+
     rate_notice: Option<(u32, u32)>,
     motor_tab: u8,
     fx_drag: Option<fx_ui::FxDrag>,
@@ -403,30 +392,30 @@ pub struct App {
     lyr_fetcher: lyrics::LyricsFetcher,
     lyrics_open: bool,
     queue_open: bool,
-    /// parça yolu -> (başlık, sanatçı), kuyruk listesi için
+
     queue_map: HashMap<String, (String, String)>,
     queue_sig: usize,
     resume_saved: Instant,
-    /// kütüphaneden "sıraya ekle" isteği: (parçalar, sıradaki olarak mı)
+
     pending_queue: Option<(Vec<PathBuf>, bool)>,
     undo: Option<(Undo, String, Instant)>,
-    /// söz kayması düğmesi basılı tutuluyor: (başlangıç, son adım, yön)
+
     lyr_hold: Option<(Instant, Instant, i32)>,
-    /// bit-perfect kanıtı: parça başı sayaç tabanı, görünen değerler ve son değişiklik zamanı
+
     proof_id: u64,
     proof_base: crate::proof::Counters,
     proof_view: crate::proof::Counters,
     proof_dry_shown: u64,
     proof_alt_seen: u64,
     proof_alt_at: Instant,
-    /// cihazın son yoklamada kabul ettiği exclusive hızlar (makbuzda hız dönüşümünün nedenini göstermek için)
+
     probe_rates: Vec<u32>,
-    /// Ayarlar sayfasında seçili sekme (0 Ses, 1 Kütüphane, 2 Ekolayzır, 3 Uygulama)
+
     settings_tab: u8,
-    /// ön ayar seçici listesindeki arama metni ve odak isteği
+
     preset_q: String,
     preset_q_focus: bool,
-    /// her değişiklik nedeninin (bit sırası) en son görüldüğü an; makbuzda yalnızca güncel nedenler gösterilir
+
     proof_cause_at: [Instant; 6],
     proof_cause_mask: u32,
     proof_frames_seen: u64,
@@ -460,25 +449,25 @@ pub struct App {
     artist_small: HashMap<String, Option<(TextureHandle, f32, f32)>>,
     artist_big: HashMap<String, Option<(TextureHandle, f32, f32)>>,
     lib_tab: u8,
-    /// kütüphane filtresi: metin, tür ve sıralama (albümler / sanatçılar ayrı sıralanır)
+
     lib_q: String,
     lib_genre: Option<String>,
     lib_sort: [u8; 2],
     lib_artist: Option<String>,
     bio_open: bool,
     search_open: bool,
-    /// AutoEQ mağazası: indirme istemcisi ve pencere durumu
+
     autoeq: crate::autoeq::Client,
     ae: autoeq_ui::AeUi,
-    /// otomatik EQ: son değerlendirilen parça kimliği, yeniden değerlendirme isteği, şu an uygulanan kural, ayarlardaki ekleme formu
+
     eq_rule_seen: u64,
     eq_rule_dev: Option<String>,
     eq_rule_dirty: bool,
     rule_active: Option<eqrules_ui::EqRule>,
     rule_new: Option<eqrules_ui::RuleNew>,
-    /// ön ayar özellikleri penceresi (yeni ön ayar ya da mevcut)
+
     props: Option<presetprops_ui::PropsUi>,
-    /// Ayarlar > Ön ayarlar'daki düzenleme
+
     props_inline: Option<presetprops_ui::PropsUi>,
     search_query: String,
     search_sel: usize,
@@ -492,7 +481,7 @@ impl App {
             cfg.from = None;
         }
         let devices = engine::list_devices().unwrap_or_default();
-        // eski sürümde cihaz adla saklanıyordu; kimliğe çevir
+
         let migrated = engine::migrate_device_ref(&devices, &mut cfg.to) | engine::migrate_device_ref(&devices, &mut cfg.from);
         let (tray, tray_eq) = match make_tray(ctx) {
             Some((t, e)) => (Some(t), Some(e)),
@@ -657,7 +646,7 @@ impl App {
         if migrated {
             app.save_cfg();
         }
-        // önceki oturum çöktüyse varsayılan çıkışı geri al
+
         app.restore_route();
         {
             let c = ctx.clone();
@@ -672,7 +661,7 @@ impl App {
         let queue: Vec<String> = if app.cfg.playlist.is_empty() {
             crate::fsutil::read_json(&queue_path()).unwrap_or_default()
         } else {
-            let old = std::mem::take(&mut app.cfg.playlist); // eski config.json'dan göç
+            let old = std::mem::take(&mut app.cfg.playlist);
             if crate::devenv::dev_var("SW_OFFSCREEN").is_err() && crate::devenv::dev_var("SW_SHOT").is_err() {
                 if let Ok(j) = serde_json::to_vec(&old) {
                     let _ = crate::fsutil::write_atomic(&queue_path(), &j);
@@ -683,7 +672,7 @@ impl App {
         app.player.add(queue.iter().map(PathBuf::from).collect());
         if let Some((i, pos)) = app.cfg.resume {
             if i < queue.len() && crate::devenv::dev_var("SW_OFFSCREEN").is_err() {
-                app.player.load_paused(i, pos); // yalnızca hazırla; Çal'a basılana kadar sessiz
+                app.player.load_paused(i, pos);
             }
         }
         app.player.set_volume(crate::devenv::dev_var("SW_VOL").ok().and_then(|v| v.parse().ok()).unwrap_or(app.cfg.volume.unwrap_or(0.8)));
@@ -692,7 +681,7 @@ impl App {
         app.player.repeat_one.store(app.cfg.repeat_one, Relaxed);
         app.player.shuffle.store(app.cfg.shuffle, Relaxed);
         app.refresh_library();
-        // eksik dosya denetimi salt okunur; klasör taraması test/ekran görüntüsü koşularında yapılmaz
+
         app.rescan_library(app.cfg.scan_on_start && crate::devenv::dev_var("SW_OFFSCREEN").is_err());
         if let Some(name) = app.cfg.preset.clone() {
             app.select(&name, false);
@@ -710,7 +699,7 @@ impl App {
         if crate::devenv::dev_var("SW_QUEUE").is_ok() {
             app.queue_open = true;
         }
-        // SW_SOLO=<bant indeksi>: soloyu kilitler ve o bandı seçer (doğrulama)
+
         if let Ok(v) = crate::devenv::dev_var("SW_SOLO") {
             app.solo_latch = true;
             app.sel_band = Some(v.parse().unwrap_or(4));
@@ -756,7 +745,7 @@ impl App {
             app.open_artist(&n);
         }
         if crate::devenv::dev_var("SW_DSD_DIALOG").is_ok() {
-            // ekran görüntüsü / deneme: gerçek bir USB DAC olmadan uyarı penceresini göster
+
             app.dsd_dialog = Some(DsdDialog {
                 files: vec![],
                 start: 0,
@@ -770,15 +759,15 @@ impl App {
         if crate::devenv::dev_var("SW_LYRICS").is_ok() {
             app.lyrics_open = true;
         }
-        // SW_RULE_TRACK=yol: o dosya için "test.txt" ön ayarını otomatik uygulayan şarkı kuralı ekler (doğrulama)
+
         if let Ok(path) = crate::devenv::dev_var("SW_RULE_TRACK") {
             app.cfg.eq_rules.push(eqrules_ui::EqRule { scope: eqrules_ui::RuleScope::Track, key: path, label: "Test".into(), sub: String::new(), preset: Some("test.txt".into()) });
         }
-        // SW_SETTAB=<0..3>: Ayarlar sekmesini seçer (doğrulama)
+
         if let Some(t) = crate::devenv::dev_var("SW_SETTAB").ok().and_then(|v| v.parse::<u8>().ok()) {
             app.settings_tab = t;
         }
-        // SW_PROPS=yeni | <ön ayar dosyası>: ön ayar özellikleri penceresini açar (doğrulama)
+
         if let Ok(v) = crate::devenv::dev_var("SW_PROPS") {
             app.props_open(if v == "yeni" { None } else { Some(v.as_str()) });
             if let (Some(p), Ok(t)) = (app.props.as_mut(), crate::devenv::dev_var("SW_PROPSTAB")) {
@@ -860,18 +849,6 @@ impl App {
         }
     }
 
-    // =================================================================== başlık
-
-    // ===================================================================== alt çubuk
-
-    // ================================================================== sağ panel
-
-    // =================================================================== Motor sayfası
-
-    // ================================================================= Kütüphane
-    // ================================================================= DSD / DoP
-
-    /// Doğrulama derlemesi: kare aralıkları (arayüz takılması), 0.5 sn'de bir durum ve zamanlanmış "tepsi çıkışı" simülasyonu.
     #[cfg(feature = "devtools")]
     fn dev_hooks(&mut self, ctx: &egui::Context, gap_ms: f64, busy: bool) {
         static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
@@ -917,7 +894,7 @@ impl App {
         if crate::devenv::dev_var("SW_LOGS").is_ok() && last.map(|t| t.elapsed().as_millis() < 5).unwrap_or(false) {
             dev_trace(&format!("günlük {}", devlog::take_top(6)));
         }
-        // son karenin girdi olayları (sürekli çizimin kaynağı dış olay mı?)
+
         if crate::devenv::dev_var("SW_CAUSES").is_ok() {
             static EV: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             let (n, first) = ctx.input(|i| (i.events.len() as u32, i.events.first().map(|e| format!("{e:?}"))));
@@ -926,7 +903,7 @@ impl App {
                 dev_trace(&format!("olay n={n} ilk={}", first.unwrap_or_default().chars().take(80).collect::<String>()));
             }
         }
-        // son karenin yeniden çizim nedenleri (sürekli çizimin kaynağını bulmak için)
+
         if crate::devenv::dev_var("SW_CAUSES").is_ok() && last.map(|t| t.elapsed().as_millis() < 5).unwrap_or(false) {
             let mut c: Vec<String> = ctx.repaint_causes().iter().map(|c| format!("{c}")).collect();
             c.sort();
@@ -935,7 +912,7 @@ impl App {
         }
         let el = t0.elapsed().as_secs_f32();
         let mut once = ONCE.lock().unwrap();
-        // SW_HIDE=sn: pencereyi tepsiye gizler (gerçek tepsi durumunu taklit eder)
+
         if let Some(h) = crate::devenv::dev_var("SW_HIDE").ok().and_then(|v| v.parse::<f32>().ok()) {
             if !once.0 && el >= h {
                 once.0 = true;
@@ -943,13 +920,13 @@ impl App {
                 hide_window();
             }
         }
-        // SW_EQOFF=sn: o andan itibaren ekolayzırı kapatır (arayüzdeki düğmeyle aynı durum)
+
         if let Some(q) = crate::devenv::dev_var("SW_EQOFF").ok().and_then(|v| v.parse::<f32>().ok()) {
             if el >= q {
                 engine::EQ_OFF.store(true, Relaxed);
             }
         }
-        // SW_AUTOQUIT=sn: tepsi menüsündeki "Çıkış" ile aynı işlevi çağırır
+
         if let Some(q) = crate::devenv::dev_var("SW_AUTOQUIT").ok().and_then(|v| v.parse::<f32>().ok()) {
             if !once.1 && el >= q {
                 once.1 = true;
@@ -957,12 +934,6 @@ impl App {
             }
         }
     }
-
-    // ===================================================================== arama
-
-    // ===================================================================== Lyrics
-
-    // ================================================================== Ayarlar
 
 }
 
@@ -996,7 +967,7 @@ impl eframe::App for App {
         let _timer = UpdateTimer(Instant::now());
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
         let zoom = if self.cfg.ui_zoom == 0 {
-            // otomatik: yüksek Windows ölçeğinde (ör. %150) arayüz küçültülür, %100'de olduğu gibi kalır
+
             if native >= 1.45 {
                 0.85
             } else if native >= 1.2 {
@@ -1028,7 +999,7 @@ impl eframe::App for App {
                 if o.rate > 0 {
                     self.rate_checked = true;
                     if o.rate != self.player.rate() {
-                        // cihaz istenen hızı kabul etmedi: eşleştirmeyi bırak, açılan hızda çal
+
                         self.rate_notice = Some((self.player.rate(), o.rate));
                         self.player.force_rate(o.rate);
                     }
@@ -1039,7 +1010,7 @@ impl eframe::App for App {
             self.titlebar_done = style_titlebar();
         }
         self.frames_run = self.frames_run.saturating_add(1);
-        // pencere konumu/boyutu: bir sonraki açılışta hatırlansın (mantıksal birimler)
+
         if crate::devenv::dev_var("SW_OFFSCREEN").is_err() && !WINDOW_HIDDEN.load(Relaxed) {
             let ppp = ctx.pixels_per_point();
             ctx.input(|i| {
@@ -1062,10 +1033,7 @@ impl eframe::App for App {
                 }
             });
         }
-        // çizim sıklığı (ölçülerek seçildi): egui, istenen aralıktan bir kare süresini (~16.7 ms) düşer; 16-17 ms ve altı
-        // "hemen yeniden çiz" demektir ve döngü durmadan döner (bir çekirdeğin %100'ü). Bu yüzden aralıklar bilerek büyük:
-        // motor ekranı çalarken ~30 fps, diğer ekranlar çalarken ~15 fps, boşta ~2-3 fps, küçültülmüş / tepsiye gizliyken ~2 fps.
-        // Animasyonlar ve fare/klavye olayları zaten kendi başlarına yeniden çizim ister.
+
         let hidden = WINDOW_HIDDEN.load(Relaxed) || ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         let busy = self.player.playing.load(Relaxed) || (self.view == View::Motor && self.running.is_some());
         #[allow(unused_mut)]
@@ -1078,7 +1046,7 @@ impl eframe::App for App {
         };
         #[cfg(feature = "devtools")]
         if let Some(e) = crate::devenv::dev_var("SW_EVERY").ok().and_then(|v| v.parse::<u64>().ok()) {
-            every = e; // doğrulama: çizim aralığını elle ayarla
+            every = e;
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(every));
         let gap_ms = self.last_frame.elapsed().as_secs_f64() * 1000.0;
@@ -1109,7 +1077,7 @@ impl eframe::App for App {
                     self.message = "Cihaz bağlantısı koptu; geri gelince kendiliğinden devam edecek".into();
                     self.say("Cihaz bağlantısı koptu, geri gelince devam edilecek");
                 } else if was_dop && self.message.starts_with("Hata") {
-                    // cihaz DoP biçimini açamadı: bu cihaz için PCM'e dön ve DSD'yi çevirerek çal
+
                     if let Some((_, _, id)) = self.target_dev.clone() {
                         self.cfg.dsd_prefs.insert(id, 0);
                         self.save_cfg();
@@ -1182,7 +1150,6 @@ impl eframe::App for App {
         }
         self.sync_cover(ctx, dt);
 
-        // klavye
         let kb = ctx.wants_keyboard_input();
         let mut ab_held = false;
         if !kb {
@@ -1196,7 +1163,7 @@ impl eframe::App for App {
                     i.key_pressed(egui::Key::ArrowDown),
                 )
             });
-            // Ayarlar'da kaydırıcılar ok tuşlarını kullanır; arama açıkken ok tuşları sonuçlarda gezinir
+
             if self.view != View::Settings && !self.search_open && !self.cfg.use_loopback {
                 if space {
                     self.play_pressed();
@@ -1228,7 +1195,6 @@ impl eframe::App for App {
             self.open_search();
         }
 
-        // Ctrl+,: Ayarlar
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Comma)) {
             self.search_open = false;
             self.upload_open = false;
@@ -1236,7 +1202,7 @@ impl eframe::App for App {
         }
 
         ctx.layer_painter(egui::LayerId::background()).rect_filled(ctx.screen_rect(), 0.0, BG0);
-        // her sayfanın en üstünden inen renk: albüm sayfasında albümün, aksi halde çalan parçanın kapak rengi
+
         {
             let album_tint = match (&self.view, &self.lib_artist, self.lib_open.clone()) {
                 (View::Library, None, Some(k)) if self.lib.albums.iter().any(|a| a.key == k) => Some(self.album_tint(&k)),
@@ -1301,7 +1267,6 @@ impl eframe::App for App {
         self.tip_banner(ctx);
         self.dsd_dialog_ui(ctx);
 
-        // hata ayıklama: SW_SHOT=yol.png -> birkaç saniye sonra ekran görüntüsü alıp çık
         if let Ok(path) = crate::devenv::dev_var("SW_SHOT") {
             self.frames += 1;
             if self.frames == 90 {
@@ -1363,18 +1328,14 @@ impl Drop for App {
     }
 }
 
-// ------------------------------------------------------------- tepsi ve pencere
-
-// ------------------------------------------------------------------ sözler düzeni
-
 struct LyrTok {
     sp: bool,
-    /// parantez içi (arka vokal): ayrı satırda, daha küçük
+
     bg: bool,
     x: f32,
     y: f32,
     galley: Arc<egui::Galley>,
-    /// kelime senkronlu satırlarda kelimenin indeksi
+
     word: Option<usize>,
 }
 
@@ -1390,7 +1351,6 @@ struct LyrLayout {
     lines: Vec<LyrLine>,
 }
 
-/// Gerçek dalga biçimli arama çubuğu. (yanıt, sürüklerken önizleme, bırakınca/tıklayınca konum 0..1)
 fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, progress: f32, active: bool) -> (egui::Response, Option<f32>, Option<f32>) {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
     let painter = ui.painter_at(rect);
@@ -1400,11 +1360,11 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
     let mid = rect.center().y;
     let half = rect.height() * 0.5 - 1.0;
     let time = ui.input(|i| i.time) as f32;
-    // hata ayıklama: SW_WAVEHOVER=0..1 imleci o konumda varsayar
+
     let dbg_hover: Option<f32> = crate::devenv::dev_var("SW_WAVEHOVER").ok().and_then(|v| v.parse::<f32>().ok()).map(|f| rect.left() + f * rect.width());
     let hovering = resp.hover_pos().is_some() || resp.dragged() || dbg_hover.is_some();
     let pres = ui.ctx().animate_bool_with_time(resp.id.with("pres"), hovering && (active || dbg_hover.is_some()), 0.2);
-    // imleç konumu yumuşatılır: cam mercek imleci süzülerek takip eder
+
     let target_x = resp.hover_pos().or(resp.interact_pointer_pos()).map(|p| p.x).or(dbg_hover).map(|x| x.clamp(rect.left(), rect.right()));
     let sx = ui.ctx().animate_value_with_time(resp.id.with("sx"), target_x.unwrap_or(rect.center().x), if pres > 0.01 && pres < 0.99 { 0.0 } else { 0.07 });
     let hover_x = if pres > 0.003 { Some(sx) } else { None };
@@ -1421,14 +1381,14 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
             let b = ((f1 * p.len() as f32).ceil() as usize).clamp(a + 1, p.len());
             p[a..b].iter().cloned().fold(0.0, f32::max)
         } else if active && peaks.is_none() {
-            // dalga biçimi hesaplanırken nabız atan geçici çubuklar
+
             0.12 + 0.14 * ((time * 3.0 + i as f32 * 0.4).sin() * 0.5 + 0.5)
         } else {
             0.08
         };
         let x = rect.left() + i as f32 * step;
         let played = (i as f32 + 0.5) / n as f32 <= progress;
-        // imlecin çevresinde çubuklar büyür (kosinüs tümseği), açık griye/parlak maviye döner
+
         let m = match hover_x {
             Some(hx) => {
                 let d = ((hx - (x + bar * 0.5)).abs() / radius).min(1.0);
@@ -1444,7 +1404,7 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
         if m < 0.03 {
             painter.rect_filled(Rect::from_min_max(pos2(x, mid - hh), pos2(x + bar, mid + hh)), Rounding::same(1.0), col);
         } else {
-            // yaklaşan çubuklar kalınlaşır ve silindir gibi gölgelenir: üst/orta parlak, uçlara doğru koyu
+
             let w = bar * (1.0 + 0.9 * m);
             let cx = x + bar * 0.5;
             let r = Rect::from_min_max(pos2(cx - w * 0.5, mid - hh), pos2(cx + w * 0.5, mid + hh));
@@ -1458,14 +1418,14 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
             }
         }
     }
-    // yükleniyor nabzı: yalnızca dalga biçimi henüz yoksa (`peaks == None`); hesaplanamayan parçada animasyon sonsuza dek sürmez
+
     if active && peaks.is_none() {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
     }
     if pres > 0.01 {
         ui.ctx().request_repaint();
     }
-    // konum çizgisi
+
     if active && have {
         let x = rect.left() + progress.clamp(0.0, 1.0) * rect.width();
         painter.rect_filled(Rect::from_min_max(pos2(x - 0.5, rect.top()), pos2(x + 0.5, rect.bottom())), Rounding::ZERO, alpha(Color32::WHITE, 150));
@@ -1497,7 +1457,6 @@ fn smoothstep(x: f32) -> f32 {
     x * x * (3.0 - 2.0 * x)
 }
 
-/// Unity tarzı SmoothDamp: hedefe hız sürekliliğiyle yaklaşır.
 fn smooth_damp(current: f32, target: f32, vel: f32, smooth_time: f32, dt: f32) -> (f32, f32) {
     let st = smooth_time.max(0.0001);
     let omega = 2.0 / st;
@@ -1510,7 +1469,6 @@ fn smooth_damp(current: f32, target: f32, vel: f32, smooth_time: f32, dt: f32) -
     (out, new_vel)
 }
 
-/// Kelime dolumu: sönük zemin üzerine soldan sağa, yumuşak ön kenarlı parlak dolgu (hareket/ışıma yok).
 fn draw_word(painter: &egui::Painter, pos: egui::Pos2, galley: &Arc<egui::Galley>, prog: f32, dim: Color32, bright: Color32) {
     let (w, h) = (galley.size().x, galley.size().y);
     painter.galley_with_override_text_color(pos, galley.clone(), dim);

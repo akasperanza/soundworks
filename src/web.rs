@@ -1,6 +1,3 @@
-//! Çevrimiçi bilgi kaynakları (sözler, sanatçı bilgisi, albüm türü). Önceden Python yardımcılarıyla (tools/*.py)
-//! yapılıyordu; artık uygulamanın içinde, harici bir çalışma ortamı gerektirmeden çalışır.
-
 use crate::artist::ArtistInfo;
 use crate::lyrics::{LyricLine, LyricWord, Lyrics};
 use regex::Regex;
@@ -16,8 +13,6 @@ const TIMEOUT: u64 = 9;
 fn re(cell: &'static OnceLock<Regex>, pat: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(pat).expect("regex"))
 }
-
-// ------------------------------------------------------------------ HTTP
 
 fn agent(secs: u64) -> ureq::Agent {
     ureq::AgentBuilder::new().timeout_connect(Duration::from_secs(8)).timeout(Duration::from_secs(secs)).build()
@@ -53,9 +48,6 @@ fn enc(s: &str) -> String {
     o
 }
 
-// ------------------------------------------------------------------ metin yardımcıları
-
-/// Python `difflib.SequenceMatcher.ratio()` karşılığı (Ratcliff/Obershelp).
 fn ratio(a: &str, b: &str) -> f64 {
     let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     if a.is_empty() && b.is_empty() {
@@ -102,7 +94,7 @@ fn fold_char(c: char) -> Option<char> {
         'ñ' => 'n',
         'ž' | 'ź' | 'ż' => 'z',
         'ł' => 'l',
-        '\u{300}'..='\u{36f}' => return None, // birleşik işaretler
+        '\u{300}'..='\u{36f}' => return None,
         _ => c.to_lowercase().next().unwrap_or(c),
     })
 }
@@ -185,8 +177,6 @@ fn alt_artist_title(title: &str, artist: &str) -> Option<(String, String)> {
     None
 }
 
-// ------------------------------------------------------------------ eşleşme doğrulama
-
 fn title_ok(req: &str, cand: &str) -> bool {
     let a = norm_txt(&clean_title(req, ""));
     let b = norm_txt(&clean_title(cand, ""));
@@ -221,8 +211,6 @@ fn match_ok(rt: &str, ra: &str, rd: f64, ct: &str, ca: &str, cd: f64) -> bool {
     let dur_ok = rd <= 0.0 || cd <= 0.0 || (rd - cd).abs() <= 25.0;
     title_ok(rt, ct) && artist_ok(ra, ca) && dur_ok
 }
-
-// ------------------------------------------------------------------ ayrıştırıcılar
 
 fn ttml_ms(val: &str) -> i64 {
     let s = val.trim().to_lowercase();
@@ -275,7 +263,6 @@ fn html_unescape(s: &str) -> String {
         .into_owned()
 }
 
-/// TTML satır gövdesini (ana metin, arka vokal iç içerikleri) olarak ayırır; iç içe span'ler dengelenir.
 fn split_bg(body: &str) -> (String, Vec<String>) {
     static OPEN: OnceLock<Regex> = OnceLock::new();
     static TAG: OnceLock<Regex> = OnceLock::new();
@@ -371,7 +358,7 @@ fn parse_ttml(text: &str) -> (Vec<LyricLine>, bool) {
         lines.push(LyricLine { t: start, text: line_text, words: all });
     }
     lines.sort_by_key(|l| l.t);
-    // zamanlar çökmüşse (hepsi aynı an) bu kaynak senkronlu değildir
+
     if lines.len() > 2 && lines.iter().all(|l| l.t == lines[0].t) {
         return (vec![], false);
     }
@@ -408,7 +395,6 @@ fn lrc_ms(m: &str, s: &str, frac: &str) -> u32 {
     (m.parse::<u32>().unwrap_or(0) * 60000 + s.parse::<u32>().unwrap_or(0) * 1000) + (f * 1000.0).round() as u32
 }
 
-/// (satırlar, kelime_seviyesi_var_mı)
 fn parse_input(inp: &str, allow_plain: bool) -> (Vec<LyricLine>, bool) {
     if inp.trim().is_empty() {
         return (vec![], false);
@@ -498,8 +484,6 @@ fn parse_input(inp: &str, allow_plain: bool) -> (Vec<LyricLine>, bool) {
     }
     (lines, has_words)
 }
-
-// ------------------------------------------------------------------ sağlayıcılar
 
 struct Found {
     provider: &'static str,
@@ -678,7 +662,6 @@ fn lrclib(title: &str, artist: &str, album: &str, duration: f64) -> Option<Found
     None
 }
 
-/// Üç kaynağı paralel dener; kelime senkronlu > satır senkronlu > düz metin.
 pub fn lyrics_lookup(title: &str, artist: &str, album: &str, duration: f64) -> Lyrics {
     let mut out = Lyrics { kind: String::new(), provider: String::new(), lines: vec![], ver: 4 };
     if title.trim().is_empty() && artist.trim().is_empty() {
@@ -701,8 +684,6 @@ pub fn lyrics_lookup(title: &str, artist: &str, album: &str, duration: f64) -> L
     }
     out
 }
-
-// ------------------------------------------------------------------ sanatçı bilgisi
 
 fn looks_musical(text: &str) -> bool {
     const W: [&str; 16] = [
@@ -768,7 +749,7 @@ fn lastfm_bio(name: &str) -> String {
 }
 
 pub fn artist_lookup(name: &str, out_id: &str, out_dir: &Path) -> Result<ArtistInfo, String> {
-    // fotoğraf ve görünen ad: Deezer (anahtar gerekmez)
+
     let raw = http_get_ua(&format!("https://api.deezer.com/search/artist?q={}&limit=5", enc(name)), "Soundworks/0.1", 20)?;
     let data: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let list = data["data"].as_array().cloned().unwrap_or_default();
@@ -782,7 +763,7 @@ pub fn artist_lookup(name: &str, out_id: &str, out_dir: &Path) -> Result<ArtistI
         let path = out_dir.join(format!("{out_id}.jpg"));
         for u in urls {
             if let Ok(b) = http_bytes(u, 8 << 20) {
-                // Deezer, fotoğrafı olmayan sanatçılara boş kapak verir; çok küçük yanıtları eler
+
                 if b.len() > 2000 && std::fs::write(&path, &b).is_ok() {
                     photo = Some(path.to_string_lossy().to_string());
                     break;
@@ -802,8 +783,6 @@ pub fn artist_lookup(name: &str, out_id: &str, out_dir: &Path) -> Result<ArtistI
     let found = photo.is_some() || !desc.is_empty();
     Ok(ArtistInfo { name: display, description: desc, photo, found, source: source.to_string(), ver: 2 })
 }
-
-// ------------------------------------------------------------------ tür bilgisi
 
 const CATEGORIES: &[(&[&str], &str)] = &[
     (&["anatolian rock", "anadolu"], "Anadolu Rock"),
@@ -947,7 +926,6 @@ fn deezer_album_genres(artist: &str, album: &str) -> Result<Vec<String>, String>
     Ok(alb["genres"]["data"].as_array().map(|a| a.iter().filter_map(|g| g["name"].as_str().map(String::from)).collect()).unwrap_or_default())
 }
 
-/// Albümün türü (Türkçe kategori); bulunamazsa boş. Ağ hatasında `Err` (sonra tekrar denenir).
 pub fn genre_lookup(artist: &str, album: &str) -> Result<String, String> {
     if artist.is_empty() || artist.to_lowercase() == "bilinmeyen sanatçı" {
         return Ok(String::new());
@@ -1040,7 +1018,6 @@ mod tests {
         assert_eq!(html_unescape("a &amp; b &#39;c&#x21;"), "a & b 'c!");
     }
 
-    /// Gerçek ağ gerektirir: `cargo test -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn live_lookups() {

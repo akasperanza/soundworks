@@ -1,24 +1,21 @@
-//! Motor sekmesi > Modüller: sinyal zinciri ve market (sürükle-bırak).
-
 use super::*;
 use crate::fx::{self, FxKind, FxSpec};
 use egui::Pos2;
 
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum FxDrag {
-    /// marketten yeni modül
+
     New(FxKind),
-    /// zincirdeki bir modülün sırasını değiştir (zincir indeksi)
+
     Move(usize),
 }
 
-/// Modül simgeleri: ikon dosyası gerekmeden, modülün ne yaptığını gösteren küçük çizimler.
 fn fx_glyph(p: &egui::Painter, kind: FxKind, c: Pos2, s: f32, col: Color32) {
     let st = Stroke::new((s * 0.075).max(1.5), col);
     let h = s * 0.5;
     match kind {
         FxKind::Limiter => {
-            // tavan çizgisi ve üstten düzleşen sinüs
+
             let ceil = c.y - h * 0.45;
             p.line_segment([pos2(c.x - h, ceil), pos2(c.x + h, ceil)], Stroke::new(st.width, alpha(col, 120)));
             let pts: Vec<Pos2> = (0..=40)
@@ -31,7 +28,7 @@ fn fx_glyph(p: &egui::Painter, kind: FxKind, c: Pos2, s: f32, col: Color32) {
             p.add(Shape::line(pts, st));
         }
         FxKind::Compressor => {
-            // zarfı merkeze doğru daralan dalga
+
             let pts: Vec<Pos2> = (0..=40)
                 .map(|i| {
                     let t = i as f32 / 40.0;
@@ -58,13 +55,13 @@ fn fx_glyph(p: &egui::Painter, kind: FxKind, c: Pos2, s: f32, col: Color32) {
             }
         }
         FxKind::Filter => {
-            // alçak ve yüksek kesmeyi gösteren yamuk frekans eğrisi
+
             let pts = [(-1.0, 0.6), (-0.7, 0.6), (-0.45, -0.3), (-0.3, -0.5), (0.3, -0.5), (0.45, -0.3), (0.7, 0.6), (1.0, 0.6)];
             let pts: Vec<Pos2> = pts.iter().map(|(x, y)| pos2(c.x + x * h, c.y + y * h)).collect();
             p.add(Shape::line(pts, st));
         }
         FxKind::Tone => {
-            // bas ve tiz uçları yukarı kalkan eğri
+
             let pts: Vec<Pos2> = (0..=40)
                 .map(|i| {
                     let t = i as f32 / 40.0;
@@ -75,14 +72,14 @@ fn fx_glyph(p: &egui::Painter, kind: FxKind, c: Pos2, s: f32, col: Color32) {
             p.add(Shape::line(pts, st));
         }
         FxKind::Loudness => {
-            // yükselen ses çubukları: kısık sesde bas ve tiz uçları uzun
+
             for (i, hh) in [0.9f32, 0.45, 0.25, 0.45, 0.8].iter().enumerate() {
                 let x = c.x + (i as f32 - 2.0) * h * 0.42;
                 p.line_segment([pos2(x, c.y - hh * h * 0.8), pos2(x, c.y + hh * h * 0.8)], Stroke::new(st.width * 1.4, col));
             }
         }
         FxKind::Crossfeed => {
-            // iki kanaldan çaprazlanan çizgiler
+
             let (a, b) = (h * 0.8, h * 0.45);
             p.line_segment([pos2(c.x - a, c.y - b), pos2(c.x + a, c.y - b)], st);
             p.line_segment([pos2(c.x - a, c.y + b), pos2(c.x + a, c.y + b)], st);
@@ -98,8 +95,6 @@ fn fx_glyph(p: &egui::Painter, kind: FxKind, c: Pos2, s: f32, col: Color32) {
     }
 }
 
-/// Sürükleme ekleme indeksi: okuma sırasında (satır satır, soldan sağa) imlecin gerisinde kalan modül sayısı.
-/// Sürüklenen modül sayılmaz.
 fn insert_index(rects: &[Rect], skip: Option<usize>, p: Pos2) -> usize {
     rects
         .iter()
@@ -108,7 +103,7 @@ fn insert_index(rects: &[Rect], skip: Option<usize>, p: Pos2) -> usize {
         .filter(|(_, r)| {
             let (top, bottom) = (r.top(), r.bottom());
             if p.y > bottom {
-                true // imlecin üstündeki satırlar tamamen önce gelir
+                true
             } else if p.y < top {
                 false
             } else {
@@ -118,7 +113,6 @@ fn insert_index(rects: &[Rect], skip: Option<usize>, p: Pos2) -> usize {
         .count()
 }
 
-/// Zincirde bir modülün yerini değiştir; `idx`, modül çıkarıldıktan sonraki listedeki hedef konumdur.
 fn reorder(chain: &mut Vec<FxSpec>, from: usize, idx: usize) {
     if from >= chain.len() {
         return;
@@ -151,12 +145,10 @@ fn summary(s: &FxSpec) -> String {
 
 const NODE_H: f32 = 96.0;
 
-/// Metnin verilen yazı tipiyle genişliği.
 fn text_w(p: &egui::Painter, s: &str, font: egui::FontId) -> f32 {
     p.layout_no_wrap(s.to_string(), font, Color32::WHITE).size().x
 }
 
-/// Metin `max_w`'ye sığmıyorsa sonuna "…" koyarak kısaltır (hiçbir metin kutudan taşmasın).
 fn fit(p: &egui::Painter, s: &str, font: egui::FontId, max_w: f32) -> String {
     if text_w(p, s, font.clone()) <= max_w {
         return s.to_string();
@@ -172,16 +164,15 @@ fn fit(p: &egui::Painter, s: &str, font: egui::FontId, max_w: f32) -> String {
     "…".to_string()
 }
 
-/// Zincir kartı genişliği: ad, alt başlık ve özet metinleri + düğmelere ayrılan yer sığacak kadar.
 fn node_width(p: &egui::Painter, spec: &FxSpec) -> f32 {
     let info = fx::info(spec.kind);
     let head = text_w(p, info.name, bold(13.5)).max(text_w(p, info.tagline, body(11.5)));
-    let foot = text_w(p, &summary(spec), body(12.5)) + 16.0 + 14.0 + 52.0; // sol boşluk + aralık + iki düğme
+    let foot = text_w(p, &summary(spec), body(12.5)) + 16.0 + 14.0 + 52.0;
     (50.0 + head + 18.0).max(foot).max(138.0).ceil()
 }
 
 impl App {
-    /// Zincirdeki modül parametre listesini katalogla aynı uzunluğa getir (eski/eksik kayıtlar).
+
     fn fx_normalize(&mut self) {
         let mut seen: Vec<u32> = vec![];
         let max = self.cfg.chain.iter().map(|s| s.id).max().unwrap_or(0);
@@ -213,7 +204,6 @@ impl App {
         self.fx_sel = Some(id);
     }
 
-    /// Sürükleme sırasında imlecin konumuna göre ekleme indeksi (sürüklenen modül hariç).
     fn fx_insert_index(&self, p: Pos2) -> usize {
         let skip = match self.fx_drag {
             Some(FxDrag::Move(i)) => Some(i),
@@ -260,7 +250,6 @@ impl App {
         let (mut remove, mut toggle, mut select, mut drag_start): (Option<usize>, Option<usize>, Option<u32>, Option<usize>) = (None, None, None, None);
         let mut goto_eq = false;
 
-        // öğeler ve genişlikleri
         let mut items: Vec<(Item, f32)> = vec![(Item::Source, 94.0), (Item::Eq, 94.0)];
         for (i, s) in chain.iter().enumerate() {
             items.push((Item::Module(i), node_width(ui.painter(), s)));
@@ -272,7 +261,7 @@ impl App {
 
         let inner = Frame::none().fill(BG2).rounding(Rounding::same(14.0)).inner_margin(Margin::symmetric(18.0, 16.0)).show(ui, |ui| {
             let avail = ui.available_width();
-            // satırlara böl: sığmayan öğe alt satıra geçer (kart asla kesilmez)
+
             let mut place: Vec<(f32, usize)> = vec![];
             let (mut x, mut row) = (0.0f32, 0usize);
             for (_, w) in &items {
@@ -361,7 +350,7 @@ impl App {
                         }
                     }
                 }
-                // ok: aynı satırda bir sonraki öğe varsa
+
                 if k + 1 < items.len() && place[k + 1].1 == row {
                     let c = pos2(rect.right() + ARROW_W * 0.5, rect.center().y);
                     let col = alpha(DIM, 150);
@@ -376,7 +365,6 @@ impl App {
         self.fx_rects = rects.clone();
         self.fx_eq_right = eq_rect.right();
 
-        // ekleme göstergesi
         if dragging {
             if let Some(p) = ptr {
                 if self.fx_zone.contains(p) && !rects.is_empty() {
@@ -464,7 +452,7 @@ impl App {
                     let mut v = self.cfg.chain[idx].params[pi].clamp(pinfo.min, pinfo.max);
                     let suffix = if pinfo.unit == "%" { "%".to_string() } else { format!(" {}", pinfo.unit) };
                     let mut slider = egui::Slider::new(&mut v, pinfo.min..=pinfo.max).fixed_decimals(pinfo.decimals).suffix(suffix);
-                    // ucu "kapalı" anlamına gelen parametrelerde değer yerine etiket göster
+
                     let (min, max, dec, off) = (pinfo.min, pinfo.max, pinfo.decimals, pinfo.off);
                     let unit = pinfo.unit;
                     if off != crate::fx::Off::No {
@@ -507,7 +495,7 @@ impl App {
         let cw = ((avail - gap * (cols - 1.0)) / cols).floor();
         let mut add: Option<FxKind> = None;
         let mut start: Option<FxKind> = None;
-        // kart yüksekliği: en uzun açıklama bu genişlikte kaç satır tutuyorsa ona göre (metin kesilmesin)
+
         let desc_h = fx::CATALOG
             .iter()
             .map(|i| ui.painter().layout(i.desc.to_string(), body(11.8), DIM, cw - 32.0).size().y)
@@ -527,13 +515,13 @@ impl App {
                 let ir = Rect::from_min_size(rect.min + vec2(16.0, 16.0), vec2(46.0, 46.0));
                 p.rect_filled(ir, Rounding::same(11.0), BG1);
                 fx_glyph(&p, info.kind, ir.center(), 30.0, SKY);
-                // ad/alt başlık: ekle düğmesi (34) + sayaç (28) + boşluklara kadar yer var
+
                 let tw = (rect.right() - 16.0 - 34.0 - 36.0) - (ir.right() + 14.0);
                 p.text(pos2(ir.right() + 14.0, rect.top() + 28.0), Align2::LEFT_CENTER, fit(&p, info.name, bold(14.5), tw), bold(14.5), Color32::WHITE);
                 p.text(pos2(ir.right() + 14.0, rect.top() + 47.0), Align2::LEFT_CENTER, fit(&p, info.tagline, body(12.0), tw), body(12.0), SKY);
                 let g = p.layout(info.desc.to_string(), body(11.8), DIM, rect.width() - 32.0);
                 p.galley(pos2(rect.left() + 16.0, rect.top() + 72.0), g, DIM);
-                // ekle düğmesi
+
                 let br = Rect::from_center_size(pos2(rect.right() - 30.0, rect.top() + 28.0), vec2(34.0, 28.0));
                 let bresp = ui.interact(br, resp.id.with("add"), Sense::click());
                 let bh = ui.ctx().animate_bool_with_time(bresp.id, bresp.hovered(), 0.1);
@@ -559,12 +547,11 @@ impl App {
         let _ = ctx;
     }
 
-    /// Fare bırakıldığında: bölgenin üstündeyse ekle/taşı, değilse iptal. Sürüklenen modülün hayaletini çizer.
     fn fx_finish_drag(&mut self, ctx: &egui::Context) {
         let Some(d) = self.fx_drag else { return };
         let ptr = ctx.pointer_latest_pos();
         if let Some(p) = ptr {
-            // hayalet kart
+
             let kind = match d {
                 FxDrag::New(k) => Some(k),
                 FxDrag::Move(i) => self.cfg.chain.get(i).map(|s| s.kind),
@@ -620,52 +607,52 @@ mod tests {
 
     #[test]
     fn insert_index_single_row() {
-        // merkezler 150, 300, 450 (x), tek satır
+
         let rects = [r(100.0, 0.0), r(250.0, 0.0), r(400.0, 0.0)];
         let y = 40.0;
         assert_eq!(insert_index(&rects, None, pos2(50.0, y)), 0);
         assert_eq!(insert_index(&rects, None, pos2(200.0, y)), 1);
         assert_eq!(insert_index(&rects, None, pos2(340.0, y)), 2);
         assert_eq!(insert_index(&rects, None, pos2(900.0, y)), 3);
-        // sürüklenen modül sayılmaz: ortadakini (1) tutup sağa götürmek
+
         assert_eq!(insert_index(&rects, Some(1), pos2(340.0, y)), 1);
         assert_eq!(insert_index(&rects, Some(1), pos2(900.0, y)), 2);
     }
 
     #[test]
     fn insert_index_wrapped_rows() {
-        // 2 satır: üst satırda 2, alt satırda 2 modül
+
         let rects = [r(0.0, 0.0), r(150.0, 0.0), r(0.0, 110.0), r(150.0, 110.0)];
-        // alt satırın solunda: üst satırdaki 2 modül önce gelir
+
         assert_eq!(insert_index(&rects, None, pos2(10.0, 150.0)), 2);
-        // alt satırda iki modülün arası
+
         assert_eq!(insert_index(&rects, None, pos2(140.0, 150.0)), 3);
-        // alt satırın sağında
+
         assert_eq!(insert_index(&rects, None, pos2(500.0, 150.0)), 4);
-        // üst satırın sağında: alt satır sonra gelir
+
         assert_eq!(insert_index(&rects, None, pos2(500.0, 40.0)), 2);
-        // satırlar arası boşluk: üst satır önce
+
         assert_eq!(insert_index(&rects, None, pos2(10.0, 103.0)), 2);
     }
 
     #[test]
     fn reorder_moves_without_losing_or_duplicating() {
         let mut c = chain(&[1, 2, 3, 4]);
-        reorder(&mut c, 0, 3); // ilkini sona
+        reorder(&mut c, 0, 3);
         assert_eq!(ids(&c), vec![2, 3, 4, 1]);
-        reorder(&mut c, 3, 0); // sonuncuyu başa
+        reorder(&mut c, 3, 0);
         assert_eq!(ids(&c), vec![1, 2, 3, 4]);
-        reorder(&mut c, 1, 1); // yerinde bırak
+        reorder(&mut c, 1, 1);
         assert_eq!(ids(&c), vec![1, 2, 3, 4]);
-        reorder(&mut c, 9, 0); // geçersiz kaynak: değişmez
+        reorder(&mut c, 9, 0);
         assert_eq!(ids(&c), vec![1, 2, 3, 4]);
-        reorder(&mut c, 0, 99); // hedef taşarsa sona
+        reorder(&mut c, 0, 99);
         assert_eq!(ids(&c), vec![2, 3, 4, 1]);
     }
 
     #[test]
     fn drag_roundtrip_matches_pointer_position() {
-        // 3 modül, ortadakini (id 2) en sağa sürükle
+
         let rects = [r(100.0, 0.0), r(250.0, 0.0), r(400.0, 0.0)];
         let mut c = chain(&[1, 2, 3]);
         let idx = insert_index(&rects, Some(1), pos2(900.0, 40.0));

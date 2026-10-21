@@ -1,5 +1,3 @@
-//! Alttan çıkan ipucu/uyarı kartı ve Ayarlar > Uyarılar.
-
 use super::*;
 use crate::tips::{self, Facts, Tip, TipIcon};
 use egui::Pos2;
@@ -12,10 +10,9 @@ fn tip_color(i: TipIcon) -> Color32 {
     }
 }
 
-/// Uyarı simgesi: yuvarlak zemin üstüne küçük çizim (ikon dosyası gerekmez).
 fn tip_glyph(p: &egui::Painter, icon: TipIcon, c: Pos2, r: f32) {
     let col = tip_color(icon);
-    // yarım piksele oturt: ince çizgiler bulanıklaşmasın
+
     let c = pos2(c.x.round(), c.y.round());
     p.circle_filled(c, r, alpha(col, 34));
     p.circle_stroke(c, r - 0.6, Stroke::new(1.2, alpha(col, 130)));
@@ -27,7 +24,7 @@ fn tip_glyph(p: &egui::Painter, icon: TipIcon, c: Pos2, r: f32) {
     let dot = |dy: f32| p.circle_filled(pos2(c.x, c.y + dy), (r * 0.12).max(1.7), col);
     match icon {
         TipIcon::Bluetooth => {
-            // Bluetooth rünü: 24'lük ızgarada 7,7 → 17,17 → 12,22 → 12,2 → 17,7 → 7,17
+
             let k = r * 1.05 / 12.0;
             let pts: Vec<Pos2> = [(7.0, 7.0), (17.0, 17.0), (12.0, 22.0), (12.0, 2.0), (17.0, 7.0), (7.0, 17.0)]
                 .iter()
@@ -47,9 +44,9 @@ fn tip_glyph(p: &egui::Painter, icon: TipIcon, c: Pos2, r: f32) {
 }
 
 impl App {
-    /// Anlık duruma göre uyarı kararlarının girdisi.
+
     fn tip_facts(&self) -> Facts {
-        // hata ayıklama: SW_TIPS_DEMO=bt|clip|shared sahte durum üretir
+
         if let Ok(demo) = crate::devenv::dev_var("SW_TIPS_DEMO") {
             let mut f = Facts { running: true, exclusive: true, volume: 1.0, out_bits: 24, ..Default::default() };
             match demo.as_str() {
@@ -95,7 +92,6 @@ impl App {
         }
     }
 
-    /// Geçerli uyarıları hesapla; gösterilecek olanı seçer (kullanıcı kapatmadıysa, kararlı biçimde).
     fn tip_refresh(&mut self) {
         if self.tip_eval.elapsed() < Duration::from_millis(400) {
             return;
@@ -109,7 +105,7 @@ impl App {
         let dismissed = &self.cfg.tips_dismissed;
         let seen = &self.tip_seen;
         let cands: Vec<Tip> = tips::evaluate(&self.tip_facts()).into_iter().filter(|t| !dismissed.iter().any(|d| d == t.id) && !seen.contains(t.id)).collect();
-        // gösterilen uyarı hâlâ geçerliyse yerinde kalsın (sıra değişse bile titremesin)
+
         let keep = self.tip_cur.as_ref().and_then(|c| cands.iter().find(|t| t.id == c.id)).cloned();
         self.tip_cur = keep.or_else(|| cands.first().cloned());
         if self.tip_cur.is_some() && self.tip_cur_since.is_none() {
@@ -123,7 +119,7 @@ impl App {
 
     pub(super) fn tip_banner(&mut self, ctx: &egui::Context) {
         self.tip_refresh();
-        // motor yeni başladıysa ve ilk saniyelerde değilse göster (açılışta üst üste binmesin)
+
         let ready = self.tip_cur_since.map(|t| t.elapsed() > Duration::from_millis(1800)).unwrap_or(false);
         let visible = self.tip_cur.is_some() && ready && self.cfg.tips_on;
         if let Some(t) = &self.tip_cur {
@@ -191,11 +187,10 @@ impl App {
             self.tip_seen.insert(tip.id);
             self.tip_cur = None;
             self.tip_cur_since = None;
-            self.tip_eval = Instant::now() - Duration::from_secs(1); // sıradakini hemen seç
+            self.tip_eval = Instant::now() - Duration::from_secs(1);
         }
     }
 
-    /// Ayarlar > Uyarılar kartı.
     pub(super) fn tips_settings(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
             ui.set_width(ui.available_width());

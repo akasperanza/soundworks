@@ -1,6 +1,3 @@
-//! Equalizer APO / AutoEQ `ParametricEq.txt` parser.
-//! Davranış EasyEffects'in `equalizer_apo.cpp` dosyasını izler.
-
 use std::f64::consts::SQRT_2;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -29,13 +26,12 @@ pub struct Preset {
     pub bands: Vec<Band>,
 }
 
-/// `key` (küçük harf) sonrasındaki sayıyı ve ardından `unit` ekini okur.
 fn number_after(line: &str, key: &str, unit: Option<&str>) -> Option<f64> {
     let lower = line.to_ascii_lowercase();
     let mut from = 0;
     while let Some(pos) = lower[from..].find(key) {
         let start = from + pos;
-        // anahtar kelime sınırında mı (ör. "q" için "freq" içindeki q'yu atla)
+
         let before_ok = start == 0 || !lower.as_bytes()[start - 1].is_ascii_alphanumeric();
         from = start + key.len();
         if !before_ok {
@@ -86,7 +82,7 @@ fn parse_filter(line: &str) -> Option<Option<Band>> {
         _ => return None,
     }
     let kind_tok = toks.next()?;
-    // "LS 6DB" / "HS 12DB" gibi iki kelimeli tipler
+
     let mut suffix: Option<&str> = None;
     let mut peek = toks.clone();
     if let Some(n) = peek.next() {
@@ -141,7 +137,7 @@ fn parse_filter(line: &str) -> Option<Option<Band>> {
             (FilterKind::Notch, 0.0)
         }
         ("ap", _) => (FilterKind::AllPass, 0.0),
-        _ => return Some(None), // bilinmeyen tip: EasyEffects gibi atla
+        _ => return Some(None),
     };
     Some(Some(Band { kind, freq, gain_db, q }))
 }
@@ -201,7 +197,6 @@ impl FilterKind {
     }
 }
 
-/// Equalizer APO / AutoEQ metin formatında yaz.
 pub fn to_text(p: &Preset) -> String {
     let mut s = format!("Preamp: {:.2} dB
 ", p.preamp_db);

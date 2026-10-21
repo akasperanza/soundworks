@@ -1,5 +1,3 @@
-//! Sanatçı bilgisi: `web::artist_lookup` ile fotoğraf ve açıklama çeker, önbelleğe alır.
-
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -14,7 +12,7 @@ pub struct ArtistInfo {
     pub photo: Option<String>,
     pub found: bool,
     pub source: String,
-    /// önbellek sürümü: eski kaynaklarla (Vikipedi) alınmış kayıtlar yeniden çekilir
+
     #[serde(default)]
     pub ver: u32,
 }
@@ -40,7 +38,7 @@ fn id_of(name: &str) -> String {
 pub fn load_cached(name: &str) -> Option<ArtistInfo> {
     let p = data_dir().join(format!("{}.json", id_of(name)));
     let info: ArtistInfo = serde_json::from_slice(&std::fs::read(p).ok()?).ok()?;
-    // eski sürüm (Vikipedi vb.) kayıtlar yeniden çekilsin
+
     if info.ver < 2 {
         return None;
     }
@@ -84,7 +82,6 @@ impl Fetcher {
         self.pending.lock().unwrap().contains(&norm(name))
     }
 
-    /// `front`: kullanıcı sayfayı açtıysa kuyruğun başına al.
     pub fn request(&self, name: &str, front: bool) {
         let k = norm(name);
         if !self.pending.lock().unwrap().insert(k.clone()) {
@@ -146,17 +143,14 @@ fn worker_loop(
             Err(e) => {
                 *last_error.lock().unwrap() = Some(e);
                 finish(None);
-                // art arda hata yağmurunu önle
+
                 std::thread::sleep(Duration::from_millis(300));
             }
         }
     }
 }
 
-
-// ------------------------------------------------------------------ tür bilgisi
-
-type GenreJob = (String, String, String); // (albüm anahtarı, sanatçı, albüm)
+type GenreJob = (String, String, String);
 
 pub struct GenreFetcher {
     queue: Arc<(Mutex<VecDeque<GenreJob>>, Condvar)>,

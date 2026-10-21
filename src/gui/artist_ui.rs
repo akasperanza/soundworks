@@ -1,9 +1,7 @@
-//! Sanatçılar: görsel ve tür yükleme, ızgara ve sanatçı sayfası.
-
 use super::*;
 
 impl App {
-    /// Sanatçı bilgisi önbellekte yoksa (ve denenmediyse) arka planda iste.
+
     pub(super) fn ensure_artist(&mut self, name: &str, front: bool) {
         let k = artist::norm(name);
         if k == "bilinmeyen sanatçı" {
@@ -21,7 +19,6 @@ impl App {
         }
     }
 
-    /// (doku, genişlik, yükseklik). `big`: sanatçı sayfası için büyük sürüm.
     pub(super) fn artist_texture(&mut self, ctx: &egui::Context, name: &str, big: bool) -> Option<(egui::TextureId, f32, f32)> {
         let k = artist::norm(name);
         {
@@ -59,7 +56,6 @@ impl App {
         out
     }
 
-    /// Sanatçının kütüphanedeki tüm parçaları: (albüm anahtarı, albüm adı, parça)
     pub(super) fn artist_tracks(&self, name: &str) -> Vec<(String, String, library::LibTrack)> {
         let k = artist::norm(name);
         let mut out = vec![];
@@ -82,7 +78,6 @@ impl App {
         self.ensure_artist(name, true);
     }
 
-    /// Albüm türlerini arka planda çek ve sonuçları işle.
     pub(super) fn drive_genres(&mut self) {
         let mut changed = false;
         for (key, res) in self.genre_fetcher.poll() {
@@ -176,7 +171,7 @@ impl App {
                         self.ensure_artist(name, false);
                     }
                     let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.12);
-                    // Surface 2: kart panelden (BG1) bir kat yukarıda durur, üzerine gelince BG3'e çıkar
+
                     ui.painter().rect_filled(rect, Rounding::same(16.0), lerp_color(alpha(BG2, 200), BG3, h));
                     let c = pos2(rect.center().x, rect.top() + pad + rad);
                     let r = rad + 2.0 * h;
@@ -235,7 +230,7 @@ impl App {
         });
         ui.add_space(8.0);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            // ---- banner
+
             let w = ui.available_width() - 6.0;
             let (rect, _) = ui.allocate_exact_size(vec2(w, 280.0), Sense::hover());
             let tex = self.artist_texture(ctx, name, true);
@@ -249,7 +244,7 @@ impl App {
                     painter.text(rect.center(), Align2::CENTER_CENTER, initial, bold(120.0), alpha(DIM, 60));
                 }
             }
-            // okunabilirlik için alttan koyulaşan geçiş
+
             vgradient(
                 painter,
                 Rect::from_min_max(pos2(rect.left(), rect.top() + 90.0), rect.right_bottom()),
@@ -294,7 +289,7 @@ impl App {
                 });
             });
             ui.add_space(14.0);
-            // ---- hakkında
+
             section_label(ui, "Hakkında");
             ui.add_space(2.0);
             match &info {
@@ -319,7 +314,6 @@ impl App {
                 }
             }
 
-            // ---- parçalar
             ui.add_space(14.0);
             section_label(ui, "Parçalar");
             ui.add_space(4.0);
@@ -386,7 +380,6 @@ impl App {
                 ui.label(RichText::new("Bu sanatçıdan kütüphanede parça yok.").font(body(13.0)).color(DIM));
             }
 
-            // ---- albümler
             if !album_ids.is_empty() {
                 ui.add_space(16.0);
                 section_label(ui, "Albümler");

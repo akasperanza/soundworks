@@ -1,5 +1,3 @@
-//! Ayarlar görünümü.
-
 use super::*;
 
 impl App {
@@ -10,14 +8,14 @@ impl App {
             .show(ctx, |ui| {
                 self.paint_glow(ui, inner);
                 ui.set_opacity(fade);
-                // Oynatıcı modunda motor boştaysa (çalmıyor) Ayarlar açılırken hemen bırakılır: kilit yalnızca çalarken vardır
+
                 if !self.cfg.use_loopback && self.running.is_some() && !self.player.playing.load(Relaxed) {
                     self.stop_async();
                 }
                 let running = self.running.is_some();
                 let cfg_before = self.cfg.clone();
                 let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
-                // doğrulama: SW_SCROLL=piksel ile sayfayı belirli bir yere kaydırır
+
                 if let Some(y) = crate::devenv::dev_var("SW_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) {
                     area = area.vertical_scroll_offset(y);
                 }
@@ -142,7 +140,6 @@ impl App {
         });
     }
 
-    /// Ses sekmesinin devamı: DSD ve ses dengeleme.
     pub(super) fn settings_audio_more(&mut self, ui: &mut egui::Ui) {
         self.dsd_card(ui);
         ui.add_space(10.0);
@@ -277,7 +274,7 @@ impl App {
         });
         ui.add_space(10.0);
         self.tips_settings(ui);
-    
+
     }
 
     pub(super) fn device_combo(ui: &mut egui::Ui, id: &str, devices: &[DeviceInfo], value: &mut Option<String>, none_label: &str, reserve: f32) {

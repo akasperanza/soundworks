@@ -1,18 +1,12 @@
-//! Uygulama simgesi: mavi yuvarlak kare içinde beyaz "SW" monogramı. Vektör olarak (SVG) tanımlıdır ve istenen boyutta
-//! çizilir; pencere/görev çubuğu simgesi ve tepsi simgesi bundan üretilir. `.exe` simgesi için `assets/app.ico`
-//! (aynı çizimden, bkz. `dump_icons` testi) derleme sırasında gömülür.
-
-/// 256×256 tasarım alanı; `assets/icon/icon.svg` (bkz. `build_icon_svg` testi).
 const SVG: &str = include_str!("../assets/icon/icon.svg");
 
-/// `size`×`size` piksellik RGBA (düz, premultiplied değil).
 pub fn rgba(size: u32) -> Vec<u8> {
     let mut pix = resvg::tiny_skia::Pixmap::new(size, size).expect("pixmap");
     if let Ok(tree) = resvg::usvg::Tree::from_str(SVG, &resvg::usvg::Options::default()) {
         let k = size as f32 / 256.0;
         resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(k, k), &mut pix.as_mut());
     }
-    // tiny-skia premultiplied verir; simge API'leri düz alfa ister
+
     pix.pixels()
         .iter()
         .flat_map(|p| {
@@ -22,10 +16,8 @@ pub fn rgba(size: u32) -> Vec<u8> {
         .collect()
 }
 
-/// Başlıktaki "Soundworks" kelime işareti (`assets/icon/wordmark.svg`, Barlow SemiBold ana hatları, beyaz).
 const WORDMARK_SVG: &str = include_str!("../assets/icon/wordmark.svg");
 
-/// Kelime işaretini `height` piksel yüksekliğinde çizer; (RGBA, genişlik, yükseklik). En/boy oranı SVG'den gelir.
 pub fn wordmark_rgba(height: u32) -> (Vec<u8>, u32, u32) {
     let Ok(tree) = resvg::usvg::Tree::from_str(WORDMARK_SVG, &resvg::usvg::Options::default()) else { return (vec![], 0, 0) };
     let size = tree.size();
@@ -44,12 +36,10 @@ pub fn wordmark_rgba(height: u32) -> (Vec<u8>, u32, u32) {
     (px, w, height)
 }
 
-/// Pencere ve görev çubuğu simgesi.
 pub fn window_icon() -> eframe::egui::IconData {
     eframe::egui::IconData { rgba: rgba(256), width: 256, height: 256 }
 }
 
-/// Bildirim alanı (tepsi) simgesi.
 pub fn tray_icon() -> Option<tray_icon::Icon> {
     tray_icon::Icon::from_rgba(rgba(64), 64, 64).ok()
 }
@@ -70,15 +60,14 @@ mod tests {
         assert_eq!(at(0, 0)[3], 0, "köşe şeffaf (yuvarlak kare)");
         let bg = at(10, n / 2);
         assert!(bg[3] == 255 && bg[2] >= bg[0] && (bg[0] as u32 + bg[1] as u32 + bg[2] as u32) < 330, "zemin koyu lacivert: {bg:?}");
-        // harflerden biri açık renkli olmalı
+
         let light = (0..n).any(|x| (0..n).any(|y| { let c = at(x, y); c[3] == 255 && c[0] > 200 && c[1] > 200 && c[2] > 220 }));
         assert!(light, "açık renkli harf pikseli bulunamadı");
-        // harfler ortada: sol ve sağ kenarlıklar boş (zemin rengi)
+
         let left_edge_light = (0..n).any(|y| { let c = at(8, y); c[0] > 200 && c[1] > 200 });
         assert!(!left_edge_light, "harfler kenara taşmamalı");
     }
 
-    /// Simgeleri dosyaya yazar: `cargo test --release dump_icons -- --ignored`. Çıktı: assets/icon/icon_<boyut>.png
     #[test]
     #[ignore]
     fn dump_icons() {
@@ -91,7 +80,6 @@ mod tests {
         }
     }
 
-    /// Bir yazı tipindeki harflerin ana hatlarını SVG yolu olarak verir; (yol, genişlik, yükseklik) `size` piksel em için.
     fn glyph_path(font_path: &str, text: &str, em: f32) -> (String, f32, f32) {
         use ab_glyph::{Font, FontVec, OutlineCurve, ScaleFont};
         let data = std::fs::read(font_path).unwrap();
@@ -150,9 +138,6 @@ mod tests {
         (d, x, em)
     }
 
-    /// Nihai simge SVG'sini üretir: `cargo test --release build_icon_svg -- --ignored` -> assets/icon/icon.svg
-    /// Harfler Barlow SemiBold'un (SIL OFL 1.1) ana hatlarından alınır ve yola çevrilir (çalışma anında yazı tipine bağımlılık yok).
-    /// Yazı tipi dosyasının yolu `ICON_FONT` ortam değişkeniyle verilir.
     #[test]
     #[ignore]
     fn build_icon_svg() {
@@ -167,14 +152,13 @@ mod tests {
         std::fs::write(dir.join("icon.svg"), svg).unwrap();
     }
 
-    /// Kelime işareti SVG'sini üretir: `ICON_FONT=<Barlow-SemiBold.ttf> cargo test --release build_wordmark_svg -- --ignored`
     #[test]
     #[ignore]
     fn build_wordmark_svg() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("icon");
         let em = 100.0;
         let (path, w, _h) = glyph_path(&std::env::var("ICON_FONT").expect("ICON_FONT=<Barlow-SemiBold.ttf yolu>"), "Soundworks", em);
-        // taban çizgisi y=0; büyük harf ve "d" yüksekliği yaklaşık 0.72 em; "Soundworks" alt uzantı içermez
+
         let (top, h) = (-em * 0.74, em * 0.74 + 2.0);
         let svg = format!(
             r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 {top:.2} {w:.2} {h:.2}" width="{w:.2}" height="{h:.2}"><path d="{path}" fill="#F2F5FB"/></svg>"##

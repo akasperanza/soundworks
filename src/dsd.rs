@@ -1,7 +1,3 @@
-//! DSD (DSF / DFF) desteği: kapsayıcı okuyucu, 1 bit -> PCM çevirici ve DoP (DSD over PCM) paketleyici.
-//!
-//! Bit sırası içeride her zaman "MSB önce = en eski bit"tir (DFF'in doğal sırası); DSF'te (LSB önce) bayt başına ters çevrilir.
-
 use anyhow::{bail, Context, Result};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -22,17 +18,17 @@ pub enum Kind {
 #[derive(Clone, Debug)]
 pub struct DsdInfo {
     pub kind: Kind,
-    /// DSD örnekleme hızı (Hz), ör. 2 822 400
+
     pub fs: u32,
     pub channels: usize,
-    /// kanal başına bit sayısı
+
     pub bits_per_ch: u64,
-    /// DSF: kanal başına blok boyutu (bayt)
+
     block: usize,
     data_off: u64,
-    /// DSF'te bitler LSB önce saklanır
+
     lsb_first: bool,
-    /// ID3v2 etiketinin (başlangıç, uzunluk) yeri
+
     id3: Option<(u64, u64)>,
 }
 
@@ -43,20 +39,20 @@ impl DsdInfo {
     pub fn secs(&self) -> f64 {
         self.bits_per_ch as f64 / self.fs as f64
     }
-    /// DSD64 / DSD128 / ... (44.1 kHz ailesi 64×44100 = 2 822 400 baz alınır; 48 kHz ailesi için de aynı ad)
+
     pub fn name(&self) -> String {
         let base = if self.fs % 44100 == 0 { 44100 } else { 48000 };
         format!("DSD{}", self.fs / base)
     }
-    /// 8 DSD baytına karşılık gelen PCM örneği: PCM çıkış hızı 352.8 kHz (44.1 ailesi) ya da 384 kHz (48 ailesi).
+
     pub fn pcm_rate(&self) -> u32 {
         if self.fs % 44100 == 0 { 352_800 } else { 384_000 }
     }
-    /// Çıkış örneği başına ilerleyen bayt sayısı (DSD64'te 1, DSD128'de 2, ...).
+
     pub fn adv(&self) -> usize {
         (self.fs / self.pcm_rate() / 8).max(1) as usize
     }
-    /// DoP için PCM hızı: 16 DSD biti = 1 PCM örneği.
+
     pub fn dop_rate(&self) -> u32 {
         self.fs / 16
     }
@@ -92,7 +88,7 @@ pub fn probe(path: &Path) -> Result<DsdInfo> {
 }
 
 fn probe_dsf(f: &mut File) -> Result<DsdInfo> {
-    let _ = rd::<4>(f)?; // "DSD "
+    let _ = rd::<4>(f)?;
     let _chunk = le64(rd::<8>(f)?);
     let _total = le64(rd::<8>(f)?);
     let meta_ptr = le64(rd::<8>(f)?);
@@ -115,7 +111,7 @@ fn probe_dsf(f: &mut File) -> Result<DsdInfo> {
     if channels == 0 || block == 0 || fs == 0 {
         bail!("DSF: geçersiz başlık");
     }
-    // fmt bölümü beklenenden uzunsa atla
+
     f.seek(SeekFrom::Start(28 + fmt_size))?;
     if &rd::<4>(f)? != b"data" {
         bail!("DSF: data bölümü yok");
@@ -132,7 +128,7 @@ fn probe_dsf(f: &mut File) -> Result<DsdInfo> {
 }
 
 fn probe_dff(f: &mut File) -> Result<DsdInfo> {
-    let _ = rd::<4>(f)?; // "FRM8"
+    let _ = rd::<4>(f)?;
     let frm_size = be64(rd::<8>(f)?);
     if &rd::<4>(f)? != b"DSD " {
         bail!("DFF: DSD biçimi değil");
@@ -191,11 +187,10 @@ fn rev_table() -> &'static [u8; 256] {
     })
 }
 
-/// DSD bayt akışı: kanal başına iki akış (sol, sağ). Çok kanallı dosyalarda ilk iki kanal kullanılır.
 pub struct DsdSource {
     file: File,
     pub info: DsdInfo,
-    /// kanal başına okunan bayt
+
     pos: u64,
 }
 
@@ -214,7 +209,6 @@ impl DsdSource {
         self.pos as f64 * 8.0 / self.info.fs as f64
     }
 
-    /// En fazla `want` bayt (kanal başına) okur; akış bittiyse `None`.
     pub fn read(&mut self, want: usize) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
         let total = self.info.bytes_per_ch();
         let take = (total - self.pos).min(want as u64) as usize;
@@ -264,14 +258,8 @@ impl DsdSource {
     }
 }
 
-// ------------------------------------------------------------------ DSD -> PCM
-
-/// DSD sessizlik deseni (her iki baytta 0x69): DC'siz, 0 genlik.
 pub const DSD_SILENCE: u8 = 0x69;
 
-/// Tek aşamalı kutu-tablolu (bayt başına) FIR seyreltici: DSD bit akışı -> 352.8 / 384 kHz PCM.
-/// Süzgeç uzunluğu DSD hızıyla büyür (DSD64: 256 tap, DSD128: 512, ...), kesim ~250 kHz: 24 kHz altına katlanacak
-/// bölge (çıkış hızı ± 22 kHz) güçlü bastırılır, işitilebilir bandın tamamı düz geçer.
 pub struct Dsd2Pcm {
     adv: usize,
     s: usize,
@@ -290,7 +278,7 @@ impl Dsd2Pcm {
         let adv = info.adv();
         let s = 32 * adv;
         let m = 8 * s;
-        let fcn = 250_000.0 / info.fs as f64; // kesim (döngü/örnek)
+        let fcn = 250_000.0 / info.fs as f64;
         let mid = (m - 1) as f64 / 2.0;
         let mut h: Vec<f64> = (0..m)
             .map(|k| {
@@ -301,7 +289,7 @@ impl Dsd2Pcm {
             .collect();
         let sum: f64 = h.iter().sum();
         h.iter_mut().for_each(|v| *v /= sum);
-        // LUT_j[b] = Σ_t (±1) * h[8j + 7 - t]; t = 0 en eski bit (baytın MSB'si)
+
         let lut: Vec<[f32; 256]> = (0..s)
             .map(|j| {
                 let mut t = [0f32; 256];
@@ -321,7 +309,6 @@ impl Dsd2Pcm {
         c
     }
 
-    /// Geçmişi sessizlikle doldurur (seek / başlangıç).
     pub fn reset(&mut self) {
         for b in self.buf.iter_mut() {
             *b = vec![DSD_SILENCE; self.s - 1];
@@ -329,7 +316,6 @@ impl Dsd2Pcm {
         self.next_end = self.s - 1;
     }
 
-    /// Yeni baytlardan PCM üretir: interleaved stereo f32.
     pub fn process(&mut self, l: &[u8], r: &[u8]) -> Vec<f32> {
         self.buf[0].extend_from_slice(l);
         self.buf[1].extend_from_slice(r);
@@ -357,20 +343,14 @@ impl Dsd2Pcm {
     }
 }
 
-// ------------------------------------------------------------------ DoP
-
-/// DoP işaret baytı: çerçeve başına dönüşümlü 0x05 / 0xFA.
 pub fn dop_marker(odd_frame: bool) -> u32 {
     if odd_frame { 0xFA } else { 0x05 }
 }
 
-/// 24 bitlik DoP sözcüğü: üst bayt işaret, alt 16 bit DSD (en eski bit en üstte).
 pub fn dop_word(odd_frame: bool, dsd16: u16) -> u32 {
     (dop_marker(odd_frame) << 16) | dsd16 as u32
 }
 
-/// Çift sayıda bayttan (kanal başına) DoP için 16 bitlik DSD değerleri üretir: interleaved stereo, değerler `f32` içinde
-/// tam sayı (0..65535). İşaret baytını çıkış tarafı ekler, böylece duraklatma/arabellek boşalmasında işaret düzeni bozulmaz.
 pub fn dop_pairs(l: &[u8], r: &[u8]) -> Vec<f32> {
     let n = l.len() / 2;
     let mut out = Vec::with_capacity(n * 2);
@@ -380,8 +360,6 @@ pub fn dop_pairs(l: &[u8], r: &[u8]) -> Vec<f32> {
     }
     out
 }
-
-// ------------------------------------------------------------------ ID3v2 etiketleri
 
 #[derive(Default, Clone, Debug)]
 pub struct Tags {
@@ -423,7 +401,6 @@ fn leading_num(s: &str) -> u32 {
     s.trim().split(|c: char| !c.is_ascii_digit()).next().and_then(|x| x.parse().ok()).unwrap_or(0)
 }
 
-/// Bellekteki ID3v2.3 / 2.4 etiketini ayrıştırır.
 pub fn parse_id3(d: &[u8]) -> Tags {
     let mut t = Tags::default();
     if d.len() < 10 || &d[..3] != b"ID3" {
@@ -437,7 +414,7 @@ pub fn parse_id3(d: &[u8]) -> Tags {
     let total = (10 + syncsafe(&d[6..10])).min(d.len());
     let mut p = 10;
     if flags & 0x40 != 0 && p + 4 <= total {
-        // genişletilmiş başlık
+
         p += if major == 4 { syncsafe(&d[p..p + 4]) } else { u32::from_be_bytes([d[p], d[p + 1], d[p + 2], d[p + 3]]) as usize + 4 };
     }
     while p + 10 <= total {
@@ -463,8 +440,8 @@ pub fn parse_id3(d: &[u8]) -> Tags {
             b"APIC" if t.cover.is_none() && body.len() > 4 => {
                 let enc = body[0];
                 if let Some(z) = body[1..].iter().position(|c| *c == 0) {
-                    let mut q = 1 + z + 1 + 1; // mime\0 + resim türü
-                    // açıklama (kodlamaya göre bir ya da iki baytlık sonlandırıcı)
+                    let mut q = 1 + z + 1 + 1;
+
                     if enc == 1 || enc == 2 {
                         while q + 1 < body.len() && !(body[q] == 0 && body[q + 1] == 0) {
                             q += 2;
@@ -488,7 +465,6 @@ pub fn parse_id3(d: &[u8]) -> Tags {
     t
 }
 
-/// Dosyanın ID3 etiketleri (yoksa boş).
 pub fn read_tags(path: &Path, info: &DsdInfo) -> Tags {
     let Some((off, len)) = info.id3 else { return Tags::default() };
     let Ok(mut f) = File::open(path) else { return Tags::default() };
@@ -504,7 +480,6 @@ pub fn read_tags(path: &Path, info: &DsdInfo) -> Tags {
 pub(crate) mod tests {
     use super::*;
 
-    /// 2. derece sigma-delta modülatör: [-1, 1] girişi 1 bit akışa çevirir (test sinyali üretmek için).
     pub fn sigma_delta(x: &[f64]) -> Vec<bool> {
         let (mut i1, mut i2, mut y) = (0.0f64, 0.0f64, 1.0f64);
         x.iter()
@@ -535,7 +510,7 @@ pub(crate) mod tests {
         for g in 0..groups {
             for i in 0..block {
                 let idx = g * block + i;
-                data[g * block * 2 + i] = rev[*l.get(idx).unwrap_or(&0x69) as usize]; // DSF: LSB önce
+                data[g * block * 2 + i] = rev[*l.get(idx).unwrap_or(&0x69) as usize];
                 data[g * block * 2 + block + i] = rev[*r.get(idx).unwrap_or(&0x69) as usize];
             }
         }
@@ -597,7 +572,6 @@ pub(crate) mod tests {
         std::fs::write(path, b).unwrap();
     }
 
-    /// Goertzel: `f` Hz bileşeninin genliği (tam sayıda periyot içeren `n` örnek üzerinde).
     fn tone_amp(pcm: &[f32], rate: f64, f: f64, skip: usize, n: usize) -> f64 {
         let x: Vec<f64> = pcm.chunks_exact(2).skip(skip).take(n).map(|fr| fr[0] as f64).collect();
         assert_eq!(x.len(), n);
@@ -633,11 +607,11 @@ pub(crate) mod tests {
         let (info, pcm) = convert_all(&p);
         assert_eq!((info.fs, info.channels, info.name().as_str(), info.pcm_rate(), info.dop_rate()), (fs, 2, "DSD64", 352_800, 176_400));
         assert!((info.secs() - 0.5).abs() < 0.01);
-        // 0.5 genlikli 1 kHz sinüs: 100 periyot = 35280 örnek
+
         let a1 = tone_amp(&pcm, 352_800.0, 1000.0, 2000, 35_280);
         assert!((a1 - 0.5).abs() < 0.01, "1 kHz genliği {a1}");
         assert!(tone_amp(&pcm, 352_800.0, 3000.0, 2000, 35_280) < 0.005, "3 kHz sızıntısı");
-        // çıkış uzunluğu ≈ bayt sayısı
+
         assert!((pcm.len() as i64 / 2 - bytes.len() as i64).abs() <= 2);
     }
 
@@ -694,11 +668,11 @@ pub(crate) mod tests {
             let p = dir.join(name);
             if dsf { write_dsf(&p, fs, &l, &r, &[]) } else { write_dff(&p, fs, &l, &r) }
             let mut s = DsdSource::open(&p).unwrap();
-            s.seek_secs(5000.0 * 8.0 / fs as f64); // bayt 5000
+            s.seek_secs(5000.0 * 8.0 / fs as f64);
             let (a, b) = s.read(100).unwrap().unwrap();
             assert_eq!(a, l[5000..5100], "{name} L");
             assert_eq!(b, r[5000..5100], "{name} R");
-            // blok sınırını aşan okuma ve dosya sonu
+
             s.seek_secs(4090.0 * 8.0 / fs as f64);
             let (a, _) = s.read(20).unwrap().unwrap();
             assert_eq!(a, l[4090..4110]);
@@ -716,8 +690,8 @@ pub(crate) mod tests {
         let bytes = pack_msb(&bits);
         let bytes = &bytes[..bytes.len() & !1];
         let words = dop_pairs(bytes, bytes);
-        assert_eq!(words.len(), bytes.len()); // 2 bayt/kanal -> 1 çerçeve (2 örnek)
-        // çıkış tarafı gibi işaret ekle ve DSD'yi geri çöz
+        assert_eq!(words.len(), bytes.len());
+
         let mut rebuilt = vec![];
         let mut odd = false;
         for f in words.chunks_exact(2) {
@@ -728,11 +702,11 @@ pub(crate) mod tests {
         }
         let orig: Vec<u16> = bytes.chunks_exact(2).map(|c| (c[0] as u16) << 8 | c[1] as u16).collect();
         assert_eq!(rebuilt, orig);
-        // f32 içinde 24 bitlik sözcük kayıpsız taşınır
+
         for w in [dop_word(true, 0xFFFF), dop_word(false, 0x0001), dop_word(true, 0x6969)] {
             assert_eq!((w as f32) as u32, w);
         }
-        // DSD sessizliği 0x6969
+
         assert_eq!(dop_pairs(&[DSD_SILENCE, DSD_SILENCE], &[DSD_SILENCE, DSD_SILENCE]), vec![0x6969 as f32, 0x6969 as f32]);
     }
 
@@ -758,7 +732,7 @@ pub(crate) mod tests {
         let t = parse_id3(&id3);
         assert_eq!((t.title.as_str(), t.artist.as_str(), t.album.as_str(), t.track_no), ("Parça Adı", "Sanatçı", "Alb", 3));
         assert_eq!(t.cover.as_deref(), Some(&[1u8, 2, 3, 4][..]));
-        // dosyadan okuma
+
         let dir = std::env::temp_dir().join("sw_dsd_test");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("tag.dsf");

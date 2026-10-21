@@ -1,5 +1,3 @@
-//! Genel arama katmanı.
-
 use super::*;
 
 impl App {
@@ -44,7 +42,6 @@ impl App {
         out
     }
 
-    /// Arama sonucu satırının (başlık, alt başlık) metni.
     pub(super) fn search_texts(&self, it: &SearchItem) -> (String, String) {
         match it {
             SearchItem::Artist(name) => (name.clone(), "Sanatçı".to_string()),
@@ -99,7 +96,6 @@ impl App {
         let screen = ctx.screen_rect();
         let mut chosen: Option<usize> = None;
 
-        // arka plan ve panel TEK katmanda: panel her zaman gri örtünün üstünde kalır
         let mut close = false;
         let w = 660.0f32.min(screen.width() - 60.0);
         let e = ease(self.search_t0.elapsed().as_secs_f32() / 0.18);

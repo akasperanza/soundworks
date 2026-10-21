@@ -43,7 +43,7 @@ fn usage() -> ! {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.is_empty() {
-        // GUI alt sistemindeyken CLI çıktısı için ebeveyn konsoluna bağlan
+
         unsafe {
             let _ = windows::Win32::System::Console::AttachConsole(u32::MAX);
         }

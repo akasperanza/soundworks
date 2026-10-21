@@ -1,5 +1,3 @@
-//! Sözler (lyrics): `web::lyrics_lookup` ile çekilir (Apple Music TTML, BiniLyrics, LRCLib), diskte önbelleğe alınır.
-
 use crate::artist::norm;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
@@ -13,10 +11,10 @@ pub struct LyricWord {
     #[serde(default)]
     pub d: u32,
     pub text: String,
-    /// kelimeden sonra boşluk var mı (hece/ek parçalarında yok)
+
     #[serde(default = "yes")]
     pub sp: bool,
-    /// arka vokal (Apple Music x-bg)
+
     #[serde(default)]
     pub bg: bool,
 }
@@ -35,11 +33,11 @@ pub struct LyricLine {
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Lyrics {
-    /// "word" | "synced" | "plain" | "" (bulunamadı)
+
     pub kind: String,
     pub provider: String,
     pub lines: Vec<LyricLine>,
-    /// önbellek sürümü: eski (doğrulamasız eşleşen) kayıtlar yok sayılır
+
     #[serde(default)]
     pub ver: u32,
 }
@@ -87,7 +85,7 @@ pub fn forget(k: &str) {
     let _ = std::fs::remove_file(file_of(k));
 }
 
-type Job = (String, String, String, String, f64); // key, title, artist, album, duration
+type Job = (String, String, String, String, f64);
 
 pub struct LyricsFetcher {
     queue: Arc<(Mutex<VecDeque<Job>>, Condvar)>,
@@ -118,7 +116,7 @@ impl LyricsFetcher {
             return;
         }
         let (m, cv) = &*self.queue;
-        // son istenen şarkı önce işlensin
+
         m.lock().unwrap().push_front((k, title, artist, album, duration));
         cv.notify_one();
     }
@@ -152,7 +150,7 @@ fn worker(
             let _ = tx.send((k.clone(), l));
         };
         let l = crate::web::lyrics_lookup(&title, &artist, &album, duration);
-        // boş sonuç ağ hatasından da olabilir: kalıcı önbelleğe yalnızca bulunanlar yazılır
+
         if l.found() {
             save_cached(&k, &l);
         }

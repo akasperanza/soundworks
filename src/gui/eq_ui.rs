@@ -1,8 +1,5 @@
-//! Ekolayzır: ön ayarlar, eğri grafiği, bant kaydırıcıları.
-
 use super::*;
 
-/// Ön ayar listesinden gelen istekler (çizim bittikten sonra uygulanır).
 #[derive(Default)]
 struct PresetActs {
     pick: Option<String>,
@@ -33,7 +30,6 @@ impl App {
         }
     }
 
-    /// "Oluştur" düğmesi: AutoEQ'dan seç ya da boş bir ön ayarla sıfırdan başla.
     fn create_button(&mut self, ui: &mut egui::Ui) {
         let btn = pill_button(ui, "Oluştur", Some(Icon::Plus), true);
         let id = btn.id.with("create_menu");
@@ -128,8 +124,6 @@ impl App {
         }
     }
 
-    /// EQ'nun toplam yanıtı (dB), 20 Hz–20 kHz arası `EQ_POINTS` logaritmik nokta. Filtreler motorun gerçek çıkış hızında
-    /// tasarlanır (yüksek hızda yüksek frekanslı bantlar 48 kHz'dekinden farklı davranır). Değişmedikçe önbellekten gelir.
     pub(super) fn eq_curve_db(&mut self) -> Arc<Vec<f64>> {
         let rate = self
             .running
@@ -155,7 +149,6 @@ impl App {
         c
     }
 
-    /// EQ eğrisindeki en yüksek pozitif kazanç (preamp hariç).
     pub(super) fn peak_boost(&mut self) -> f64 {
         self.eq_curve_db().iter().copied().fold(0.0, f64::max)
     }
@@ -197,7 +190,7 @@ impl App {
                 self.auto_eq_button(ui);
             });
         });
-        // ikinci satır: ön ayar seçici tam genişlikte (dar pencerede de taşmaz)
+
         ui.add_space(8.0);
         let w = ui.available_width().clamp(200.0, 560.0);
         self.preset_picker(ui, w, &mut acts);
@@ -215,8 +208,6 @@ impl App {
         }
     }
 
-    /// Ön ayar seçici: tek bir düğme (seçili ön ayarın adı); basınca arama kutulu, klasör gibi gruplanmış liste açılır.
-    /// Çip şeridi yerine bunu kullanmak, ön ayar sayısı ne olursa olsun düzenin taşmamasını sağlar.
     fn preset_picker(&mut self, ui: &mut egui::Ui, w: f32, acts: &mut PresetActs) {
         let name = self.preset_name.as_deref().map(|n| n.trim_end_matches(".txt").to_string());
         let (rect, btn) = ui.allocate_exact_size(vec2(w, 32.0), Sense::click());
@@ -243,7 +234,7 @@ impl App {
             self.preset_q_focus = true;
             ui.memory_mut(|m| m.toggle_popup(id));
         }
-        // doğrulama: SW_PRESETLIST=1 listeyi bir kez kendiliğinden açar
+
         {
             static OPENED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if crate::devenv::dev_var("SW_PRESETLIST").is_ok() && !OPENED.swap(true, Relaxed) {
@@ -261,7 +252,7 @@ impl App {
             }
             ui.add_space(6.0);
             let ql = q.trim().to_lowercase();
-            // iki "klasör": kendi ön ayarların ve AutoEQ'dan gelenler
+
             let mut own: Vec<&String> = vec![];
             let mut auto: Vec<&String> = vec![];
             for (n, _) in &self.library {
@@ -300,13 +291,13 @@ impl App {
                         }
                         let title = super::eqrules_ui::fit(ui.painter(), n.trim_end_matches(".txt"), bold(13.0), r.width() - 64.0);
                         let sub = meta.map(|m| if !m.label.is_empty() { m.label.clone() } else { m.source.clone() }).unwrap_or_default();
-                        // alt satırı yoksa başlık dikey ortalanır
+
                         ui.painter().text(pos2(r.left() + 14.0, r.top() + if sub.is_empty() { 22.0 } else { 15.0 }), Align2::LEFT_CENTER, title, bold(13.0), Color32::WHITE);
                         if !sub.is_empty() {
                             let sub = super::eqrules_ui::fit(ui.painter(), &sub, body(11.5), r.width() - 64.0);
                             ui.painter().text(pos2(r.left() + 14.0, r.top() + 31.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
                         }
-                        // özellikler: satırın sağında (üzerine gelince belirir)
+
                         let gear = Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(28.0, 28.0));
                         let gresp = ui.interact(gear, resp.id.with("gear"), Sense::click());
                         if hv > 0.01 || gresp.hovered() {
@@ -345,7 +336,6 @@ impl App {
         }
     }
 
-    /// Preset dosyasını siler; içeriği bellekte tutulur, bildirimdeki "Geri al" ile geri yazılır.
     pub(super) fn delete_preset(&mut self, name: &str) {
         let path = presets_dir().join(name);
         let bytes = std::fs::read(&path).unwrap_or_default();
@@ -404,7 +394,6 @@ impl App {
 
         self.viz.draw_spectrum(&painter, rect, self.cfg.viz_bars);
 
-        // EQ eğrisi
         let curve = self.eq_curve_db();
         let pts: Vec<egui::Pos2> = curve
             .iter()
@@ -416,7 +405,6 @@ impl App {
             .collect();
         painter.add(Shape::line(pts, Stroke::new(2.0, Color32::WHITE)));
 
-        // etkileşim
         let node_pos = |b: &Band| {
             let g = if b.kind.has_gain() { b.gain_db } else { 0.0 };
             pos2(fx(b.freq), gy(g.clamp(-GAIN_RANGE, GAIN_RANGE)))
@@ -482,7 +470,7 @@ impl App {
                 }
             }
         }
-        // band solo: S tuşu basılıyken (ya da kilitliyken) yalnızca seçili bölge çalar
+
         let solo_key = ui.input(|inp| inp.key_down(egui::Key::S) && !inp.modifiers.command && !inp.modifiers.alt) && !ui.ctx().wants_keyboard_input();
         if solo_key || self.solo_latch {
             let target = match self.drag_band.or(self.sel_band).and_then(|i| self.preset.bands.get(i)) {
@@ -491,7 +479,7 @@ impl App {
             };
             if let Some((f0, q)) = target {
                 self.solo_target = Some((f0, q));
-                // geçen bölge: -3 dB noktaları f0/(2Q) kadar yan yana
+
                 let bw = f0 / q;
                 let (lo, hi) = ((f0 - bw * 0.5).max(20.0), (f0 + bw * 0.5).min(20000.0));
                 let band = Rect::from_min_max(pos2(fx(lo), rect.top()), pos2(fx(hi).max(fx(lo) + 3.0), rect.bottom()));

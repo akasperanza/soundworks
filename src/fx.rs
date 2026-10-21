@@ -1,6 +1,3 @@
-//! Ses motoru modülleri ("market"): sinyal zincirine takılan DSP blokları.
-//! Zincir boşsa motor sinyale hiç dokunmaz (bit-perfect yol bozulmaz).
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -15,7 +12,6 @@ pub enum FxKind {
     Crossfeed,
 }
 
-/// Kaydırıcının bir ucundaki değerin "kapalı" anlamına geldiği parametreler için etiket.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Off {
     No,
@@ -135,7 +131,6 @@ fn yes() -> bool {
     true
 }
 
-/// Zincirdeki bir modülün kaydedilen hali.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct FxSpec {
     pub id: u32,
@@ -150,7 +145,7 @@ impl FxSpec {
     pub fn new(id: u32, kind: FxKind) -> FxSpec {
         FxSpec { id, kind, enabled: true, params: info(kind).params.iter().map(|p| p.default).collect() }
     }
-    /// i. parametre, aralığa kırpılmış; eksikse varsayılan.
+
     pub fn param(&self, i: usize) -> f32 {
         let p = &info(self.kind).params[i];
         self.params.get(i).copied().unwrap_or(p.default).clamp(p.min, p.max)
@@ -161,19 +156,14 @@ fn db_to_lin(db: f32) -> f32 {
     10f32.powf(db / 20.0)
 }
 
-// ================================================================== Limiter
-
-/// Gerçek tepe tespiti için ek gecikme (örnek): ara noktaların hesabı 8 örnek ileri bakar.
 const TP_DELAY: usize = 8;
 
-/// Önden bakan (lookahead) stereo-bağlı limiter. Garanti: |örnek çıkış| <= tavan. Örnekler arası (gerçek) tepeler
-/// 4x aşırı örnekleme ile önceden görülüp indirilir; gerçek tepe tavanı yaklaşık olarak (birkaç %) aşmaz.
 pub struct Limiter {
     n: usize,
     delay_l: Vec<f32>,
     delay_r: Vec<f32>,
     dpos: usize,
-    /// kayan pencere minimumu için tekdüze azalan kuyruk: (örnek sırası, istenen kazanç)
+
     win: std::collections::VecDeque<(u64, f32)>,
     count: u64,
     tp: [crate::loudness::TruePeak; 2],
@@ -205,7 +195,6 @@ impl Limiter {
         }
     }
 
-    /// Gecikme (örnek).
     pub fn latency(&self) -> usize {
         self.n - 1 + TP_DELAY
     }
@@ -216,10 +205,10 @@ impl Limiter {
     }
 
     pub fn process(&mut self, l: f32, r: f32) -> (f32, f32) {
-        // tepe, 8 örnek geriden gelen pencerenin (örnekler arası noktalar dahil) en büyüğü; ses de buna göre gecikmeli
+
         let peak = self.tp[0].push_local(l).max(self.tp[1].push_local(r));
         let g_req = if peak > self.ceil { self.ceil / peak } else { 1.0 };
-        // son n isteğin minimumu, O(1): tekdüze kuyruk
+
         let idx = self.count;
         self.count += 1;
         while self.win.back().is_some_and(|&(_, v)| v >= g_req) {
@@ -230,10 +219,10 @@ impl Limiter {
             self.win.pop_front();
         }
         let m_raw = self.win.front().map(|x| x.1).unwrap_or(1.0);
-        // ani atak, üstel bırakma; hiçbir zaman pencere minimumunun üstüne çıkmaz
+
         let m = m_raw.min(self.m_prev + (1.0 - self.m_prev) * self.rel);
         self.m_prev = m;
-        // kutu ortalaması: atak rampası lookahead süresi kadar yumuşak olur
+
         self.sum += (m - self.ring[self.rpos]) as f64;
         self.ring[self.rpos] = m;
         self.rpos = (self.rpos + 1) % self.n;
@@ -246,8 +235,6 @@ impl Limiter {
         ((dl * s).clamp(-c, c), (dr * s).clamp(-c, c))
     }
 }
-
-// ================================================================ Kompresör
 
 pub struct Compressor {
     thr: f32,
@@ -275,7 +262,6 @@ impl Compressor {
         self.rel = (-1.0 / (rel_ms * 0.001 * rate)).exp();
     }
 
-    /// Statik eğri: giriş seviyesi (dB) -> hedef kazanç değişimi (dB, <= 0).
     fn gain_reduction_db(&self, x_db: f32) -> f32 {
         let over = x_db - self.thr;
         let y = if 2.0 * over < -self.knee {
@@ -303,8 +289,6 @@ impl Compressor {
     }
 }
 
-// ===================================================================== Width
-
 pub struct Width {
     w: f32,
     target: f32,
@@ -326,8 +310,6 @@ impl Width {
     }
 }
 
-// ====================================================================== Gain
-
 pub struct Gain {
     g: f32,
     target: f32,
@@ -348,12 +330,9 @@ impl Gain {
     }
 }
 
-// ============================================== EQ tabanlı modüller (Filtre, Ton, Loudness)
-
 use crate::apo::{Band, FilterKind, Preset};
 use crate::biquad::Equalizer;
 
-/// Butterworth kademeleri için (Q değerleri) 12/24/36/48 dB/oktav.
 fn butterworth_qs(slope_db: f32) -> &'static [f64] {
     match (slope_db / 12.0).round() as i32 {
         i32::MIN..=1 => &[0.7071067811865476],
@@ -363,7 +342,6 @@ fn butterworth_qs(slope_db: f32) -> &'static [f64] {
     }
 }
 
-/// Bir ön ayardan çalışan, yerinde güncellenebilen filtre bloğu. Bant yoksa sinyale dokunmaz.
 struct EqBlock {
     eq: Equalizer,
     empty: bool,
@@ -388,7 +366,6 @@ impl EqBlock {
     }
 }
 
-/// HPF ve LPF: Butterworth kademeleri.
 pub struct Filter {
     blk: EqBlock,
     enabled: bool,
@@ -419,7 +396,6 @@ impl Filter {
     }
 }
 
-/// Bas ve tiz rafı; güçlendirme kadar otomatik ön kısma (kırpılma olmasın).
 pub struct Tone {
     blk: EqBlock,
 }
@@ -447,7 +423,6 @@ impl Tone {
     }
 }
 
-/// Ses seviyesine bağlı bas/tiz telafisi: seviye referansın altına indikçe iki raf güçlenir.
 pub struct Loudness {
     blk: EqBlock,
     enabled: bool,
@@ -471,14 +446,14 @@ impl Loudness {
         self.level = level;
         self.refresh();
     }
-    /// Seviyeden bas ve tiz kazancı (dB). Referansta ve üstünde 0.
+
     pub fn gains(level: f32, reference: f32, strength: f32) -> (f32, f32) {
         let drop_db = (20.0 * (reference / level.max(1.0e-4)).log10()).max(0.0);
         ((0.5 * drop_db).min(12.0) * strength, (0.25 * drop_db).min(8.0) * strength)
     }
     fn refresh(&mut self) {
         let (b, t) = if self.enabled { Self::gains(self.level, self.reference, self.strength) } else { (0.0, 0.0) };
-        // küçük seviye oynamalarında filtreyi yeniden kurma (0,1 dB eşiği)
+
         if (b - self.applied.0).abs() < 0.1 && (t - self.applied.1).abs() < 0.1 {
             return;
         }
@@ -500,7 +475,6 @@ impl Loudness {
     }
 }
 
-/// Ayarlanabilir crossfeed: karşı kanalın alçak geçirilmiş, geciktirilmiş kısmı.
 pub struct Crossfeed {
     buf_l: Vec<f32>,
     buf_r: Vec<f32>,
@@ -559,8 +533,6 @@ impl Crossfeed {
     }
 }
 
-// ===================================================================== Zincir
-
 enum Node {
     Limiter(Limiter),
     Compressor(Compressor),
@@ -609,12 +581,10 @@ impl FxChain {
         c
     }
 
-    /// Aynı modüller aynı sırada mı? (Evetse yalnızca parametreler yerinde güncellenir.)
     pub fn same_structure(&self, specs: &[FxSpec]) -> bool {
         self.items.len() == specs.len() && self.items.iter().zip(specs).all(|(i, s)| i.id == s.id && i.kind == s.kind)
     }
 
-    /// Parametreleri yerinde güncelle (durum korunur). Yapı aynı olmalı.
     pub fn update(&mut self, specs: &[FxSpec]) {
         let rate = self.rate;
         for (it, s) in self.items.iter_mut().zip(specs) {
@@ -636,7 +606,6 @@ impl FxChain {
         self.items.is_empty()
     }
 
-    /// Çalar ses seviyesi (doğrusal, 0..1): seviyeye bağlı modüller (Loudness) buna göre ayarlanır.
     pub fn set_level(&mut self, level: f32) {
         for it in self.items.iter_mut() {
             if let Node::Loudness(l) = &mut it.node {
@@ -645,7 +614,6 @@ impl FxChain {
         }
     }
 
-    /// Sinyale dokunabilecek açık bir modül var mı?
     pub fn any_enabled(&self) -> bool {
         self.items.iter().any(|i| i.enabled)
     }
@@ -675,7 +643,6 @@ mod tests {
 
     const FS: f32 = 48000.0;
 
-    /// Sinüsü bloktan geçirip kararlı bölümün genliğini (RMS*√2) döndürür.
     fn amp(mut f: impl FnMut(f32, f32) -> (f32, f32), hz: f32) -> f32 {
         let n = 48000usize;
         let mut acc = 0f64;
@@ -688,7 +655,7 @@ mod tests {
                 cnt += 1;
             }
         }
-        ((acc / cnt as f64).sqrt() * 2f64.sqrt() * 2.0) as f32 // 0.5 genlikli girişe göre: 1.0 = değişmedi
+        ((acc / cnt as f64).sqrt() * 2f64.sqrt() * 2.0) as f32
     }
     fn db(x: f32) -> f32 {
         20.0 * x.log10()
@@ -704,7 +671,7 @@ mod tests {
         let mid = db(amp(|l, r| f.process(l, r), 1000.0));
         assert!(low < -40.0, "20 Hz yeterince kesilmedi: {low} dB");
         assert!(mid.abs() < 0.2, "1 kHz geçmeli: {mid} dB");
-        // LPF
+
         let mut f = Filter::new(FS);
         f.set(true, 0.0, 24.0, 5000.0, 24.0);
         let hi = db(amp(|l, r| f.process(l, r), 15000.0));
@@ -735,7 +702,7 @@ mod tests {
             let x = (i as f32 * 0.01).sin() * 0.7;
             assert_eq!(f.process(x, -x), (x, -x));
         }
-        // kapalı modül de dokunmaz
+
         let mut f = Filter::new(FS);
         f.set(false, 100.0, 24.0, 5000.0, 24.0);
         assert_eq!(f.process(0.3, 0.2), (0.3, 0.2));
@@ -749,10 +716,10 @@ mod tests {
         let mut t = Tone::new(FS);
         t.set(true, 6.0, 100.0, 0.0, 8000.0);
         let mid = db(amp(|l, r| t.process(l, r), 2000.0));
-        // en güçlü bölge ön kısma ile ≈ 0 dB'de kalır, orta ≈ -6 dB
+
         assert!(bass < 0.8, "bas kırpma payını aşmamalı: {bass}");
         assert!((mid - -6.0).abs() < 1.0, "orta kısılmalı: {mid}");
-        // sıfır ayarda dokunmaz
+
         let mut t = Tone::new(FS);
         t.set(true, 0.0, 100.0, 0.0, 8000.0);
         assert_eq!(t.process(0.4, 0.4), (0.4, 0.4));
@@ -762,13 +729,13 @@ mod tests {
     fn loudness_boosts_more_as_volume_drops_and_never_at_reference() {
         assert_eq!(Loudness::gains(1.0, 1.0, 1.0), (0.0, 0.0));
         assert_eq!(Loudness::gains(1.5, 1.0, 1.0), (0.0, 0.0), "referans üstünde telafi yok");
-        let (b1, t1) = Loudness::gains(0.5, 1.0, 1.0); // -6 dB
-        let (b2, t2) = Loudness::gains(0.1, 1.0, 1.0); // -20 dB
+        let (b1, t1) = Loudness::gains(0.5, 1.0, 1.0);
+        let (b2, t2) = Loudness::gains(0.1, 1.0, 1.0);
         assert!(b2 > b1 && t2 > t1 && b1 > t1, "{b1} {t1} {b2} {t2}");
         assert!(b2 <= 12.0 && t2 <= 8.0, "üst sınır");
-        // güç 0 -> hiç telafi
+
         assert_eq!(Loudness::gains(0.1, 1.0, 0.0), (0.0, 0.0));
-        // filtre gerçekten bas/tizi yükseltir
+
         let mut l = Loudness::new(FS);
         l.set(true, 100.0, 100.0);
         l.set_level(0.1);
@@ -778,7 +745,7 @@ mod tests {
         l.set_level(0.1);
         let mid = db(amp(|a, b| l.process(a, b), 1000.0));
         assert!(bass - mid > 5.0, "bas orta'dan belirgin güçlü olmalı: {bass} vs {mid}");
-        // tam seviyede şeffaf
+
         let mut l = Loudness::new(FS);
         l.set(true, 100.0, 100.0);
         l.set_level(1.0);
@@ -789,7 +756,7 @@ mod tests {
     fn crossfeed_mixes_delayed_lowpassed_opposite_channel() {
         let mut c = Crossfeed::new(FS);
         c.set(true, -6.0, 700.0, 270.0);
-        // sadece solda alçak frekans: sağda daha küçük ama sıfır olmayan bir kopya
+
         let mut r_amp = 0f32;
         let mut l_amp = 0f32;
         for i in 0..48000 {
@@ -801,7 +768,7 @@ mod tests {
             }
         }
         assert!(r_amp > 0.05 && r_amp < l_amp, "{l_amp} {r_amp}");
-        // yüksek frekans neredeyse geçmez
+
         let mut c = Crossfeed::new(FS);
         c.set(true, -6.0, 700.0, 270.0);
         let mut r_hi = 0f32;
@@ -813,7 +780,7 @@ mod tests {
             }
         }
         assert!(r_hi < 0.02, "yüksek frekans sızmamalı: {r_hi}");
-        // kapalıyken birebir
+
         let mut c = Crossfeed::new(FS);
         c.set(false, -6.0, 700.0, 270.0);
         assert_eq!(c.process(0.3, 0.2), (0.3, 0.2));
@@ -822,8 +789,8 @@ mod tests {
     #[test]
     fn crossfeed_delay_is_applied() {
         let mut c = Crossfeed::new(FS);
-        c.set(true, 0.0, 2000.0, 400.0); // 400 µs = 19 örnek
-        // g yumuşak açıldığı için önce birkaç ms ısıt
+        c.set(true, 0.0, 2000.0, 400.0);
+
         for _ in 0..4800 {
             c.process(0.0, 0.0);
         }
@@ -856,22 +823,20 @@ mod tests {
         let mut seed = 7u32;
         let mut worst = 0f32;
         for i in 0..200_000 {
-            // gürültü + ani tam ölçek-üstü patlamalar + DC sıçraması
+
             let burst = if (i / 5000) % 3 == 0 { 3.0 } else { 0.4 };
             let (l, r) = (lcg(&mut seed) * burst, lcg(&mut seed) * burst);
             let (ol, or) = lim.process(l, r);
             worst = worst.max(ol.abs()).max(or.abs());
         }
         assert!(worst <= ceil + 1.0e-6, "tavan asildi: {worst} > {ceil}");
-        // ve gerçekten sınırlıyor (tavana yakın tepe var)
-        // gerçek tepe tavanda tutulduğu için gürültüde örnek tepeleri tavanın ~1.5 dB altına inebilir
+
         assert!(worst > ceil * 0.8, "limiter cok fazla indiriyor: {worst}");
     }
 
-
     #[test]
     fn limiter_controls_inter_sample_peaks() {
-        // fs/4'te, 45° faz: örnekler ±0.85 (tavanın altında) ama sürekli (gerçek) tepe 1.2
+
         let mut lim = limiter(-1.0, 100.0);
         let ceil = db_to_lin(-1.0);
         let a = 1.2f32;
@@ -886,14 +851,14 @@ mod tests {
                 worst = worst.max(m);
             }
         }
-        // sürekli tepe tavana yaklaşmalı (tespit çalışıyor) ve belirgin aşmamalı
+
         assert!(worst <= ceil * 1.04, "gerçek tepe {worst} > {ceil}");
         assert!(worst > ceil * 0.8, "gereğinden fazla indiriyor: {worst}");
     }
 
     #[test]
     fn sliding_minimum_matches_naive() {
-        // tekdüze kuyruk, saf pencere minimumuyla aynı sonucu vermeli (rastgele girişte limiter çıkışı sabit kalır)
+
         let mut lim = limiter(-3.0, 30.0);
         let mut seed = 99u32;
         let mut peak = 0f32;
@@ -922,7 +887,7 @@ mod tests {
         for _ in 0..2000 {
             lim.process(2.0, 2.0);
         }
-        // patlama bitti; 0.3'lük sinyal 0.5 sn sonra tamamen geri gelmeli
+
         let mut last = 0.0;
         for _ in 0..24000 {
             last = lim.process(0.3, 0.3).0;
@@ -943,7 +908,7 @@ mod tests {
 
     #[test]
     fn compressor_static_curve() {
-        // DC 0.5 (-6.02 dBFS), eşik -18, oran 4, diz 0: beklenen = -18 + 11.98/4 = -15.0 dB
+
         let mut c = Compressor::new();
         c.set(true, -18.0, 4.0, 5.0, 100.0, 0.0, 0.0, FS);
         let mut y = 0.0;
@@ -952,7 +917,7 @@ mod tests {
         }
         let db = 20.0 * y.log10();
         assert!((db + 15.0).abs() < 0.1, "{db} dB");
-        // eşiğin altında dokunmaz
+
         let mut c2 = Compressor::new();
         c2.set(true, -18.0, 4.0, 5.0, 100.0, 0.0, 0.0, FS);
         for _ in 0..1000 {
@@ -978,7 +943,7 @@ mod tests {
     #[test]
     fn width_behaviour() {
         let mut w = Width::new(FS);
-        assert_eq!(w.process(0.3, -0.2), (0.3, -0.2)); // %100 birebir
+        assert_eq!(w.process(0.3, -0.2), (0.3, -0.2));
         w.target = 0.0;
         let mut o = (0.0, 0.0);
         for _ in 0..FS as usize {
@@ -989,7 +954,7 @@ mod tests {
         for _ in 0..FS as usize {
             o = w.process(0.6, 0.2);
         }
-        // M=0.4, S=0.2*2=0.4 -> L=0.8, R=0.0
+
         assert!((o.0 - 0.8).abs() < 1.0e-3 && o.1.abs() < 1.0e-3, "{o:?}");
     }
 
@@ -1013,11 +978,11 @@ mod tests {
         let b = FxSpec::new(2, FxKind::Gain);
         let mut chain = FxChain::new(&[a.clone(), b.clone()], FS);
         assert!(chain.same_structure(&[a.clone(), b.clone()]));
-        assert!(!chain.same_structure(&[b.clone(), a.clone()])); // sıra değişti
+        assert!(!chain.same_structure(&[b.clone(), a.clone()]));
         assert!(!chain.same_structure(&[a.clone()]));
         let mut b2 = b.clone();
         b2.params = vec![-6.0];
-        assert!(chain.same_structure(&[a.clone(), b2.clone()])); // yalnız parametre
+        assert!(chain.same_structure(&[a.clone(), b2.clone()]));
         chain.update(&[a, b2]);
         assert!(chain.any_enabled());
         assert!(FxChain::new(&[], FS).is_empty());
@@ -1034,12 +999,12 @@ mod tests {
     #[test]
     fn spec_serde_roundtrip_and_clamp() {
         let mut s = FxSpec::new(3, FxKind::Compressor);
-        s.params[0] = -99.0; // aralık dışı
+        s.params[0] = -99.0;
         let j = serde_json::to_string(&s).unwrap();
         let back: FxSpec = serde_json::from_str(&j).unwrap();
         assert_eq!(back, s);
-        assert_eq!(back.param(0), -50.0); // kırpıldı
-        // eksik parametreli eski kayıt varsayılanla tamamlanır
+        assert_eq!(back.param(0), -50.0);
+
         let old: FxSpec = serde_json::from_str(r#"{"id":1,"kind":"Limiter"}"#).unwrap();
         assert!(old.enabled);
         assert_eq!(old.param(0), -0.5);

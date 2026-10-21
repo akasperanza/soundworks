@@ -1,6 +1,3 @@
-//! Albüm tabanlı müzik kütüphanesi: etiketleri tarar, aynı albümün parçalarını birleştirir,
-//! kapakları önbelleğe alır ve JSON olarak saklar.
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::File;
@@ -29,7 +26,7 @@ pub struct Album {
     pub title: String,
     pub artist: String,
     pub tracks: Vec<LibTrack>,
-    /// İnternetten alınan tür (Türkçe kategori); boşsa bilinmiyor
+
     #[serde(default)]
     pub genre: String,
     #[serde(default)]
@@ -48,12 +45,11 @@ impl Album {
 #[derive(Serialize, Deserialize, Default)]
 pub struct Library {
     pub albums: Vec<Album>,
-    /// izlenen klasörler: yeniden taramada yeni dosyalar bunlardan toplanır
+
     #[serde(default)]
     pub folders: Vec<String>,
 }
 
-/// Taramadan gelen tek parça bilgisi.
 #[derive(Clone, Debug)]
 pub struct TrackInfo {
     pub path: String,
@@ -68,7 +64,7 @@ pub struct TrackInfo {
 
 pub enum ScanMsg {
     Track(TrackInfo),
-    /// (işlenen, toplam)
+
     Progress(usize, usize),
     Done,
 }
@@ -83,7 +79,7 @@ fn lib_path() -> PathBuf {
 }
 
 pub fn cover_path(key: &str) -> PathBuf {
-    // FNV-1a
+
     let mut h: u64 = 0xcbf29ce484222325;
     for b in key.as_bytes() {
         h ^= *b as u64;
@@ -107,7 +103,6 @@ impl Library {
         self.albums.iter().map(|a| a.tracks.len()).sum()
     }
 
-    /// Parçayı doğru albüme ekler (yoksa albüm oluşturur). Yeni parça eklendiyse true.
     pub fn add(&mut self, t: &TrackInfo) -> bool {
         let idx = match self.albums.iter().position(|a| a.key == t.key) {
             Some(i) => i,
@@ -143,7 +138,6 @@ impl Library {
         self.albums.retain(|a| a.key != key);
     }
 
-    /// (sanatçı, albüm sayısı, parça sayısı) — sanatçıya göre gruplanmış, ada göre sıralı.
     pub fn artists(&self) -> Vec<(String, usize, usize)> {
         let mut map: std::collections::BTreeMap<String, (String, usize, usize)> = std::collections::BTreeMap::new();
         for a in &self.albums {
@@ -154,8 +148,6 @@ impl Library {
         map.into_values().collect()
     }
 
-    /// Klasörü izleme listesine ekler. Zaten bir üst klasör izleniyorsa eklenmez; yeni klasör
-    /// mevcut alt klasörleri kapsıyorsa onların yerini alır. Listede değişiklik olduysa true.
     pub fn add_folder(&mut self, dir: &str) -> bool {
         let norm = |s: &str| s.trim_end_matches(['\\', '/']).to_lowercase().replace('/', "\\");
         let n = norm(dir);
@@ -172,7 +164,6 @@ impl Library {
         self.folders.retain(|f| f != dir);
     }
 
-    /// Verilen (bulunamayan) dosyaları kütüphaneden çıkarır; parçası kalmayan albümler de silinir. Çıkarılan parça sayısı döner.
     pub fn remove_missing(&mut self, missing: &HashSet<String>) -> usize {
         let before = self.total_tracks();
         for a in self.albums.iter_mut() {
@@ -182,13 +173,11 @@ impl Library {
         before - self.total_tracks()
     }
 
-    /// Kütüphanedeki tüm parça yolları.
     pub fn all_paths(&self) -> Vec<String> {
         self.albums.iter().flat_map(|a| a.tracks.iter().map(|t| t.path.clone())).collect()
     }
 }
 
-/// Arka planda hangi dosyaların artık diskte olmadığını bulur (ağ sürücüleri yavaş olabilir, arayüzü bekletmez).
 pub fn spawn_missing_check(paths: Vec<String>) -> Receiver<HashSet<String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -266,7 +255,6 @@ fn make_key(album: &str, artist: &str, path: &Path) -> (String, String) {
     }
 }
 
-/// Dosyayı tarar. Albümün kapağı henüz önbellekte yoksa küçük resmini de yazar.
 fn scan_file(path: &Path, covered: &mut HashSet<String>) -> Option<TrackInfo> {
     let (raw, duration) = if crate::dsd::is_dsd(path) {
         let info = crate::dsd::probe(path).ok()?;
@@ -365,14 +353,12 @@ fn scan_loop(paths: Vec<PathBuf>, known: &HashSet<String>, tx: &std::sync::mpsc:
     let _ = tx.send(ScanMsg::Done);
 }
 
-/// Arka planda dosyaları tarar; sonuçlar kanaldan gelir.
 pub fn spawn_scan(paths: Vec<PathBuf>, known: HashSet<String>) -> Receiver<ScanMsg> {
     let (tx, rx) = channel();
     std::thread::spawn(move || scan_loop(paths, &known, &tx));
     rx
 }
 
-/// Klasörleri gezip (arayüzü bekletmeden) yalnızca bilinmeyen dosyaları tarar.
 pub fn spawn_folder_scan(folders: Vec<String>, known: HashSet<String>) -> Receiver<ScanMsg> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
@@ -411,11 +397,11 @@ mod tests {
             assert!(lib.add(&info(&format!("a{n}.flac"), "x", n)));
         }
         assert_eq!(lib.albums.len(), 1);
-        // 6. şarkı sonradan eklenir
+
         assert!(lib.add(&info("a6.flac", "x", 6)));
         assert_eq!(lib.albums.len(), 1);
         assert_eq!(lib.albums[0].tracks.len(), 6);
-        // aynı dosya ikinci kez eklenmez, sıra korunur
+
         assert!(!lib.add(&info("a3.flac", "x", 3)));
         let nums: Vec<u32> = lib.albums[0].tracks.iter().map(|t| t.track_no).collect();
         assert_eq!(nums, vec![1, 2, 3, 4, 5, 6]);
@@ -425,12 +411,12 @@ mod tests {
     fn watched_folders_are_deduped_and_nested() {
         let mut lib = Library::default();
         assert!(lib.add_folder("D:\\Müzik\\Caz"));
-        assert!(!lib.add_folder("d:\\müzik\\caz\\")); // aynı klasör
-        assert!(!lib.add_folder("D:\\Müzik\\Caz\\Miles")); // üst klasör zaten izleniyor
+        assert!(!lib.add_folder("d:\\müzik\\caz\\"));
+        assert!(!lib.add_folder("D:\\Müzik\\Caz\\Miles"));
         assert!(lib.add_folder("D:\\Müzik\\Rock"));
-        assert!(lib.add_folder("D:\\Müzik")); // iki alt klasörü kapsar
+        assert!(lib.add_folder("D:\\Müzik"));
         assert_eq!(lib.folders, vec!["D:\\Müzik".to_string()]);
-        assert!(lib.add_folder("D:\\Müzik2")); // önek benzerliği kapsama sayılmaz
+        assert!(lib.add_folder("D:\\Müzik2"));
         assert_eq!(lib.folders.len(), 2);
         lib.remove_folder("D:\\Müzik2");
         assert_eq!(lib.folders.len(), 1);
@@ -463,7 +449,7 @@ mod tests {
         let gone = dir.join("yok.flac").to_string_lossy().to_string();
         let m = spawn_missing_check(vec![here.to_string_lossy().to_string(), gone.clone()]).recv().unwrap();
         assert_eq!(m, [gone].into_iter().collect());
-        // geçersiz ses dosyaları parça üretmez ama tarama biter ve ilerleme bildirir
+
         let rx = spawn_folder_scan(vec![dir.to_string_lossy().to_string()], HashSet::new());
         let mut total = 0;
         loop {
@@ -473,7 +459,7 @@ mod tests {
                 ScanMsg::Track(_) => {}
             }
         }
-        assert_eq!(total, 2); // yalnızca ses uzantılı iki dosya bulundu
+        assert_eq!(total, 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

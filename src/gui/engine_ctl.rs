@@ -1,5 +1,3 @@
-//! Motor denetimi: başlat/durdur, hız isteği, kurtarma, oynat/duraklat.
-
 use super::*;
 
 impl App {
@@ -8,7 +6,7 @@ impl App {
             return;
         }
         if self.stopping.is_some() {
-            // önceki motor henüz cihazı bırakmadı: kapanınca başlatılır
+
             self.queued_start.get_or_insert(false);
             return;
         }
@@ -27,7 +25,7 @@ impl App {
             };
             let cur_default = engine::default_render_id().ok();
             if to.is_none() {
-                // hedef: yönlendirmeden önceki varsayılan cihaz
+
                 to = match &cur_default {
                     Some(d) if *d != virt.id => Some(d.clone()),
                     _ => self.cfg.restore_default.clone(),
@@ -58,7 +56,7 @@ impl App {
         self.rate_notice = None;
         self.refresh_dsd_policy();
         self.prepare_rate(to.as_deref());
-        // DoP yalnızca oynatıcı kaynağında, exclusive ve hız eşleştirme açıkken
+
         let dop = self.player.want_dop() && !self.cfg.use_loopback && !self.cfg.exclusive_off && self.cfg.match_rate;
         self.player.set_engine_dop(dop);
         let ctl = Control::new(self.preset.clone());
@@ -82,15 +80,14 @@ impl App {
         });
         dev_trace(&format!("engine_start rate={} dop={dop}", self.player.rate()));
         self.running = Some(Running { ctl, handle, dop });
-        self.proof_id = u64::MAX; // yeni motorun sayaçları sıfırdan başlar: tabanı yeniden al
+        self.proof_id = u64::MAX;
         self.message.clear();
     }
 
-    /// Sistem DSP yönlendirmesini geri al: varsayılan çıkışı eski cihaza döndür.
     pub(super) fn restore_route(&mut self) {
         if let Some(id) = self.cfg.restore_default.take() {
             if engine::set_default_render(&id).is_err() {
-                // eski cihaz yoksa (ör. kulaklık çıkarıldı) ilk gerçek cihaza dön
+
                 if let Some(d) = engine::list_devices().ok().and_then(|v| {
                     let virt = engine::find_virtual().map(|d| d.id);
                     v.into_iter().find(|d| Some(&d.id) != virt.as_ref())
@@ -102,10 +99,8 @@ impl App {
         }
     }
 
-    /// Çıkış hızını hazırla: eşleştirme açıksa cihazın desteklediği hızlar sorgulanır ve başlangıç hızı yüklü parçaya göre seçilir.
     pub(super) fn prepare_rate(&mut self, to: Option<&str>) {
-        // Hız parça değişiminden gelmiyorsa (ör. hedef cihaz değişti) açık parça eski hıza çevrilmiş çözülüyor; motor yeni hızda
-        // çalarsa şarkı hızlanır/yavaşlar. Hız değiştiyse parçayı kaldığı yerden yeni hızda yeniden aç.
+
         let from_track_change = self.start_rate.is_some();
         let before = self.player.rate();
         self.prepare_rate_inner(to);
@@ -126,8 +121,7 @@ impl App {
         }
         let mut sup: Vec<u32> = vec![];
         if let Ok(d) = engine::resolve(to) {
-            // her başlatmada yeniden sor (yoklama ~20 ms): cihaz modu değişmiş olabilir (ör. USB-C takıldı). Cihaz o an meşgulse
-            // ya da cevap vermezse birkaç kez dene; yine boşsa son bilinen listeye dön.
+
             for attempt in 0..3 {
                 sup = engine::supported_rates(&d.id);
                 if !sup.is_empty() {
@@ -156,18 +150,16 @@ impl App {
         self.player.set_rate(r);
     }
 
-    /// Kütüphanedeki parçaların ses seviyesini arka planda ölç (önbellekte olanlar atlanır).
     pub(super) fn start_loudness(&mut self) {
         self.loud_started = true;
         let albums: Vec<Vec<String>> = self.lib.albums.iter().map(|a| a.tracks.iter().map(|t| t.path.clone()).collect()).collect();
         crate::loudness::spawn(self.loud.clone(), albums);
     }
 
-    /// Oynatıcı yeni bir çıkış hızı istedi (parçanın hızı değişti): motoru yeni hızla yeniden başlat.
     pub(super) fn on_rate_request(&mut self, r: u32) {
         dev_trace(&format!("rate_request {r}"));
         if self.running.is_some() && !self.cfg.use_loopback {
-            // arayüzü bekletmeden: motor arka planda kapanır, yeni hızla kendiliğinden yeniden başlar
+
             self.stop_async();
             self.start_rate = Some(r);
             self.queued_start = Some(true);
@@ -176,7 +168,6 @@ impl App {
         }
     }
 
-    /// Cihaz koptuysa: geri geldiğinde motoru yeniden başlat ve çalıyorduysa devam et.
     pub(super) fn tick_recover(&mut self) {
         let Some((was_playing, last)) = self.recover else { return };
         if self.running.is_some() {
@@ -202,7 +193,6 @@ impl App {
         }
     }
 
-    /// Klavyedeki medya tuşları (yalnızca motor çalışırken dinlenir).
     pub(super) fn tick_media(&mut self) {
         crate::media::set_enabled(self.running.is_some() && !self.cfg.use_loopback);
         for c in crate::media::drain() {
@@ -215,7 +205,6 @@ impl App {
         }
     }
 
-    /// Motoru kapatır ve bitmesini bekler (uygulamadan çıkarken kullanılır).
     pub(super) fn stop(&mut self) {
         self.recover = None;
         self.queued_start = None;
@@ -230,7 +219,6 @@ impl App {
         self.player.playing.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 
-    /// Motoru arayüzü bekletmeden kapatır: kapanma arka planda bitirilir.
     pub(super) fn stop_async(&mut self) {
         self.recover = None;
         self.player.playing.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -246,8 +234,6 @@ impl App {
         }
     }
 
-    /// Oynatıcı modunda motor boşta (duraklatıldı / liste bitti) kalırsa bir süre sonra kendiliğinden kapanır ve
-    /// (exclusive) cihazı diğer uygulamalara bırakır. Play'e basınca yeniden kendiliğinden başlar.
     pub(super) fn tick_idle_release(&mut self) {
         const IDLE_RELEASE: std::time::Duration = std::time::Duration::from_secs(30);
         let idle = self.running.is_some()
@@ -267,7 +253,6 @@ impl App {
         }
     }
 
-    /// Arka planda kapanan motor bitti mi? Bittiyse yönlendirmeyi geri alır, sıradaki başlatmayı yapar.
     pub(super) fn tick_stopping(&mut self) {
         if !self.stopping.as_ref().is_some_and(|h| h.is_finished()) {
             return;

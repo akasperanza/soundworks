@@ -1,21 +1,17 @@
-//! DSD çalma politikası: DoP kararı, uyarı diyaloğu ve ayar kartı.
-
 use super::*;
 
 impl App {
-    /// DoP'a izin verilebilecek bir cihaz mı? Yalnızca USB DAC'lar: Bluetooth, HDMI, dahili ses ve sanal cihazlar için
-    /// DoP hiç sunulmaz (DSD her zaman PCM'e çevrilir).
+
     pub(super) fn dsd_eligible(&self, kind: engine::DeviceKind) -> bool {
         kind == engine::DeviceKind::Usb && !self.cfg.exclusive_off && self.cfg.match_rate && !self.cfg.use_loopback
     }
 
-    /// Oynatıcıya, hedef cihaz için DoP'un serbest olup olmadığını bildirir.
     pub(super) fn refresh_dsd_policy(&mut self) {
         let mut rates: Vec<u32> = vec![];
         let allowed = match engine::resolve(self.cfg.to.as_deref()) {
             Ok(d) if self.dsd_eligible(d.kind) && self.cfg.dsd_prefs.get(&d.id) == Some(&1) => {
                 rates = self.dop_rates_for(&d.id);
-                // kayıtlı tercih DoP olsa bile cihaz artık hiçbir DoP hızını kabul etmiyorsa (sürücü / mod değişti) izin verilmez
+
                 !rates.is_empty()
             }
             _ => false,
@@ -24,7 +20,6 @@ impl App {
         self.player.set_dop_allowed(allowed);
     }
 
-    /// Cihazın DoP için kabul ettiği hızlar (önbellekli). Boşsa (ör. cihaz en fazla 96 kHz destekliyor) DoP imkânsızdır.
     pub(super) fn dop_rates_for(&mut self, dev_id: &str) -> Vec<u32> {
         if let Some(r) = self.dop_rate_cache.get(dev_id) {
             return r.clone();
@@ -34,8 +29,6 @@ impl App {
         r
     }
 
-    /// Kullanıcı bir DSD parçası çalmak istiyor ve hedef cihaz DoP için uygun ama tercih henüz sorulmadıysa uyarı penceresini
-    /// açar ve `true` döner (çağıran çalmayı bırakır; seçimden sonra yeniden çağrılır).
     pub(super) fn dsd_gate(&mut self, files: &[PathBuf], start: usize) -> bool {
         let Some(first) = files.get(start) else { return false };
         if !crate::dsd::is_dsd(first) || self.dsd_dialog.is_some() {
@@ -52,14 +45,13 @@ impl App {
         let Ok(info) = crate::dsd::probe(first) else { return false };
         let rate = info.dop_rate();
         if !self.dop_rates_for(&dev.id).contains(&rate) {
-            // cihaz bu hızda 24 bit exclusive kabul etmiyor (ör. en fazla 48/96 kHz): DoP mümkün değil, soru sormadan PCM'e çevrilir
+
             return false;
         }
         self.dsd_dialog = Some(DsdDialog { files: files.to_vec(), start, dev_id: dev.id, dev_name: dev.name, dop_rate: rate, t0: Instant::now(), probe: DsdProbe::Idle });
         true
     }
 
-    /// Uyarı penceresindeki seçimi uygular ve bekleyen çalmayı sürdürür.
     pub(super) fn dsd_choose(&mut self, dop: bool) {
         let Some(d) = self.dsd_dialog.take() else { return };
         self.cfg.dsd_prefs.insert(d.dev_id.clone(), dop as u8);
@@ -72,7 +64,6 @@ impl App {
         }
     }
 
-    /// DoP'ta yazılım ses seviyesi uygulanamaz: kullanıcı kaydırıcıyı oynatırsa uyar.
     pub(super) fn tick_dsd_volume_note(&mut self) {
         let v = self.player.volume();
         let dop = self.running.as_ref().is_some_and(|r| r.ctl.out_info.lock().unwrap().dop);
@@ -82,10 +73,9 @@ impl App {
         self.last_vol = v;
     }
 
-    /// DSD uyarı penceresi: PCM'e çevirme (güvenli) her an seçilebilir; DoP düğmesi 3 sn kilitlidir.
     pub(super) fn dsd_dialog_ui(&mut self, ctx: &egui::Context) {
         let Some(d) = self.dsd_dialog.as_mut() else { return };
-        // sonuç bekleyen DAC testi
+
         if let DsdProbe::Running(rx) = &d.probe {
             match rx.try_recv() {
                 Ok(Ok(())) => d.probe = DsdProbe::Ask,
@@ -103,7 +93,7 @@ impl App {
         let dev_name = d.dev_name.clone();
         let rate = d.dop_rate;
         let dev_id = d.dev_id.clone();
-        let mut action: Option<u8> = None; // 0 PCM, 1 DoP, 2 testi başlat, 3 vazgeç
+        let mut action: Option<u8> = None;
         let busy = matches!(d.probe, DsdProbe::Running(_));
         let ask = matches!(d.probe, DsdProbe::Ask);
         let failed = if let DsdProbe::Failed(e) = &d.probe { Some(e.clone()) } else { None };
@@ -215,7 +205,7 @@ impl App {
             Some(0) => self.dsd_choose(false),
             Some(1) => self.dsd_choose(true),
             Some(2) => {
-                // aynı cihazı tutan motor önce kapanmalı
+
                 self.stop();
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
@@ -230,7 +220,6 @@ impl App {
         }
     }
 
-    /// Ayarlar > DSD çalma: cihaz bazlı DoP / PCM tercihleri.
     pub(super) fn dsd_card(&mut self, ui: &mut egui::Ui) {
         let mut reset: Option<String> = None;
         card(ui, |ui| {

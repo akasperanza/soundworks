@@ -1,32 +1,26 @@
-//! Bit-perfect kanıtı. Motor, cihaza yazdığı her çerçevede "yazılan değer, halkadan gelen örnekle birebir aynı mı?"
-//! diye ölçer (ayar kontrolü değil, ölçüm). Kanıt yazılımdan cihaz tamponuna kadar olan yolu kapsar; sürücü ve DAC içi dışarıda kalır.
-
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering::Relaxed};
 
-/// Bir çerçevenin değişmesinin nedenleri (bit maskesi).
-pub const DRIFT: u32 = 1; // kesirli konumda ara değer (hız farkı / saat kayması telafisi)
-pub const GAIN: u32 = 2; // ses seviyesi ya da dengeleme ≠ %100
-pub const DSP: u32 = 4; // EQ, modüller, crossfeed, mono
+pub const DRIFT: u32 = 1;
+pub const GAIN: u32 = 2;
+pub const DSP: u32 = 4;
 pub const DITHER: u32 = 8;
-pub const CLIP: u32 = 16; // tam ölçeği aştı, kırpıldı
+pub const CLIP: u32 = 16;
 pub const OTHER: u32 = 32;
 
-/// Motorun ses iş parçacığında yazdığı sayaçlar; arayüz farkları okur.
 #[derive(Default)]
 pub struct Proof {
-    /// halkadaki örnekle birebir aynı yazılan çerçeve
+
     pub ok: AtomicU64,
-    /// yumuşak giriş/çıkış sırasındaki çerçeve (başlatma, duraklatma, ses geçişi): ölçüm dışı
+
     pub ramp: AtomicU64,
-    /// değiştirilerek yazılan çerçeve
+
     pub alt: AtomicU64,
-    /// halka boşaldı (tampon yetersizliği)
+
     pub dry: AtomicU64,
-    /// görülen değişiklik nedenleri
+
     pub causes: AtomicU32,
 }
 
-/// Bir ses tamponu boyunca yerelde biriken sayaçlar (atomiklere tek seferde eklenir).
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Counters {
     pub ok: u64,
@@ -59,13 +53,10 @@ impl Proof {
     }
 }
 
-/// Çerçeve birebir mi: halkadan gelen örnek (kesirli konum yok) hiçbir işleme uğramadan, dither'sız ve kırpılmadan yazılıyor.
-/// (`==` kullanılır: +0.0 ile -0.0 aynı tam sayıya dönüşür.)
 pub fn frame_exact(in_l: f32, in_r: f32, out_l: f32, out_r: f32, on_grid: bool, dithered: bool) -> bool {
     on_grid && !dithered && in_l == out_l && in_r == out_r && out_l.abs() <= 1.0 && out_r.abs() <= 1.0
 }
 
-/// Değişen bir çerçevenin nedenleri.
 pub fn causes(on_grid: bool, gain_off: bool, dsp: bool, dithered: bool, clipped: bool) -> u32 {
     let mut c = 0;
     if !on_grid {
@@ -91,13 +82,13 @@ pub fn causes(on_grid: bool, gain_off: bool, dsp: bool, dithered: bool, clipped:
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Light {
-    /// çalmıyor / motor kapalı
+
     Idle,
-    /// ölçüldü: birebir
+
     Perfect,
-    /// bilinen bir nedenle değiştiriliyor
+
     Altered,
-    /// kesinti (tampon boşaldı)
+
     Glitch,
 }
 
@@ -106,13 +97,13 @@ pub struct LightIn {
     pub dop: bool,
     pub loopback: bool,
     pub exclusive: bool,
-    /// kaynak çıkış hızına dönüştürülüyor
+
     pub resampled: bool,
-    /// ReplayGain uygulanıyor
+
     pub rg: bool,
-    /// son saniyede değiştirilmiş çerçeve görüldü
+
     pub recent_alt: bool,
-    /// bu parçada görülen kesinti
+
     pub dry: u64,
 }
 
@@ -124,7 +115,7 @@ pub fn light(i: &LightIn) -> Light {
         return Light::Glitch;
     }
     if i.dop {
-        return Light::Perfect; // DoP'ta DSD verisi hiçbir işleme uğramadan paketlenir
+        return Light::Perfect;
     }
     if i.loopback || !i.exclusive || i.resampled || i.rg || i.recent_alt {
         return Light::Altered;
@@ -132,7 +123,6 @@ pub fn light(i: &LightIn) -> Light {
     Light::Perfect
 }
 
-/// Binlik ayraçlı sayı ("41.280.000").
 pub fn group(n: u64) -> String {
     let s = n.to_string();
     let mut out = String::new();
@@ -153,7 +143,7 @@ mod tests {
     fn identical_frame_is_exact_and_any_change_is_caught() {
         assert!(frame_exact(0.25, -0.5, 0.25, -0.5, true, false));
         assert!(frame_exact(0.0, 0.0, -0.0, 0.0, true, false), "+0.0 ve -0.0 aynı tam sayıdır");
-        // tek bir en küçük adımlık fark bile yakalanır
+
         assert!(!frame_exact(0.25, -0.5, f32::from_bits(0.25f32.to_bits() + 1), -0.5, true, false));
         assert!(!frame_exact(0.25, -0.5, 0.25, -0.5, false, false), "ara değerli çerçeve birebir değildir");
         assert!(!frame_exact(0.25, -0.5, 0.25, -0.5, true, true), "dither birebir değildir");

@@ -1,5 +1,3 @@
-//! RBJ audio-EQ-cookbook biquad'ları (Equalizer APO ile aynı formüller).
-
 use crate::apo::{Band, FilterKind, Preset};
 use std::f64::consts::PI;
 
@@ -84,7 +82,6 @@ impl Coeffs {
         Coeffs { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 }
     }
 
-    /// |H(e^jw)| dB cinsinden.
     pub fn magnitude_db(&self, f: f64, fs: f64) -> f64 {
         let w = 2.0 * PI * f / fs;
         let (c1, s1) = (w.cos(), w.sin());
@@ -103,17 +100,14 @@ struct State {
     z2: f64,
 }
 
-/// Katsayı geçiş süresi: EQ düğümü sürüklenirken tık/zipper olmasın.
 const RAMP_SECS: f64 = 0.02;
 
-/// Çok kanallı cascade EQ (transposed direct form II).
-/// `retarget` ile bant sayısı değişmediği sürece filtre durumu korunur ve katsayılar yumuşakça yeni değere kayar.
 pub struct Equalizer {
     coeffs: Vec<Coeffs>,
     target: Vec<Coeffs>,
     delta: Vec<[f64; 5]>,
     ramp_left: u32,
-    state: Vec<Vec<State>>, // [kanal][bant]
+    state: Vec<Vec<State>>,
     preamp: f64,
     preamp_target: f64,
     preamp_delta: f64,
@@ -140,7 +134,6 @@ impl Equalizer {
         }
     }
 
-    /// Aynı bant sayısıyla yeni değerlere yumuşak geçiş. Bant sayısı değiştiyse `false` döner (çağıran yeniden kurar).
     pub fn retarget(&mut self, preset: &Preset, fs: f64) -> bool {
         let tgt = design_all(preset, fs);
         if tgt.len() != self.coeffs.len() {
@@ -159,12 +152,10 @@ impl Equalizer {
         true
     }
 
-    /// Hedef (geçiş bittiğindeki) preamp kazancı.
     pub fn preamp_gain(&self) -> f32 {
         self.preamp_target as f32
     }
 
-    /// Hiçbir işlem yapmıyor mu (bant yok, preamp 1)?
     pub fn is_identity(&self) -> bool {
         self.coeffs.is_empty() && (self.preamp_target - 1.0).abs() < 1e-12 && self.ramp_left == 0
     }
@@ -192,7 +183,6 @@ impl Equalizer {
         self.preamp += self.preamp_delta;
     }
 
-    /// Interleaved f32 buffer'ı yerinde işler.
     pub fn process(&mut self, buf: &mut [f32], channels: usize) {
         for frame in buf.chunks_exact_mut(channels) {
             if self.ramp_left > 0 {
@@ -212,8 +202,6 @@ impl Equalizer {
     }
 }
 
-/// Band solo: yalnızca seçilen frekans bölgesini geçirir (sabit 0 dB tepeli bant geçiren, RBJ).
-/// Bir enstrümanın hangi frekansta olduğunu duyarak bulmak içindir.
 pub struct BandSolo {
     coeffs: Coeffs,
     z: [State; 2],
@@ -233,7 +221,6 @@ impl BandSolo {
         self.z = [State::default(); 2];
     }
 
-    /// `ch`: 0 sol, 1 sağ.
     pub fn process(&mut self, ch: usize, x: f32) -> f32 {
         let c = &self.coeffs;
         let st = &mut self.z[ch & 1];
@@ -245,7 +232,6 @@ impl BandSolo {
     }
 }
 
-/// Frekansa en yakın nota adı ve sapma (sent): 440 Hz -> ("A4", 0).
 pub fn note_name(freq: f64) -> (String, i32) {
     const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     if freq <= 0.0 {
@@ -305,10 +291,10 @@ mod tests {
         eq.process(&mut buf[..3000], 1);
         assert!(eq.retarget(&p1, 48000.0));
         eq.process(&mut buf[3000..], 1);
-        // geçiş sırasında örnekten örneğe sıçrama, sinüsün teorik eğimini aşmamalı (aşım = tık)
+
         let max_step = buf[3000..].windows(2).map(|w| (w[1] - w[0]).abs()).fold(0f32, f32::max);
         assert!(max_step < 0.10, "tik: {max_step}");
-        // geçiş bittikten sonra +3 dB
+
         let peak = buf[5000..].iter().fold(0f32, |m, v| m.max(v.abs())) as f64;
         assert!((20.0 * (peak / 0.5).log10() - 3.0).abs() < 0.1);
     }
@@ -354,17 +340,17 @@ mod tests {
         assert!(gain_at(&mut s, 250.0) < -12.0, "2 oktav asagi bastirilmali");
         assert!(gain_at(&mut s, 4000.0) < -12.0, "2 oktav yukari bastirilmali");
         assert!(gain_at(&mut s, 100.0) < -25.0);
-        // dar Q daha seçici
+
         let mut narrow = BandSolo::new();
         narrow.set(1000.0, 12.0, 48000.0);
         assert!(gain_at(&mut narrow, 800.0) < gain_at(&mut s, 800.0) - 6.0);
-        // kanallar bağımsız
+
         let mut t = BandSolo::new();
         t.set(1000.0, 4.0, 48000.0);
         for i in 0..2000 {
             let x = (2.0 * PI * 1000.0 * i as f64 / 48000.0).sin() as f32;
             t.process(0, x);
-            assert_eq!(t.process(1, 0.0), 0.0); // sağ kanalda sessizlik sızmaz
+            assert_eq!(t.process(1, 0.0), 0.0);
         }
     }
 
@@ -374,10 +360,10 @@ mod tests {
         assert_eq!(note_name(880.0), ("A5".to_string(), 0));
         assert_eq!(note_name(261.6256), ("C4".to_string(), 0));
         assert_eq!(note_name(27.5), ("A0".to_string(), 0));
-        let (n, c) = note_name(450.0); // 1200*log2(450/440) = +38.9 sent
+        let (n, c) = note_name(450.0);
         assert_eq!(n, "A4");
         assert_eq!(c, 39);
-        let (n2, c2) = note_name(430.0); // -39.5 sent
+        let (n2, c2) = note_name(430.0);
         assert_eq!(n2, "A4");
         assert!((c2 + 39).abs() <= 1, "{c2}");
         assert_eq!(note_name(466.1638), ("A#4".to_string(), 0));

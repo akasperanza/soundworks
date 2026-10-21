@@ -1,5 +1,3 @@
-//! Tema, yazı tipleri, çizilmiş ikonlar ve animasyonlu özel widget'lar.
-
 use eframe::egui::{
     self, epaint::Shadow, pos2, vec2, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Frame, Id, Margin,
     Mesh, Painter, Pos2, Rect, Response, Rounding, Sense, Shape, Stroke, Ui, Vec2,
@@ -26,18 +24,14 @@ pub fn body(size: f32) -> FontId {
     FontId::proportional(size)
 }
 
-/// Metnin tek satırdaki genişliği.
 pub fn text_width(p: &Painter, s: &str, font: &FontId) -> f32 {
     p.layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE).size().x
 }
 
-/// Bir satırın yüksekliği.
 pub fn line_height(p: &Painter, font: &FontId) -> f32 {
     p.layout_no_wrap("Ag".to_string(), font.clone(), Color32::WHITE).size().y
 }
 
-/// Metni `max_w` genişliğe satır satır sarar; hiçbir şeyi kesmez. Sığıyorsa tek satır döner.
-/// Genişliği aşan tek bir sözcük karakter karakter bölünür.
 pub fn wrap_lines(p: &Painter, s: &str, font: &FontId, max_w: f32) -> Vec<String> {
     let s = s.trim();
     if s.is_empty() || text_width(p, s, font) <= max_w {
@@ -54,7 +48,7 @@ pub fn wrap_lines(p: &Painter, s: &str, font: &FontId, max_w: f32) -> Vec<String
         if !cur.is_empty() {
             lines.push(std::mem::take(&mut cur));
         }
-        // tek başına sığmayan sözcük: karakter karakter böl
+
         let mut piece = String::new();
         for ch in word.chars() {
             piece.push(ch);
@@ -72,7 +66,6 @@ pub fn wrap_lines(p: &Painter, s: &str, font: &FontId, max_w: f32) -> Vec<String
     lines
 }
 
-/// Satırları `pos`'tan aşağı doğru çizer (her satır `anchor` hizasıyla); toplam yüksekliği döndürür.
 pub fn draw_lines(p: &Painter, pos: Pos2, anchor: egui::Align2, lines: &[String], font: &FontId, color: Color32) -> f32 {
     let lh = line_height(p, font);
     for (i, l) in lines.iter().enumerate() {
@@ -81,8 +74,6 @@ pub fn draw_lines(p: &Painter, pos: Pos2, anchor: egui::Align2, lines: &[String]
     lh * lines.len() as f32
 }
 
-/// En sığ yazı boyutunu seçer: sırayla `sizes`'ı dener, `max_lines` satıra sığan ilkini verir;
-/// hiçbiri sığmazsa en küçük boyutta tamamını sarar (kesmez). (yazı tipi, satırlar)
 pub fn fit_wrap(p: &Painter, s: &str, mk: fn(f32) -> FontId, sizes: &[f32], max_w: f32, max_lines: usize) -> (FontId, Vec<String>) {
     for &sz in sizes {
         let f = mk(sz);
@@ -110,8 +101,6 @@ pub fn ease(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     1.0 - (1.0 - t).powi(3)
 }
-
-// ------------------------------------------------------------------ kurulum
 
 pub fn setup(ctx: &Context) {
     let mut fonts = FontDefinitions::default();
@@ -180,7 +169,7 @@ pub fn setup(ctx: &Context) {
     v.widgets.open.bg_fill = BG2;
     v.widgets.open.weak_bg_fill = BG2;
     v.widgets.open.rounding = Rounding::same(10.0);
-    // panel kenarındaki ayraç çizgileri olmasın (başlık altındaki çizgi dahil)
+
     v.widgets.noninteractive.bg_stroke = Stroke::NONE;
     ctx.set_visuals(v);
 
@@ -199,9 +188,6 @@ pub fn setup(ctx: &Context) {
     });
 }
 
-// ----------------------------------------------------------------- çizimler
-
-/// Merkezden kenara solan yumuşak ışık.
 pub fn radial_glow(painter: &Painter, center: Pos2, radius: f32, color: Color32) {
     let mut mesh = Mesh::default();
     let n = 48;
@@ -216,12 +202,10 @@ pub fn radial_glow(painter: &Painter, center: Pos2, radius: f32, color: Color32)
     painter.add(Shape::mesh(mesh));
 }
 
-/// Yuvarlatılmış köşeli dokulu dikdörtgen.
 pub fn rounded_image(painter: &Painter, tex: egui::TextureId, rect: Rect, radius: f32, tint: Color32) {
     rounded_image_uv(painter, tex, rect, radius, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
 }
 
-/// Resmi `rect`'i dolduracak şekilde ortadan kırpan UV dikdörtgeni.
 pub fn cover_uv(img_w: f32, img_h: f32, rect: Rect) -> Rect {
     let ra = rect.width() / rect.height();
     let ia = img_w / img_h;
@@ -266,7 +250,6 @@ pub fn rounded_image_uv(painter: &Painter, tex: egui::TextureId, rect: Rect, rad
     painter.add(Shape::mesh(mesh));
 }
 
-/// Yuvarlak (avatar) resim; kare resmi ortadan kırpar.
 pub fn circle_image(painter: &Painter, tex: egui::TextureId, center: Pos2, radius: f32, uvr: Rect, tint: Color32) {
     let mut mesh = Mesh::with_texture(tex);
     let rect = Rect::from_center_size(center, Vec2::splat(radius * 2.0));
@@ -289,7 +272,6 @@ pub fn circle_image(painter: &Painter, tex: egui::TextureId, center: Pos2, radiu
     painter.add(Shape::mesh(mesh));
 }
 
-/// Dikey renk geçişi (üst alfa -> alt alfa).
 pub fn vgradient(painter: &Painter, rect: Rect, top: Color32, bottom: Color32) {
     let mut mesh = Mesh::default();
     mesh.colored_vertex(rect.left_top(), top);
@@ -301,12 +283,10 @@ pub fn vgradient(painter: &Painter, rect: Rect, top: Color32, bottom: Color32) {
     painter.add(Shape::mesh(mesh));
 }
 
-/// Yüzen, yuvarlak köşeli ana panel çerçevesi.
 pub fn panel_frame(inner: Margin, outer: Margin) -> Frame {
     Frame::none().fill(BG1).rounding(Rounding::same(14.0)).inner_margin(inner).outer_margin(outer)
 }
 
-/// Panelin üst köşelerine uyan, yukarıdan aşağı sönen renk geçişi.
 pub fn panel_glow(painter: &Painter, panel: Rect, radius: f32, height: f32, color: Color32, a: f32) {
     if a < 1.0 {
         return;
@@ -353,8 +333,6 @@ pub fn chip(ui: &mut Ui, text: &str, color: Color32) -> Response {
     resp
 }
 
-// ------------------------------------------------------------------- ikonlar
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     Play,
@@ -392,7 +370,6 @@ pub enum Icon {
     Headphones,
 }
 
-/// Lucide (lucide.dev, ISC lisansı) SVG ikonları; resvg ile bir kez rasterize edilip doku olarak saklanır.
 fn icon_svg(i: Icon) -> &'static str {
     match i {
         Icon::Play => include_str!("../assets/icons/play.svg"),
@@ -463,9 +440,6 @@ pub fn draw_icon(p: &Painter, icon: Icon, c: Pos2, s: f32, col: Color32) {
     p.image(tex, rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), col);
 }
 
-// ---------------------------------------------------------------- widget'lar
-
-/// Hover'da yumuşakça parlayan ikon düğmesi.
 pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, active: bool) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     let t = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
@@ -476,7 +450,6 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, size: f32, active: bool) -> Response
     resp
 }
 
-/// Büyük yuvarlak oynat/duraklat düğmesi (çalarken yavaşça nabız atar).
 pub fn play_button(ui: &mut Ui, playing: bool, size: f32) -> Response {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     let t = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
@@ -486,7 +459,6 @@ pub fn play_button(ui: &mut Ui, playing: bool, size: f32) -> Response {
     resp
 }
 
-/// Metin (+ isteğe bağlı ikon) içeren hap düğmesi.
 pub fn pill_button(ui: &mut Ui, text: &str, icon: Option<Icon>, primary: bool) -> Response {
     let g = ui.painter().layout_no_wrap(text.to_string(), if primary { bold(13.0) } else { body(13.5) }, TEXT);
     let icon_w = if icon.is_some() { 20.0 } else { 0.0 };
@@ -513,12 +485,9 @@ pub fn pill_button(ui: &mut Ui, text: &str, icon: Option<Icon>, primary: bool) -
     resp
 }
 
-/// Kilitli düğme: `locked` (0..1) düğmenin içindeki dolgunun oranıdır; 1'de tam dolu, 0'da boş (düğme açık).
-/// Dolgu soldan başlayarak sağ kenarı sola doğru çekilerek boşalır. `suffix` kilitliyken etikete eklenir (ör. kalan sn).
-/// Kilitliyken tıklanamaz; yanıt yalnızca açıkken `clicked()` verir.
 pub fn locked_pill_button(ui: &mut Ui, text: &str, suffix: &str, locked: f32) -> Response {
     let font = body(13.5);
-    // genişlik her zaman son (ekleli) etikete göre: düğme boyutu geri sayım boyunca değişmez
+
     let wide = ui.painter().layout_no_wrap(format!("{text}  {suffix}"), font.clone(), TEXT);
     let size = vec2(wide.size().x + 28.0, 32.0);
     let open = locked <= 0.0;
@@ -536,7 +505,6 @@ pub fn locked_pill_button(ui: &mut Ui, text: &str, suffix: &str, locked: f32) ->
     resp
 }
 
-/// Alt çizgili animasyonlu sekme. `selected` ise vurgulanır.
 pub fn tab(ui: &mut Ui, text: &str, selected: bool) -> Response {
     let g = ui.painter().layout_no_wrap(text.to_string(), body(14.5), TEXT);
     let size = vec2(g.size().x + 24.0, 32.0);
@@ -554,7 +522,6 @@ pub fn tab(ui: &mut Ui, text: &str, selected: bool) -> Response {
     resp
 }
 
-/// iOS tarzı animasyonlu anahtar.
 pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     let size = vec2(42.0, 24.0);
     let (rect, mut resp) = ui.allocate_exact_size(size, Sense::click());
@@ -572,7 +539,6 @@ pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
     resp
 }
 
-/// Etiketli anahtar satırı.
 pub fn switch_row(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -588,13 +554,11 @@ pub fn switch_row(ui: &mut Ui, label: &str, hint: &str, on: &mut bool) -> bool {
     changed
 }
 
-/// Küçük, kendi çizdiğimiz segmentli segment (mod seçici).
-/// Büyük görünüm anahtarı (Albümler / Sanatçılar gibi): koyu bir oluk (BG0) içinde kayan yükseltilmiş (BG3) gösterge.
 pub fn view_switch<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &str)]) {
     let gs: Vec<_> = items.iter().map(|(_, t)| ui.painter().layout_no_wrap(t.to_string(), bold(13.5), TEXT)).collect();
     let ws: Vec<f32> = gs.iter().map(|g| g.size().x + 30.0).collect();
     let (rect, _) = ui.allocate_exact_size(vec2(ws.iter().sum::<f32>() + 6.0, 34.0), Sense::hover());
-    // filtre kutusu ve açılır menülerle aynı yükseklik ve yüzey: çerçevesiz, BG2 zemin
+
     ui.painter().rect_filled(rect, Rounding::same(9.0), BG2);
     let mut x = rect.left() + 3.0;
     let sel = items.iter().position(|(v, _)| *v == *value).unwrap_or(0);
@@ -635,7 +599,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &
     let (rect, _) = ui.allocate_exact_size(vec2(total, 28.0), Sense::hover());
     ui.painter().rect_filled(rect, Rounding::same(8.0), BG2);
     let mut x = rect.left() + 2.0;
-    // kimlik, düğme etiketlerinden de türetilir: aynı sütundaki farklı kartlarda ilk düğmeler aynı x'te olsa da çakışmaz
+
     let base = ui.id().with(("seg", items.iter().map(|(_, t, _)| *t).collect::<Vec<_>>().join("|")));
     for (g, (v, _, ic)) in gs.into_iter().zip(items) {
         let w = g.size().x + 22.0 + if ic.is_some() { 18.0 } else { 0.0 };
@@ -664,7 +628,6 @@ pub fn status_dot(ui: &mut Ui, on: bool, color: Color32) {
     ui.painter().circle_filled(rect.center(), 4.0, if on { color } else { alpha(DIM, 110) });
 }
 
-/// Çalarken hareket eden mini ekolayzır çubukları.
 pub fn playing_bars(ui: &mut Ui, playing: bool, size: Vec2) {
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let time = ui.input(|i| i.time) as f32;
@@ -682,7 +645,7 @@ pub fn playing_bars(ui: &mut Ui, playing: bool, size: Vec2) {
         ui.painter().rect_filled(r, Rounding::same(w * 0.5), lerp_color(DIM, SKY, if playing { 1.0 } else { 0.0 }));
     }
     if playing {
-        // hemen yeniden çizim istemek döngüyü %100 CPU'ya çıkarır; ~30 fps yeter
+
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
     }
 }
@@ -702,8 +665,6 @@ pub fn toast(ctx: &Context, text: &str, age: f32) {
     });
 }
 
-
-/// İkonlu sekme (Ara gibi).
 pub fn tab_icon(ui: &mut Ui, text: &str, icon: Icon, selected: bool) -> Response {
     let g = ui.painter().layout_no_wrap(text.to_string(), bold(14.0), TEXT);
     let size = vec2(g.size().x + 24.0 + 22.0, 32.0);
@@ -722,8 +683,6 @@ pub fn tab_icon(ui: &mut Ui, text: &str, icon: Icon, selected: bool) -> Response
     resp
 }
 
-
-/// Öğe ilk kez görüldüğünde 0'dan 1'e yumuşakça giden değer (giriş animasyonu). `delay`: saniye.
 pub fn appear(ctx: &Context, id: Id, delay: f32) -> f32 {
     let key = id.with("seen_at");
     let now = ctx.input(|i| i.time);
@@ -741,7 +700,7 @@ mod wrap_tests {
 
     fn painter() -> Painter {
         let ctx = egui::Context::default();
-        // yazı tipleri ilk kareden sonra hazır olur
+
         let _ = ctx.run(Default::default(), |_| {});
         Painter::new(ctx, egui::LayerId::background(), Rect::EVERYTHING)
     }
@@ -758,7 +717,7 @@ mod wrap_tests {
         for l in &lines {
             assert!(text_width(&p, l, &f) <= w + 0.5, "{l}");
         }
-        // sığan metin tek satır kalır
+
         assert_eq!(wrap_lines(&p, "Kısa", &f, w), vec!["Kısa".to_string()]);
     }
 
@@ -781,7 +740,6 @@ mod wrap_tests {
         assert_eq!(l.join(" "), s);
     }
 
-    /// Aynı sütundaki iki kartta ikişer `segmented` var; ilk düğmeleri aynı x konumunda. Birine tıklamak diğerini etkilememeli.
     #[test]
     fn segmented_in_separate_cards_do_not_share_clicks() {
         use egui::{Event, PointerButton, Pos2, RawInput};
@@ -809,11 +767,11 @@ mod wrap_tests {
             });
             rects
         };
-        // yerleşimi öğren
+
         let rects = frame(&ctx, &mut a, &mut b, vec![]);
         let _ = frame(&ctx, &mut a, &mut b, vec![]);
         let r = rects[0];
-        // ikinci kartın "Parça" düğmesine tıkla -> b = 1
+
         let click = |ctx: &egui::Context, a: &mut u32, b: &mut u32, p: Pos2| {
             frame(ctx, a, b, vec![Event::PointerMoved(p)]);
             frame(ctx, a, b, vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: true, modifiers: Default::default() }]);
@@ -823,7 +781,7 @@ mod wrap_tests {
         click(&ctx, &mut a, &mut b, pos2(r.left() + 80.0, y));
         assert_eq!(b, 1, "ikinci karttaki 'Parça' seçilmeli");
         assert_eq!(a, 5, "birinci kart etkilenmemeli");
-        // şimdi "Kapalı"ya (ilk düğme, birinci kartın ilk düğmesiyle aynı x) tıkla -> b = 0, a değişmemeli
+
         click(&ctx, &mut a, &mut b, pos2(r.left() + 20.0, y));
         assert_eq!(b, 0, "'Kapalı' geri seçilebilmeli");
         assert_eq!(a, 5, "birinci kartın 'Otomatik'i tetiklenmemeli");

@@ -1,5 +1,3 @@
-//! Görselleştiriciler: spektrum, spektrogram, vektörskop ve seviye metreleri.
-
 use crate::engine::Control;
 use crate::ui::*;
 use eframe::egui::{
@@ -36,7 +34,7 @@ pub struct VizState {
     pub corr: f32,
     gram: VecDeque<Vec<f32>>,
     gram_tex: Option<TextureHandle>,
-    // metreler
+
     pub lvl: [f32; 2],
     pub hold: [f32; 2],
     hold_t: [f32; 2],
@@ -71,7 +69,6 @@ impl VizState {
         }
     }
 
-    /// Her karede çağrılır: motordan yeni örnek varsa FFT yapar, metreleri günceller.
     pub fn feed(&mut self, ctl: Option<&Control>, dt: f32) {
         let mut pk = [0f32; 2];
         self.stale = true;
@@ -144,7 +141,7 @@ impl VizState {
         }
         self.clip_flash = (self.clip_flash - dt * 0.4).max(0.0);
         if self.stale {
-            // veri yoksa spektrogram akmaya devam etsin (sessizlik)
+
             if self.gram.len() >= GRAM_W {
                 self.gram.pop_front();
             }
@@ -168,7 +165,6 @@ impl VizState {
         self.gram.push_back(col);
     }
 
-    /// Sütun başına yumuşatılmış spektrum.
     fn smooth(&mut self, cols: usize) {
         if self.spec.len() != cols {
             self.spec = vec![-120.0; cols];
@@ -196,7 +192,7 @@ impl VizState {
         let sy = |db: f32| rect.bottom() - ((db.clamp(-100.0, -12.0) + 100.0) / 88.0) * rect.height() * 0.94;
         let w = rect.width() / cols as f32;
         if bars {
-            // 1/3 oktav bantları
+
             let mut f = 25.0f32;
             let mut centers = vec![];
             while f < 20000.0 {
@@ -312,7 +308,7 @@ impl VizState {
             mesh.add_triangle(base, base + 2, base + 3);
         }
         painter.add(Shape::mesh(mesh));
-        // korelasyon çubuğu
+
         let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 14.0), vec2(r * 1.6, 8.0));
         painter.rect_filled(bar, Rounding::same(4.0), BG2);
         painter.line_segment([pos2(bar.center().x, bar.top() - 2.0), pos2(bar.center().x, bar.bottom() + 2.0)], Stroke::new(1.0, DIM));
@@ -330,7 +326,6 @@ impl VizState {
         );
     }
 
-    /// Dikey L/R seviye metresi (segmentli LED tarzı) ve tepe tutma.
     pub fn draw_meters(&self, ui: &mut Ui, size: egui::Vec2) {
         let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
         let painter = ui.painter_at(rect);
@@ -354,12 +349,12 @@ impl VizState {
                 painter.rect_filled(r, Rounding::same(1.5), col);
             }
         }
-        // ölçek
+
         for db in [0, -6, -12, -24, -48] {
             let y = bottom - (db as f32 + 48.0) / 48.0 * (bottom - top);
             painter.text(pos2(x0 - 6.0, y), egui::Align2::RIGHT_CENTER, format!("{db}"), body(10.0), DIM);
         }
-        // clip LED
+
         let led = pos2(rect.right() - 12.0, rect.top() + 6.0);
         if self.clip_flash > 0.0 {
             radial_glow(&painter, led, 12.0, alpha(RED, (180.0 * self.clip_flash) as u8));
@@ -369,7 +364,6 @@ impl VizState {
     }
 }
 
-/// Mavi paletli ısı haritası (0..1).
 pub fn heat(t: f32) -> Color32 {
     let stops = [
         (0.0, Color32::from_rgb(5, 9, 20)),
@@ -388,7 +382,6 @@ pub fn heat(t: f32) -> Color32 {
     stops[4].1
 }
 
-/// Logaritmik frekans ızgarası ve etiketleri.
 pub fn draw_freq_grid(painter: &Painter, rect: Rect) {
     let fx = |f: f32| rect.left() + ((f / 20.0).log10() / 3.0) * rect.width();
     for f in [30.0, 50.0, 100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 3000.0, 5000.0, 10000.0, 20000.0] {
@@ -400,8 +393,6 @@ pub fn draw_freq_grid(painter: &Painter, rect: Rect) {
     }
 }
 
-
-/// [f_lo, f_hi] aralığının seviyesi: dar aralıkta komşu binler arasında interpolasyon, geniş aralıkta tepe.
 fn sample_db(b: &[f32], bin_hz: f32, f_lo: f32, f_hi: f32) -> f32 {
     let lo = f_lo / bin_hz;
     let hi = f_hi / bin_hz;

@@ -1,5 +1,3 @@
-//! Spektrum analizi: dosyayı yerel örnekleme hızında çözer, spektrogramı PNG olarak yazar.
-
 use anyhow::{anyhow, Result};
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::fs::File;
@@ -100,12 +98,11 @@ pub fn run(path: &Path, png_out: &Path) -> Result<()> {
         khz += 1.0;
     }
 
-    // PNG
     let (w, h) = (COLS as u32, ROWS as u32);
     let mut img = vec![0u8; (w * h * 3) as usize];
     for x in 0..COLS {
         for y in 0..ROWS {
-            // y=0 üst = Nyquist
+
             let f = (ROWS - 1 - y) as f64 / (ROWS - 1) as f64 * nyq;
             let k = ((f / hz_per_bin) as usize).min(bins - 1);
             let db = spec_cols[x][k].clamp(-130.0, -10.0);
@@ -117,7 +114,7 @@ pub fn run(path: &Path, png_out: &Path) -> Result<()> {
             img[o + 2] = b;
         }
     }
-    // 16/18/20/22 kHz çizgileri
+
     for khz in [16.0, 18.0, 20.0, 22.0] {
         if khz * 1000.0 < nyq {
             let y = ROWS - 1 - ((khz * 1000.0 / nyq) * (ROWS - 1) as f64) as usize;

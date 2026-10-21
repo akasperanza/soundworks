@@ -1,20 +1,15 @@
-//! Ön ayar özellikleri: Windows "Özellikler" penceresi gibi sekmeli düzenleme (Genel, Otomatik, Bilgi).
-//! Bantların kendisi burada düzenlenmez: EQ ekranındaki grafik ve kaydırıcılar + Kaydet kullanılır.
-//! Hem "Oluştur > Sıfırdan oluştur"da, ön ayara sağ tık > Özellikler'de hem de Ayarlar > Ekolayzır > Ön ayarlar'da kullanılır.
-
 use super::eqrules_ui::{artist_key, menu_row, scope_badge, upsert_rule, EqRule, Playing, RuleScope};
 use super::*;
 use std::time::SystemTime;
 
-/// Ön ayarın dosyası dışında tutulan bilgileri (APO dosya biçimine dokunmadan).
 #[derive(Serialize, Deserialize, Clone, PartialEq, Default, Debug)]
 #[serde(default)]
 pub(super) struct PresetMeta {
-    /// hangi kulaklık / hoparlör için (serbest etiket)
+
     pub label: String,
-    /// serbest not
+
     pub note: String,
-    /// nereden geldi (ör. "AutoEQ · oratory1990")
+
     pub source: String,
 }
 
@@ -31,7 +26,6 @@ pub(super) enum PropsTab {
     Info,
 }
 
-/// Pencerede düzenlenen değerler; `base` ile karşılaştırılarak değişiklik olup olmadığı anlaşılır.
 #[derive(Clone, PartialEq)]
 struct PropsData {
     name: String,
@@ -39,9 +33,8 @@ struct PropsData {
     rules: Vec<EqRule>,
 }
 
-/// Açık özellikler düzenlemesinin durumu. Değişiklikler "Kaydet"e kadar yalnızca burada tutulur.
 pub(super) struct PropsUi {
-    /// düzenlenen ön ayarın dosya adı; `None` = yeni ön ayar oluşturuluyor
+
     pub orig: Option<String>,
     data: PropsData,
     base: PropsData,
@@ -50,14 +43,14 @@ pub(super) struct PropsUi {
     query: String,
     focus: bool,
     error: String,
-    /// dosyanın son değişme zamanı ve bant sayısı (Bilgi sekmesi için)
+
     modified: Option<SystemTime>,
     band_count: usize,
     t0: Instant,
 }
 
 impl PropsUi {
-    /// doğrulama kancası: sekmeyi adından seçer
+
     pub fn dev_set_tab(&mut self, t: &str) {
         self.tab = match t {
             "otomatik" => PropsTab::Auto,
@@ -71,7 +64,6 @@ impl PropsUi {
     }
 }
 
-/// Eylem: sekme gövdesinden dışarıya (pencere ya da Ayarlar) iletilen istek.
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum PropsAct {
     None,
@@ -83,7 +75,6 @@ pub(super) enum PropsAct {
     Reveal,
 }
 
-/// Kullanıcının yazdığı adı dosya adına uygun hale getirir; geçersizse `None`.
 pub(super) fn clean_name(raw: &str) -> Option<String> {
     let s = raw.trim().trim_end_matches(".txt").trim();
     let s: String = s.chars().map(|c| if matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') || c.is_control() { '-' } else { c }).collect();
@@ -95,7 +86,6 @@ pub(super) fn clean_name(raw: &str) -> Option<String> {
     }
 }
 
-/// Çalan parçadan verilen kapsam için (anahtar, ad, alt satır); albüm kütüphanede değilse `None`.
 pub(super) fn playing_target(now: &Playing, scope: RuleScope) -> Option<(String, String, String)> {
     match scope {
         RuleScope::Track => Some((now.path.clone(), now.title.clone(), format!("{} · {}", now.artist, now.album_title))),
@@ -105,7 +95,6 @@ pub(super) fn playing_target(now: &Playing, scope: RuleScope) -> Option<(String,
     }
 }
 
-/// "Ad (kopya).txt", doluysa "Ad (kopya 2).txt"…; `exists` verilen dosya adının var olup olmadığını söyler.
 pub(super) fn unique_copy_name(stem: &str, exists: impl Fn(&str) -> bool) -> String {
     let mut n = 1;
     loop {
@@ -127,7 +116,7 @@ fn since_text(t: SystemTime) -> String {
 }
 
 impl App {
-    /// Dosyadan bir düzenleme durumu kurar. Seçili ön ayarda kaydedilmemiş grafik düzenlemesi varsa onu başlangıç alır.
+
     pub(super) fn props_load(&self, file: &str) -> Option<PropsUi> {
         let preset = apo::load(&presets_dir().join(file)).ok()?;
         let data = PropsData {
@@ -149,13 +138,12 @@ impl App {
             n += 1;
         };
         let data = PropsData { name, meta: PresetMeta::default(), rules: vec![] };
-        // yeni ön ayarda her şey "değişmiş" sayılır (Oluştur her zaman etkin)
+
         let mut base = data.clone();
         base.name.clear();
         PropsUi { orig: None, data, base, tab: PropsTab::General, scope: RuleScope::Album, query: String::new(), focus: true, error: String::new(), modified: None, band_count: 1, t0: Instant::now() }
     }
 
-    /// Özellikler penceresini açar: `Some(dosya adı)` mevcut ön ayar, `None` yeni ön ayar.
     pub(super) fn props_open(&mut self, preset: Option<&str>) {
         self.props = match preset {
             Some(f) => self.props_load(f),
@@ -163,7 +151,6 @@ impl App {
         };
     }
 
-    /// Değişiklikleri uygular: ad (yeniden adlandırma / yeni dosya), bantlar, ön kazanç, meta ve kurallar.
     pub(super) fn props_save(&mut self, st: &mut PropsUi) -> Result<(), String> {
         let name = clean_name(&st.data.name).ok_or("Geçerli bir ad yaz")?;
         let file = format!("{name}.txt");
@@ -180,19 +167,19 @@ impl App {
             _ => None,
         };
         match (&st.orig, &renamed_from) {
-            // yeni ön ayar: düz, tek bantlı başlangıç; bantları EQ ekranında düzenlersin
+
             (None, _) => {
                 let p = Preset { preamp_db: 0.0, bands: vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 }] };
                 std::fs::write(&target, apo::to_text(&p)).map_err(|_| "Dosya yazılamadı".to_string())?;
             }
-            // yeniden adlandırma: içerik olduğu gibi taşınır (grafikteki kaydedilmemiş düzenlemelere dokunulmaz)
+
             (Some(_), Some(old)) => {
                 std::fs::rename(presets_dir().join(old), &target).map_err(|_| "Ad değiştirilemedi".to_string())?;
             }
             _ => {}
         }
         if let Some(old) = &renamed_from {
-            // eski ada bağlı her şey yeni ada taşınır
+
             for r in self.cfg.eq_rules.iter_mut().filter(|r| r.preset.as_deref() == Some(old.as_str())) {
                 r.preset = Some(file.clone());
             }
@@ -209,14 +196,14 @@ impl App {
         } else {
             self.cfg.preset_meta.insert(file.clone(), st.data.meta.clone());
         }
-        // bu ön ayarın kuralları pencerede gösterilenlerle değiştirilir
+
         self.cfg.eq_rules.retain(|r| r.preset.as_deref() != Some(file.as_str()));
         for mut r in st.data.rules.iter().cloned() {
             r.preset = Some(file.clone());
             upsert_rule(&mut self.cfg.eq_rules, r);
         }
         self.refresh_library();
-        // yeni ön ayar hemen seçilir (düzenleme EQ ekranında); mevcut ön ayarın içeriği yeniden yüklenmez, böylece kaydedilmemiş grafik düzenlemesi kaybolmaz
+
         if st.orig.is_none() {
             self.select(&file, false);
         }
@@ -229,9 +216,6 @@ impl App {
         Ok(())
     }
 
-    /// Ön ayarın kopyasını oluşturur ("Ad (kopya).txt"). Çalan ön ayarın kaydedilmemiş düzenlemesi varsa kopya o hâliyle
-    /// ("farklı kaydet" gibi) yazılır ve orijinal diskteki hâliyle kalır. Kopyalanan ön ayar çalan ise kopya seçilir
-    /// (düzenlemeye kopyada devam edilir); başka bir ön ayarsa çalan EQ'ya dokunulmaz.
     pub(super) fn duplicate_preset(&mut self, file: &str) {
         let copy = unique_copy_name(file.trim_end_matches(".txt"), |c| presets_dir().join(c).exists());
         let is_current = self.preset_name.as_deref() == Some(file);
@@ -269,7 +253,6 @@ impl App {
         let _ = std::process::Command::new("explorer").arg(format!("/select,{}", presets_dir().join(file).display())).spawn();
     }
 
-    /// Sekmeli gövde ve (yalnızca bilgi sekmesinde) dosya eylemleri. Pencerede ve Ayarlar'da aynı çizilir.
     pub(super) fn props_body(&self, ui: &mut egui::Ui, st: &mut PropsUi, now: &Option<Playing>) -> PropsAct {
         let mut act = PropsAct::None;
         segmented(
@@ -328,7 +311,7 @@ impl App {
                 }
                 ui.add_space(8.0);
                 let mut add: Option<(RuleScope, String, String, String)> = None;
-                // çalan parçadan ve geçerli cihazdan hızlı ekleme
+
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
                     if let Some(n) = now {
@@ -372,7 +355,7 @@ impl App {
             }
             PropsTab::Info => {
                 let file = st.orig.clone();
-                // etiket üstte, değer altta ve satır kırılır: uzun dosya yolu pencereyi taşırmaz
+
                 let row = |ui: &mut egui::Ui, k: &str, v: &str| {
                     ui.label(RichText::new(k).font(body(11.5)).color(DIM));
                     ui.add(egui::Label::new(RichText::new(v).font(body(12.5)).color(TEXT)).wrap());
@@ -418,7 +401,6 @@ impl App {
         act
     }
 
-    /// Dosya eylemleri (çoğalt, dışa aktar, klasörde göster, sil). `true` = ön ayar silindi (düzenleme kapanmalı).
     pub(super) fn props_file_act(&mut self, act: PropsAct, st: &PropsUi) -> bool {
         let Some(file) = st.orig.clone() else { return false };
         match act {
@@ -497,10 +479,9 @@ impl App {
         self.props = Some(st);
     }
 
-    /// Ayarlar > Ekolayzır > Ön ayarlar: aynı sekmeli düzenleme, ön ayar seçerek.
     pub(super) fn presets_manager_card(&mut self, ui: &mut egui::Ui) {
         let names: Vec<String> = self.library.iter().map(|(n, _)| n.clone()).collect();
-        // seçili düzenleme yoksa ya da silindiyse çalan ön ayarla (yoksa ilkiyle) başla
+
         let valid = self.props_inline.as_ref().map_or(false, |s| s.orig.as_ref().map_or(false, |o| names.contains(o)));
         if !valid {
             let pick = self.preset_name.clone().filter(|n| names.contains(n)).or_else(|| names.first().cloned());
@@ -634,7 +615,7 @@ mod tests {
         let taken = ["Rock (kopya).txt", "Rock (kopya 2).txt"];
         assert_eq!(unique_copy_name("Rock", |c| taken.contains(&c)), "Rock (kopya 3).txt");
         assert_eq!(unique_copy_name("Jazz", |c| taken.contains(&c)), "Jazz (kopya).txt");
-        // kopyanın kopyası da ayrı bir ad alır
+
         assert_eq!(unique_copy_name("Rock (kopya)", |c| taken.contains(&c)), "Rock (kopya) (kopya).txt");
     }
 

@@ -1,16 +1,13 @@
-//! Kütüphane: tarama, albüm ızgarası ve albüm sayfası, klasör yönetimi.
-
 use super::*;
 
 impl App {
-    /// Eksik dosya denetimini arka planda başlatır.
+
     pub(super) fn start_missing_check(&mut self) {
         if self.missing_rx.is_none() && self.lib.total_tracks() > 0 {
             self.missing_rx = Some(library::spawn_missing_check(self.lib.all_paths()));
         }
     }
 
-    /// Kütüphaneyi yeniden denetler: eksik dosyaları bulur, `scan_new` ise izlenen klasörlerdeki yeni dosyaları da tarar.
     pub(super) fn rescan_library(&mut self, scan_new: bool) {
         self.start_missing_check();
         if scan_new && !self.lib.folders.is_empty() {
@@ -19,7 +16,6 @@ impl App {
         }
     }
 
-    /// Klasörü kütüphaneye ekler ve izleme listesine alır; dosyalar arka planda taranır.
     pub(super) fn add_library_folder(&mut self, dir: PathBuf) {
         self.lib.add_folder(&dir.to_string_lossy());
         self.lib.save();
@@ -27,7 +23,6 @@ impl App {
         self.lib_scans.push((library::spawn_folder_scan(vec![dir.to_string_lossy().to_string()], known), 0, 0));
     }
 
-    /// Bulunamayan parçaları kütüphaneden çıkarır.
     pub(super) fn clean_missing(&mut self) {
         let n = self.lib.remove_missing(&self.lib_missing);
         self.lib_missing.clear();
@@ -88,7 +83,7 @@ impl App {
                 self.missing_rx = None;
             }
         }
-        // sanatçı bilgileri
+
         for (name, info) in self.fetcher.poll() {
             let k = artist::norm(&name);
             match info {
@@ -139,7 +134,7 @@ impl App {
         if self.dsd_gate(&files, start) {
             return;
         }
-        // diskte olmayan dosyalar kuyruğa girmesin; başlangıç sırası buna göre kayar
+
         let total = files.len();
         let skipped_before_start = files.iter().take(start).filter(|f| self.lib_missing.contains(&f.to_string_lossy().to_string())).count();
         let files: Vec<PathBuf> = files.into_iter().filter(|f| !self.lib_missing.contains(&f.to_string_lossy().to_string())).collect();
@@ -169,7 +164,6 @@ impl App {
         self.player.playlist.lock().unwrap().get(i).map(|p| p.to_string_lossy().to_string())
     }
 
-    /// Panelin üstünden inen kapak rengi.
     pub(super) fn paint_glow(&self, ui: &egui::Ui, inner: Margin) {
         let r = ui.max_rect();
         let panel = Rect::from_min_max(pos2(r.left() - inner.left, r.top() - inner.top), pos2(r.right() + inner.right, r.bottom() + inner.bottom));
@@ -269,7 +263,6 @@ impl App {
         }
     }
 
-    /// Filtre çubuğu: metin, tür ve sıralama. Albümler ve sanatçılar aynı filtreyi paylaşır; sıralama sekmeye göre değişir.
     fn library_filter_bar(&mut self, ui: &mut egui::Ui) {
         const ALBUM_SORTS: [&str; 4] = ["A → Z", "Z → A", "Sanatçıya göre", "Süreye göre"];
         const ARTIST_SORTS: [&str; 4] = ["A → Z", "Z → A", "Çok albümlü önce", "Çok parçalı önce"];
@@ -285,7 +278,7 @@ impl App {
         let active = !self.lib_q.trim().is_empty() || self.lib_genre.is_some();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            ui.spacing_mut().interact_size.y = 34.0; // kutu, menüler ve anahtar aynı yükseklikte
+            ui.spacing_mut().interact_size.y = 34.0;
             let hint = if tab == 0 { "Albüm ya da sanatçı filtrele…" } else { "Sanatçı filtrele…" };
             ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text(hint).desired_width(230.0).margin(vec2(10.0, 7.0)));
             if !genres.is_empty() {
@@ -309,7 +302,7 @@ impl App {
                 self.lib_q.clear();
                 self.lib_genre = None;
             }
-            // görünüm anahtarı satırın sağ ucunda: filtre/tür/sıralama solda gruplu kalır
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut tab_v = self.lib_tab;
                 view_switch(ui, &mut tab_v, &[(0u8, "Albümler"), (1u8, "Sanatçılar")]);
@@ -318,7 +311,6 @@ impl App {
         });
     }
 
-    /// Filtreden geçen albümlerin indeksleri, seçili sıralamayla.
     fn visible_albums(&self) -> Vec<usize> {
         let q = self.lib_q.trim().to_lowercase();
         let mut v: Vec<usize> = (0..self.lib.albums.len())
@@ -338,7 +330,6 @@ impl App {
         v
     }
 
-    /// Filtreden geçen sanatçılar (ad, albüm sayısı, parça sayısı), seçili sıralamayla.
     pub(super) fn visible_artists(&self) -> Vec<(String, usize, usize)> {
         let q = self.lib_q.trim().to_lowercase();
         let mut v: Vec<(String, usize, usize)> = self
@@ -361,7 +352,6 @@ impl App {
         v
     }
 
-    /// Filtre hiçbir şeyle eşleşmediğinde gösterilen boş durum.
     pub(super) fn no_match(&mut self, ui: &mut egui::Ui, what: &str) {
         ui.add_space(60.0);
         ui.vertical_centered(|ui| {
@@ -374,7 +364,6 @@ impl App {
         });
     }
 
-    /// Albüm kartı. (aç, çal, kaldır)
     pub(super) fn album_card(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, i: usize, cw: f32, cur: &Option<String>) -> (Option<String>, Option<String>, Option<String>) {
         let (key, title, artist, n, is_cur) = {
             let a = &self.lib.albums[i];
@@ -402,7 +391,7 @@ impl App {
         };
         let text_h = (8.0 + name_l.len() as f32 * lh_n + 3.0 + sub_l.len() as f32 * lh_s + 6.0).max(46.0);
         let (rect0, resp) = ui.allocate_exact_size(vec2(cw, cw + text_h), Sense::click());
-        // düğme kartın üstüne binince kartın kendi `hovered()` değeri düşer ve animasyon titrer: imleç dikdörtgenin içinde mi diye bak
+
         let hov = ui.rect_contains_pointer(rect0);
         let h = ui.ctx().animate_bool_with_time(resp.id, hov, 0.12);
         let ap = appear(ctx, Id::new(("card", &key, self.view_epoch)), (i % 10) as f32 * 0.03);
@@ -411,7 +400,7 @@ impl App {
         ui.set_opacity(prev_op * ap);
         let cover = Rect::from_min_size(rect.min, vec2(cw, cw));
         let painter = ui.painter();
-        // Surface 2: üzerine gelince kart, panelden (BG1) bir kat yukarı kalkar
+
         if h > 0.0 {
             painter.rect_filled(rect.expand(10.0), Rounding::same(16.0), alpha(BG2, (255.0 * h) as u8));
         }
@@ -485,7 +474,6 @@ impl App {
         }
     }
 
-    /// Albümü kütüphaneden çıkarır; dosyalara dokunmaz ve birkaç saniye boyunca geri alınabilir.
     pub(super) fn remove_album_undoable(&mut self, key: &str) {
         if let Some(i) = self.lib.albums.iter().position(|a| a.key == key) {
             let album = self.lib.albums[i].clone();
@@ -496,7 +484,6 @@ impl App {
         }
     }
 
-    /// Geri alınabilir silmelerin bildirimi: mesaj ve "Geri al" düğmesi, 6 sn sonra kapanır.
     pub(super) fn undo_toast(&mut self, ctx: &egui::Context) {
         let Some((_, msg, t0)) = &self.undo else { return };
         let age = t0.elapsed().as_secs_f32();
@@ -548,7 +535,7 @@ impl App {
         let cur = self.current_path();
         let (mut open, mut play, mut remove) = (None, None, None);
         let vis = self.visible_albums();
-        // bölümler: tür -> albüm indeksleri
+
         let mut sections: Vec<(String, Vec<usize>)> = vec![];
         if self.cfg.group_by_genre {
             let mut map: std::collections::BTreeMap<String, Vec<usize>> = std::collections::BTreeMap::new();
@@ -598,7 +585,6 @@ impl App {
         self.apply_album_actions(open, play, remove);
     }
 
-    /// Kapağın baskın rengi (küçültülmüş görüntünün doygunluk ağırlıklı ortalaması).
     pub(super) fn album_tint(&mut self, key: &str) -> Color32 {
         if let Some(c) = self.lib_tint.get(key) {
             return *c;
@@ -619,7 +605,7 @@ impl App {
                     wsum += w;
                 }
                 let (r, gc, b) = (r / wsum, gc / wsum, b / wsum);
-                // açık kapaklarda zemin grileşmesin: parlaklığı sınırla
+
                 let k = (120.0 / r.max(gc).max(b).max(1.0)).min(1.0);
                 Color32::from_rgb((r * k) as u8, (gc * k) as u8, (b * k) as u8)
             })
@@ -641,7 +627,7 @@ impl App {
         let mut goto_artist = false;
 
         let _ = tint;
-        // pencere genişliğiyle ölçeklen: geniş pencerede liste ve yazılar büyür
+
         let full_w = ui.available_width();
         let col_w = (full_w - 14.0).max(300.0);
         let sc = (full_w / 1100.0).clamp(1.0, 1.25);
@@ -654,7 +640,6 @@ impl App {
             }
             ui.add_space(34.0);
 
-            // ---- kahraman alan
             let cover = 224.0 * sc;
             ui.horizontal_top(|ui| {
                 let (rect, _) = ui.allocate_exact_size(vec2(cover, cover), Sense::hover());
@@ -698,7 +683,7 @@ impl App {
                         if pill_button(ui, "Karıştır", Some(Icon::Shuffle), false).clicked() {
                             shuffle_play = true;
                         }
-                        // yıkıcı eylem ana düğmelerden ayrı, "···" menüsünün içinde
+
                         let more = pill_button(ui, "···", None, false).on_hover_text("Diğer işlemler");
                         let pid = more.id.with("more");
                         if more.clicked() {
@@ -715,7 +700,6 @@ impl App {
             });
             ui.add_space(44.0);
 
-            // ---- parça listesi
             let multi_disc = album.tracks.iter().any(|t| t.disc_no > 1);
             let mut last_disc = 0u32;
             let base_row_h = 52.0 * sc;
