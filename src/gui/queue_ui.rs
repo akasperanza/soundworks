@@ -33,7 +33,7 @@ impl App {
         }
     }
 
-    fn queue_labels(&mut self) {
+    pub(super) fn queue_labels(&mut self) {
         let sig: usize = self.lib.albums.iter().map(|a| a.tracks.len()).sum::<usize>() + self.lib.albums.len() * 100_000;
         if sig != self.queue_sig || self.queue_map.is_empty() {
             self.queue_sig = sig;

@@ -187,6 +187,10 @@ impl VizState {
     }
 
     pub fn draw_spectrum(&mut self, painter: &Painter, rect: Rect, bars: bool) {
+        self.draw_spectrum_with(painter, rect, bars, BLUE, SKY);
+    }
+
+    pub fn draw_spectrum_with(&mut self, painter: &Painter, rect: Rect, bars: bool, base: Color32, tip: Color32) {
         let cols = (rect.width() / 2.0).max(60.0) as usize;
         self.smooth(cols);
         let sy = |db: f32| rect.bottom() - ((db.clamp(-100.0, -12.0) + 100.0) / 88.0) * rect.height() * 0.94;
@@ -215,8 +219,8 @@ impl VizState {
                 if r.height() > 1.0 {
                     let t = ((v + 100.0) / 88.0).clamp(0.0, 1.0);
                     let mut mesh = Mesh::default();
-                    let top_c = lerp_color(BLUE, SKY, t);
-                    let bot_c = alpha(BLUE, 30);
+                    let top_c = lerp_color(base, tip, t);
+                    let bot_c = alpha(base, 30);
                     mesh.colored_vertex(r.left_top(), top_c);
                     mesh.colored_vertex(r.right_top(), top_c);
                     mesh.colored_vertex(r.right_bottom(), bot_c);
@@ -237,8 +241,8 @@ impl VizState {
             for c in 0..cols {
                 let x = rect.left() + (c as f32 + 0.5) * w;
                 let t = ((self.spec[c] + 100.0) / 88.0).clamp(0.0, 1.0);
-                mesh.colored_vertex(pos2(x, sy(self.spec[c])), alpha(BLUE, (60.0 + 70.0 * t) as u8));
-                mesh.colored_vertex(pos2(x, rect.bottom()), alpha(BLUE, 4));
+                mesh.colored_vertex(pos2(x, sy(self.spec[c])), alpha(base, (60.0 + 70.0 * t) as u8));
+                mesh.colored_vertex(pos2(x, rect.bottom()), alpha(base, 4));
             }
             for c in 0..cols.saturating_sub(1) {
                 let i = (c * 2) as u32;
@@ -248,7 +252,7 @@ impl VizState {
             painter.add(Shape::mesh(mesh));
             let top: Vec<Pos2> =
                 (0..cols).map(|c| pos2(rect.left() + (c as f32 + 0.5) * w, sy(self.spec[c]))).collect();
-            painter.add(Shape::line(top, Stroke::new(1.3, alpha(SKY, 220))));
+            painter.add(Shape::line(top, Stroke::new(1.3, alpha(tip, 220))));
             let pk: Vec<Pos2> =
                 (0..cols).map(|c| pos2(rect.left() + (c as f32 + 0.5) * w, sy(self.peaks[c]))).collect();
             painter.add(Shape::line(pk, Stroke::new(1.0, alpha(Color32::WHITE, 70))));

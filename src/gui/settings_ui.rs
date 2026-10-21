@@ -281,6 +281,12 @@ impl App {
                 self.cfg.lang = Some(lang.code().to_string());
             }
             ui.add_space(10.0);
+            switch_row(ui, "Bekleyince albüm ekranı", "Müzik çalarken fare ve klavye bir süre kullanılmazsa kapak, sıradakiler ve canlı spektrum tam ekran görünür; F11 ile elle de açılır; Tab sağ paneli değiştirir", &mut self.cfg.ambient);
+            if self.cfg.ambient {
+                ui.add_space(4.0);
+                segmented(ui, &mut self.cfg.ambient_secs, &[(30, "30 sn", None), (60, "1 dk", None), (120, "2 dk", None), (300, "5 dk", None)]);
+            }
+            ui.add_space(10.0);
             segmented(ui, &mut self.cfg.ui_zoom, &[(0, "Otomatik", None), (70, "%70", None), (80, "%80", None), (90, "%90", None), (100, "%100", None), (115, "%115", None)]);
         });
         ui.add_space(10.0);

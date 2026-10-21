@@ -80,6 +80,7 @@ pub struct TrackMeta {
     pub title: String,
     pub artist: String,
     pub album: String,
+    pub year: String,
     pub codec: String,
     pub src_rate: u32,
     pub bits: u32,
@@ -1019,6 +1020,14 @@ impl Track {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn year_is_read_from_full_dates_and_rejects_non_years() {
+        assert_eq!(parse_year("2015-06-12"), Some("2015".to_string()));
+        assert_eq!(parse_year("12.06.1999"), Some("1999".to_string()));
+        assert_eq!(parse_year("0205"), None);
+        assert_eq!(parse_year(""), None);
+    }
+
     use super::*;
 
     fn write_wav(path: &Path, rate: u32, secs: u32) {
@@ -1628,6 +1637,12 @@ fn read_meta(r: &MetadataRevision, m: &mut TrackMeta) {
             Some(StandardTagKey::Artist) if m.artist.is_empty() => m.artist = tag.value.to_string(),
             Some(StandardTagKey::AlbumArtist) if m.artist.is_empty() => m.artist = tag.value.to_string(),
             Some(StandardTagKey::Album) if m.album.is_empty() => m.album = tag.value.to_string(),
+            Some(StandardTagKey::OriginalDate) | Some(StandardTagKey::ReleaseDate) | Some(StandardTagKey::Date) if m.year.is_empty() => {
+                let v = tag.value.to_string();
+                if let Some(y) = parse_year(&v) {
+                    m.year = y;
+                }
+            }
             _ => {}
         }
     }
@@ -1636,6 +1651,14 @@ fn read_meta(r: &MetadataRevision, m: &mut TrackMeta) {
             apply_cover(&v.data, m);
         }
     }
+}
+
+fn parse_year(v: &str) -> Option<String> {
+    let digits: Vec<char> = v.chars().collect();
+    digits
+        .windows(4)
+        .map(|w| w.iter().collect::<String>())
+        .find(|w| w.chars().all(|c| c.is_ascii_digit()) && w.parse::<u32>().map_or(false, |n| (1900..=2099).contains(&n)))
 }
 
 fn apply_cover(data: &[u8], m: &mut TrackMeta) {

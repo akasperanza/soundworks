@@ -149,6 +149,8 @@ struct Config {
     lyr_offsets: BTreeMap<String, i32>,
 
     ui_zoom: u32,
+    ambient: bool,
+    ambient_secs: u32,
     #[serde(default)]
     lang: Option<String>,
 
@@ -202,6 +204,8 @@ impl Default for Config {
             dsd_prefs: BTreeMap::new(),
             lyr_offsets: BTreeMap::new(),
             ui_zoom: 0,
+            ambient: true,
+            ambient_secs: 60,
             lang: None,
             dither: true,
             chain: Vec::new(),
@@ -235,6 +239,7 @@ mod library_ui;
 mod lyrics_ui;
 mod panels;
 mod proof_ui;
+mod ambient_ui;
 mod queue_ui;
 mod search_ui;
 mod autoeq_ui;
@@ -329,6 +334,11 @@ pub struct App {
 
     wordmark_tex: Option<(TextureHandle, f32)>,
     cover_t0: Instant,
+    ambient_on: bool,
+    ambient_side: u8,
+    ambient_since: Instant,
+    ambient_t: f32,
+    ambient_last: Instant,
     tint: Color32,
     tint_target: Color32,
     toast: Option<(String, Instant)>,
@@ -523,6 +533,11 @@ impl App {
                 (w > 0).then(|| (ctx.load_texture("wordmark", ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px), TextureOptions::LINEAR), w as f32 / h as f32))
             },
             cover_t0: Instant::now(),
+            ambient_on: false,
+            ambient_side: 0,
+            ambient_since: Instant::now(),
+            ambient_t: 0.0,
+            ambient_last: Instant::now(),
             tint: BLUE,
             tint_target: BLUE,
             toast: None,
@@ -699,6 +714,12 @@ impl App {
                 "scope" => VizMode::Scope,
                 _ => VizMode::Spectrum,
             };
+        }
+        if crate::devenv::dev_var("SW_AMBIENT").is_ok() {
+            app.ambient_on = true;
+            app.ambient_side = crate::devenv::dev_var("SW_AMBSIDE").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+            let extra: Vec<PathBuf> = app.lib.albums.iter().flat_map(|a| a.tracks.iter().map(|t| PathBuf::from(&t.path))).take(7).collect();
+            app.player.add(extra);
         }
         if crate::devenv::dev_var("SW_QUEUE").is_ok() {
             app.queue_open = true;
@@ -1055,6 +1076,9 @@ impl eframe::App for App {
         if let Some(e) = crate::devenv::dev_var("SW_EVERY").ok().and_then(|v| v.parse::<u64>().ok()) {
             every = e;
         }
+        if self.ambient_on || self.ambient_t > 0.0 {
+            every = every.min(33);
+        }
         ctx.request_repaint_after(std::time::Duration::from_millis(every));
         let gap_ms = self.last_frame.elapsed().as_secs_f64() * 1000.0;
         let dt = self.last_frame.elapsed().as_secs_f32().clamp(0.001, 0.1);
@@ -1132,6 +1156,7 @@ impl eframe::App for App {
                 self.say(n);
             }
         }
+        self.ambient_tick(ctx);
         self.viz.feed(ctl.as_deref(), dt);
         self.tex_budget = 4;
         self.poll_scans();
@@ -1234,17 +1259,19 @@ impl eframe::App for App {
         }
 
         let fade = self.fade(ctx);
-        self.header(ctx);
-        self.bottom_bar(ctx);
-        self.lyrics_sidebar(ctx);
-        self.queue_sidebar(ctx);
-        match self.view {
-            View::Motor => {
-                self.side_panel(ctx, fade);
-                self.motor_view(ctx, fade, &mut ab_held);
+        if !self.ambient_on {
+            self.header(ctx);
+            self.bottom_bar(ctx);
+            self.lyrics_sidebar(ctx);
+            self.queue_sidebar(ctx);
+            match self.view {
+                View::Motor => {
+                    self.side_panel(ctx, fade);
+                    self.motor_view(ctx, fade, &mut ab_held);
+                }
+                View::Library => self.library_view(ctx, fade),
+                View::Settings => self.settings_view(ctx, fade),
             }
-            View::Library => self.library_view(ctx, fade),
-            View::Settings => self.settings_view(ctx, fade),
         }
         if let Some(r) = &self.running {
             let c = &r.ctl;
@@ -1268,11 +1295,14 @@ impl eframe::App for App {
             }
         }
 
-        self.search_overlay(ctx);
-        self.autoeq_overlay(ctx);
-        self.props_overlay(ctx);
-        self.tip_banner(ctx);
-        self.dsd_dialog_ui(ctx);
+        if !self.ambient_on {
+            self.search_overlay(ctx);
+            self.autoeq_overlay(ctx);
+            self.props_overlay(ctx);
+            self.tip_banner(ctx);
+            self.dsd_dialog_ui(ctx);
+        }
+        self.ambient_overlay(ctx);
 
         if let Ok(path) = crate::devenv::dev_var("SW_SHOT") {
             self.frames += 1;
