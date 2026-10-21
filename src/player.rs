@@ -211,6 +211,10 @@ impl Player {
     }
     /// Şu an uygulanan ReplayGain kazancı (dB); etiket yoksa/kapalıysa `None`.
     pub fn rg_applied_db(&self) -> Option<f32> {
+        // ayar kapalıysa son çözülen parçadan kalan değer geçerli sayılmaz (duraklatılmışken çözücü değeri güncellemez)
+        if self.rg_mode.load(Ordering::Relaxed) == 0 {
+            return None;
+        }
         let v = f32::from_bits(self.rg_applied.load(Ordering::Relaxed));
         (v.abs() > 0.001).then_some(v)
     }
@@ -1268,6 +1272,16 @@ mod tests {
         // tepe 1.0 ve kazanç negatif: sınır etkisiz
         let neg = Rg { track_gain: Some(-3.0), track_peak: Some(1.0), ..Default::default() };
         assert_eq!(rg_gain_db(&neg, 1, 0.0, true), Some(-3.0));
+    }
+
+    #[test]
+    fn replaygain_off_means_not_applied_even_if_value_is_stale() {
+        let p = Player::new();
+        p.set_replaygain(1, 0.0, true);
+        p.rg_applied.store((-6.0f32).to_bits(), Ordering::Relaxed);
+        assert_eq!(p.rg_applied_db(), Some(-6.0));
+        p.set_replaygain(0, 0.0, true);
+        assert_eq!(p.rg_applied_db(), None, "kapatılınca eski kazanç gösterilmemeli");
     }
 
     #[test]

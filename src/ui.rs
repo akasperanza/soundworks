@@ -633,10 +633,12 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T, &
     let (rect, _) = ui.allocate_exact_size(vec2(total, 28.0), Sense::hover());
     ui.painter().rect_filled(rect, Rounding::same(8.0), BG2);
     let mut x = rect.left() + 2.0;
+    // kimlik, düğme etiketlerinden de türetilir: aynı sütundaki farklı kartlarda ilk düğmeler aynı x'te olsa da çakışmaz
+    let base = ui.id().with(("seg", items.iter().map(|(_, t, _)| *t).collect::<Vec<_>>().join("|")));
     for (g, (v, _, ic)) in gs.into_iter().zip(items) {
         let w = g.size().x + 22.0 + if ic.is_some() { 18.0 } else { 0.0 };
         let r = Rect::from_min_size(pos2(x, rect.top() + 2.0), vec2(w, rect.height() - 4.0));
-        let resp = ui.interact(r, ui.id().with(("seg", x as i32)), Sense::click());
+        let resp = ui.interact(r, base.with(x as i32), Sense::click());
         let sel = *value == *v;
         let s = ui.ctx().animate_bool_with_time(resp.id.with("s"), sel, 0.18);
         let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
@@ -775,5 +777,53 @@ mod wrap_tests {
         let (f, l) = fit_wrap(&p, s, body, &[14.0, 12.0, 10.0], 150.0, 2);
         assert!(l.len() <= 2 || f.size == 10.0);
         assert_eq!(l.join(" "), s);
+    }
+
+    /// Aynı sütundaki iki kartta ikişer `segmented` var; ilk düğmeleri aynı x konumunda. Birine tıklamak diğerini etkilememeli.
+    #[test]
+    fn segmented_in_separate_cards_do_not_share_clicks() {
+        use egui::{Event, PointerButton, Pos2, RawInput};
+        let ctx = egui::Context::default();
+        setup(&ctx);
+        let (mut a, mut b) = (5u32, 0u32);
+        let mut frame = |ctx: &egui::Context, a: &mut u32, b: &mut u32, events: Vec<Event>| {
+            let input = RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 500.0))), events, ..Default::default() };
+            let mut rects = vec![];
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    card(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        segmented(ui, a, &[(0u32, "Otomatik", None), (5u32, "%70", None), (7u32, "%80", None)]);
+                    });
+                    ui.add_space(10.0);
+                    card(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        let before = ui.min_rect().top();
+                        let _ = before;
+                        segmented(ui, b, &[(0u32, "Kapalı", None), (1u32, "Parça", None), (2u32, "Albüm", None)]);
+                        rects.push(ui.min_rect());
+                    });
+                });
+            });
+            rects
+        };
+        // yerleşimi öğren
+        let rects = frame(&ctx, &mut a, &mut b, vec![]);
+        let _ = frame(&ctx, &mut a, &mut b, vec![]);
+        let r = rects[0];
+        // ikinci kartın "Parça" düğmesine tıkla -> b = 1
+        let click = |ctx: &egui::Context, a: &mut u32, b: &mut u32, p: Pos2| {
+            frame(ctx, a, b, vec![Event::PointerMoved(p)]);
+            frame(ctx, a, b, vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: true, modifiers: Default::default() }]);
+            frame(ctx, a, b, vec![Event::PointerButton { pos: p, button: PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        };
+        let y = r.center().y;
+        click(&ctx, &mut a, &mut b, pos2(r.left() + 80.0, y));
+        assert_eq!(b, 1, "ikinci karttaki 'Parça' seçilmeli");
+        assert_eq!(a, 5, "birinci kart etkilenmemeli");
+        // şimdi "Kapalı"ya (ilk düğme, birinci kartın ilk düğmesiyle aynı x) tıkla -> b = 0, a değişmemeli
+        click(&ctx, &mut a, &mut b, pos2(r.left() + 20.0, y));
+        assert_eq!(b, 0, "'Kapalı' geri seçilebilmeli");
+        assert_eq!(a, 5, "birinci kartın 'Otomatik'i tetiklenmemeli");
     }
 }
