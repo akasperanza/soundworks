@@ -1,4 +1,5 @@
-//! Ön ayar özellikleri: Windows "Özellikler" penceresi gibi sekmeli düzenleme (Genel, Bantlar, Otomatik, Bilgi).
+//! Ön ayar özellikleri: Windows "Özellikler" penceresi gibi sekmeli düzenleme (Genel, Otomatik, Bilgi).
+//! Bantların kendisi burada düzenlenmez: EQ ekranındaki grafik ve kaydırıcılar + Kaydet kullanılır.
 //! Hem "Oluştur > Sıfırdan oluştur"da, ön ayara sağ tık > Özellikler'de hem de Ayarlar > Ekolayzır > Ön ayarlar'da kullanılır.
 
 use super::eqrules_ui::{artist_key, menu_row, scope_badge, upsert_rule, EqRule, Playing, RuleScope};
@@ -26,7 +27,6 @@ impl PresetMeta {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum PropsTab {
     General,
-    Bands,
     Auto,
     Info,
 }
@@ -35,8 +35,6 @@ pub(super) enum PropsTab {
 #[derive(Clone, PartialEq)]
 struct PropsData {
     name: String,
-    preamp: f64,
-    bands: Vec<Band>,
     meta: PresetMeta,
     rules: Vec<EqRule>,
 }
@@ -52,8 +50,9 @@ pub(super) struct PropsUi {
     query: String,
     focus: bool,
     error: String,
-    /// dosyanın son değişme zamanı (Bilgi sekmesi için)
+    /// dosyanın son değişme zamanı ve bant sayısı (Bilgi sekmesi için)
     modified: Option<SystemTime>,
+    band_count: usize,
     t0: Instant,
 }
 
@@ -61,7 +60,6 @@ impl PropsUi {
     /// doğrulama kancası: sekmeyi adından seçer
     pub fn dev_set_tab(&mut self, t: &str) {
         self.tab = match t {
-            "bantlar" => PropsTab::Bands,
             "otomatik" => PropsTab::Auto,
             "bilgi" => PropsTab::Info,
             _ => PropsTab::General,
@@ -107,32 +105,6 @@ pub(super) fn playing_target(now: &Playing, scope: RuleScope) -> Option<(String,
     }
 }
 
-/// Kırpılmayı önleyen ön kazanç (dB): bantların toplam yanıtındaki en yüksek tepe kadar kıs (0,1 dB adımla).
-pub(super) fn auto_preamp(bands: &[Band]) -> f64 {
-    let fs = 48000.0;
-    let coeffs: Vec<Coeffs> = bands.iter().filter(|b| b.freq < fs * 0.5).map(|b| Coeffs::design(b, fs)).collect();
-    let peak = (0..240)
-        .map(|i| {
-            let f = 20.0 * 1000f64.powf(i as f64 / 239.0);
-            coeffs.iter().map(|c| c.magnitude_db(f, fs)).sum::<f64>()
-        })
-        .fold(0.0, f64::max);
-    -((peak * 10.0).ceil() / 10.0)
-}
-
-fn kind_tr(k: FilterKind) -> &'static str {
-    match k {
-        FilterKind::Peak => "Tepe (bell)",
-        FilterKind::LowShelf => "Alçak raf",
-        FilterKind::HighShelf => "Yüksek raf",
-        FilterKind::LowPass => "Alçak geçiren",
-        FilterKind::HighPass => "Yüksek geçiren",
-        FilterKind::BandPass => "Bant geçiren",
-        FilterKind::Notch => "Çentik",
-        FilterKind::AllPass => "Tüm geçiren",
-    }
-}
-
 fn since_text(t: SystemTime) -> String {
     let days = SystemTime::now().duration_since(t).map(|d| d.as_secs() / 86400).unwrap_or(0);
     match days {
@@ -145,16 +117,14 @@ fn since_text(t: SystemTime) -> String {
 impl App {
     /// Dosyadan bir düzenleme durumu kurar. Seçili ön ayarda kaydedilmemiş grafik düzenlemesi varsa onu başlangıç alır.
     pub(super) fn props_load(&self, file: &str) -> Option<PropsUi> {
-        let preset = if self.preset_name.as_deref() == Some(file) && self.dirty { self.preset.clone() } else { apo::load(&presets_dir().join(file)).ok()? };
+        let preset = apo::load(&presets_dir().join(file)).ok()?;
         let data = PropsData {
             name: file.trim_end_matches(".txt").to_string(),
-            preamp: preset.preamp_db,
-            bands: preset.bands.clone(),
             meta: self.cfg.preset_meta.get(file).cloned().unwrap_or_default(),
             rules: self.cfg.eq_rules.iter().filter(|r| r.preset.as_deref() == Some(file)).cloned().collect(),
         };
         let modified = std::fs::metadata(presets_dir().join(file)).ok().and_then(|m| m.modified().ok());
-        Some(PropsUi { orig: Some(file.to_string()), base: data.clone(), data, tab: PropsTab::General, scope: RuleScope::Album, query: String::new(), focus: false, error: String::new(), modified, t0: Instant::now() })
+        Some(PropsUi { orig: Some(file.to_string()), base: data.clone(), data, tab: PropsTab::General, scope: RuleScope::Album, query: String::new(), focus: false, error: String::new(), modified, band_count: preset.bands.len(), t0: Instant::now() })
     }
 
     fn props_new(&self) -> PropsUi {
@@ -166,11 +136,11 @@ impl App {
             }
             n += 1;
         };
-        let data = PropsData { name, preamp: 0.0, bands: vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 }], meta: PresetMeta::default(), rules: vec![] };
+        let data = PropsData { name, meta: PresetMeta::default(), rules: vec![] };
         // yeni ön ayarda her şey "değişmiş" sayılır (Oluştur her zaman etkin)
         let mut base = data.clone();
         base.name.clear();
-        PropsUi { orig: None, data, base, tab: PropsTab::General, scope: RuleScope::Album, query: String::new(), focus: true, error: String::new(), modified: None, t0: Instant::now() }
+        PropsUi { orig: None, data, base, tab: PropsTab::General, scope: RuleScope::Album, query: String::new(), focus: true, error: String::new(), modified: None, band_count: 1, t0: Instant::now() }
     }
 
     /// Özellikler penceresini açar: `Some(dosya adı)` mevcut ön ayar, `None` yeni ön ayar.
@@ -184,9 +154,6 @@ impl App {
     /// Değişiklikleri uygular: ad (yeniden adlandırma / yeni dosya), bantlar, ön kazanç, meta ve kurallar.
     pub(super) fn props_save(&mut self, st: &mut PropsUi) -> Result<(), String> {
         let name = clean_name(&st.data.name).ok_or("Geçerli bir ad yaz")?;
-        if st.data.bands.is_empty() {
-            return Err("En az bir bant olmalı".into());
-        }
         let file = format!("{name}.txt");
         let target = presets_dir().join(&file);
         let _ = std::fs::create_dir_all(presets_dir());
@@ -200,11 +167,19 @@ impl App {
             None if target.exists() => return Err("Bu adda bir ön ayar zaten var".into()),
             _ => None,
         };
-        // önce yeni içerik yazılır; yeniden adlandırmada eski dosya ancak yazma başarılıysa silinir
-        let content = Preset { preamp_db: st.data.preamp, bands: st.data.bands.clone() };
-        std::fs::write(&target, apo::to_text(&content)).map_err(|_| "Dosya yazılamadı".to_string())?;
+        match (&st.orig, &renamed_from) {
+            // yeni ön ayar: düz, tek bantlı başlangıç; bantları EQ ekranında düzenlersin
+            (None, _) => {
+                let p = Preset { preamp_db: 0.0, bands: vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 }] };
+                std::fs::write(&target, apo::to_text(&p)).map_err(|_| "Dosya yazılamadı".to_string())?;
+            }
+            // yeniden adlandırma: içerik olduğu gibi taşınır (grafikteki kaydedilmemiş düzenlemelere dokunulmaz)
+            (Some(_), Some(old)) => {
+                std::fs::rename(presets_dir().join(old), &target).map_err(|_| "Ad değiştirilemedi".to_string())?;
+            }
+            _ => {}
+        }
         if let Some(old) = &renamed_from {
-            let _ = std::fs::remove_file(presets_dir().join(old));
             // eski ada bağlı her şey yeni ada taşınır
             for r in self.cfg.eq_rules.iter_mut().filter(|r| r.preset.as_deref() == Some(old.as_str())) {
                 r.preset = Some(file.clone());
@@ -229,8 +204,8 @@ impl App {
             upsert_rule(&mut self.cfg.eq_rules, r);
         }
         self.refresh_library();
-        // çalan EQ bu ön ayarsa (ya da yenisi seçilecekse) değişiklik hemen duyulur
-        if st.orig.is_none() || self.preset_name.as_deref() == Some(file.as_str()) {
+        // yeni ön ayar hemen seçilir (düzenleme EQ ekranında); mevcut ön ayarın içeriği yeniden yüklenmez, böylece kaydedilmemiş grafik düzenlemesi kaybolmaz
+        if st.orig.is_none() {
             self.select(&file, false);
         }
         self.eq_rule_dirty = true;
@@ -281,7 +256,7 @@ impl App {
         segmented(
             ui,
             &mut st.tab,
-            &[(PropsTab::General, "Genel", None), (PropsTab::Bands, "Bantlar", None), (PropsTab::Auto, "Otomatik", None), (PropsTab::Info, "Bilgi", None)],
+            &[(PropsTab::General, "Genel", None), (PropsTab::Auto, "Otomatik", None), (PropsTab::Info, "Bilgi", None)],
         );
         ui.add_space(12.0);
         match st.tab {
@@ -296,60 +271,11 @@ impl App {
                     st.error.clear();
                 }
                 ui.add_space(10.0);
-                ui.label(RichText::new("Ön kazanç").font(body(12.5)).color(DIM));
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut st.data.preamp).range(-30.0..=10.0).speed(0.05).fixed_decimals(1).suffix(" dB"));
-                    if pill_button(ui, "Otomatik", None, false).on_hover_text("Kırpılmayı önleyecek kadar kıs").clicked() {
-                        st.data.preamp = auto_preamp(&st.data.bands);
-                    }
-                });
-                ui.add_space(10.0);
                 ui.label(RichText::new("Kulaklık / hoparlör").font(body(12.5)).color(DIM));
                 ui.add(egui::TextEdit::singleline(&mut st.data.meta.label).hint_text("ör. Sennheiser HD 600").desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
                 ui.add_space(10.0);
                 ui.label(RichText::new("Not").font(body(12.5)).color(DIM));
                 ui.add(egui::TextEdit::multiline(&mut st.data.meta.note).desired_rows(3).desired_width(ui.available_width()).margin(vec2(10.0, 7.0)));
-            }
-            PropsTab::Bands => {
-                let mut remove: Option<usize> = None;
-                // pencere yüksekliği içerikten kurulduğu için tablo yüksekliği açıkça verilir (aksi halde tek satıra sıkışır)
-                let table_h = (st.data.bands.len() as f32 * 38.0 + 34.0).min(300.0);
-                egui::ScrollArea::vertical().id_salt("props_bands").min_scrolled_height(table_h).max_height(table_h).auto_shrink([false, false]).show(ui, |ui| {
-                    egui::Grid::new("props_band_grid").num_columns(6).spacing([10.0, 8.0]).show(ui, |ui| {
-                        for h in ["#", "Tür", "Frekans", "Kazanç", "Q", ""] {
-                            ui.label(RichText::new(h).font(body(11.5)).color(DIM));
-                        }
-                        ui.end_row();
-                        for (i, b) in st.data.bands.iter_mut().enumerate() {
-                            ui.label(RichText::new(format!("{}", i + 1)).font(body(12.5)).color(DIM));
-                            egui::ComboBox::from_id_salt(("props_kind", i)).width(120.0).selected_text(kind_tr(b.kind)).show_ui(ui, |ui| {
-                                for k in FilterKind::ALL {
-                                    ui.selectable_value(&mut b.kind, k, kind_tr(k));
-                                }
-                            });
-                            let sp = (b.freq * 0.01).max(0.5);
-                            ui.add(egui::DragValue::new(&mut b.freq).range(10.0..=24000.0).speed(sp).fixed_decimals(0).suffix(" Hz"));
-                            ui.add_enabled(b.kind.has_gain(), egui::DragValue::new(&mut b.gain_db).range(-24.0..=24.0).speed(0.05).fixed_decimals(1).suffix(" dB"));
-                            ui.add(egui::DragValue::new(&mut b.q).range(0.1..=20.0).speed(0.01).fixed_decimals(2));
-                            if icon_button(ui, Icon::Trash, 24.0, false).on_hover_text("Bandı sil").clicked() {
-                                remove = Some(i);
-                            }
-                            ui.end_row();
-                        }
-                    });
-                });
-                if let Some(i) = remove {
-                    st.data.bands.remove(i);
-                }
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.add_enabled_ui(st.data.bands.len() < 31, |ui| {
-                        if pill_button(ui, "Bant ekle", Some(Icon::Plus), false).clicked() {
-                            st.data.bands.push(Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 });
-                        }
-                    });
-                    ui.label(RichText::new(format!("{} bant", st.data.bands.len())).font(body(12.0)).color(DIM));
-                });
             }
             PropsTab::Auto => {
                 ui.label(RichText::new("Şunlar çalınca ya da seçilince otomatik kullan").font(bold(13.5)).color(Color32::WHITE));
@@ -436,7 +362,7 @@ impl App {
                 match &file {
                     Some(f) => {
                         row(ui, "Dosya", &presets_dir().join(f).display().to_string());
-                        row(ui, "Bant", &format!("{}", st.data.bands.len()));
+                        row(ui, "Bant", &st.band_count.to_string());
                         if let Some(m) = st.modified {
                             row(ui, "Son değişiklik", &since_text(m));
                         }
@@ -682,18 +608,6 @@ mod tests {
         m.artist = " ".into();
         assert!(playing_target(&m, RuleScope::Album).is_none(), "kütüphanede olmayan albüm");
         assert!(playing_target(&m, RuleScope::Artist).is_none(), "adsız sanatçı");
-    }
-
-    #[test]
-    fn auto_preamp_cancels_the_boost_and_is_zero_for_cuts() {
-        // +6 dB tepe: ön kazanç ≈ -6 dB (0,1 dB'ye yukarı yuvarlanır)
-        let boost = vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 6.0, q: 1.0 }];
-        let p = auto_preamp(&boost);
-        assert!(p <= -5.9 && p >= -6.3, "{p}");
-        // yalnızca kesme: kırpılma yok, ön kazanç 0
-        let cut = vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: -6.0, q: 1.0 }];
-        assert_eq!(auto_preamp(&cut), 0.0);
-        assert_eq!(auto_preamp(&[]), 0.0);
     }
 
     #[test]
