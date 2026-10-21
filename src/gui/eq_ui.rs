@@ -24,6 +24,52 @@ impl App {
         }
     }
 
+    /// "Oluştur" düğmesi: AutoEQ'dan seç ya da boş bir ön ayarla sıfırdan başla.
+    fn create_button(&mut self, ui: &mut egui::Ui) {
+        let btn = pill_button(ui, "Oluştur", Some(Icon::Plus), true);
+        let id = btn.id.with("create_menu");
+        if btn.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(id));
+        }
+        let mut pick = 0u8;
+        egui::popup_below_widget(ui, id, &btn, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+            ui.set_min_width(260.0);
+            if super::eqrules_ui::menu_row(ui, "AutoEQ ile seç", "Kulaklığına hazır profil", true).clicked() {
+                pick = 1;
+            }
+            if super::eqrules_ui::menu_row(ui, "Sıfırdan oluştur", "Boş bir ön ayar", true).clicked() {
+                pick = 2;
+            }
+        });
+        if pick != 0 {
+            ui.memory_mut(|m| m.close_popup());
+        }
+        match pick {
+            1 => self.ae_open(true),
+            2 => self.new_preset_from_scratch(),
+            _ => {}
+        }
+    }
+
+    /// Düz (0 dB) tek bantlı yeni bir ön ayar dosyası oluşturup seçer; bant ekleme grafikten yapılır.
+    fn new_preset_from_scratch(&mut self) {
+        let _ = std::fs::create_dir_all(presets_dir());
+        let mut n = 1;
+        let name = loop {
+            let name = if n == 1 { "Yeni ön ayar.txt".to_string() } else { format!("Yeni ön ayar {n}.txt") };
+            if !presets_dir().join(&name).exists() {
+                break name;
+            }
+            n += 1;
+        };
+        let p = Preset { preamp_db: 0.0, bands: vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 }] };
+        if std::fs::write(presets_dir().join(&name), apo::to_text(&p)).is_ok() {
+            self.refresh_library();
+            self.select(&name, false);
+            self.say("Yeni ön ayar oluşturuldu");
+        }
+    }
+
     pub(super) fn select(&mut self, name: &str, announce: bool) {
         match apo::load(&presets_dir().join(name)) {
             Ok(p) => {
@@ -143,16 +189,17 @@ impl App {
         let mut pick = None;
         let mut del = None;
         ui.horizontal(|ui| {
-            if pill_button(ui, "Import", Some(Icon::Import), true).clicked() {
+            if pill_button(ui, "İçe aktar", Some(Icon::Import), false).clicked() {
                 self.import();
             }
+            self.create_button(ui);
             let strip_w = (ui.available_width() - 170.0).max(120.0);
             ui.allocate_ui(vec2(strip_w, 30.0), |ui| {
                 egui::ScrollArea::horizontal().id_salt("strip").auto_shrink([false, true]).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
                         if self.library.is_empty() {
-                            ui.label(RichText::new("Preset yok: Import ile AutoEQ / APO .txt ekle").font(body(12.5)).color(DIM));
+                            ui.label(RichText::new("Henüz ön ayar yok").font(body(12.5)).color(DIM));
                         }
                         for (name, _) in &self.library {
                             let active = self.preset_name.as_ref() == Some(name);

@@ -169,33 +169,6 @@ impl App {
         self.ae.applied = None;
     }
 
-    /// Motor sekmesindeki arama çubuğu: tıklayınca mağaza açılır; kulaklık simgesi cihazın adıyla açar.
-    pub(super) fn ae_bar(&mut self, ui: &mut egui::Ui) {
-        let hint = self.ae_device_query();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            // devrede bir otomatik EQ kuralı varsa sağda çipine yer bırak
-            let reserve = if self.rule_active.is_some() { 180.0 } else { 0.0 };
-            let w = (ui.available_width() - 44.0 - reserve).clamp(180.0, 440.0);
-            let (rect, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click());
-            let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.12);
-            ui.painter().rect_filled(rect, Rounding::same(9.0), lerp_color(BG2, BG3, h));
-            draw_icon(ui.painter(), Icon::Search, pos2(rect.left() + 20.0, rect.center().y), 14.0, lerp_color(DIM, TEXT, h));
-            ui.painter().text(pos2(rect.left() + 38.0, rect.center().y), Align2::LEFT_CENTER, "AutoEQ'da kulaklık profili ara…", body(13.0), lerp_color(DIM, TEXT, h));
-            if resp.on_hover_cursor(egui::CursorIcon::Text).clicked() {
-                self.ae_open(false);
-            }
-            let tip = if hint.is_empty() { "Çıkış cihazının adıyla ara".to_string() } else { format!("Çıkış cihazımın adıyla ara: {hint}") };
-            if icon_button(ui, Icon::Headphones, 34.0, false).on_hover_text(tip).clicked() {
-                self.ae_open(true);
-            }
-            // bir otomatik EQ kuralı devredeyse nedenini göster
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.auto_eq_chip(ui);
-            });
-        });
-    }
-
     pub(super) fn autoeq_overlay(&mut self, ctx: &egui::Context) {
         if !self.ae.open {
             return;
@@ -294,7 +267,6 @@ impl App {
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 1.0;
                             ui.label(RichText::new("AutoEQ").font(bold(18.0)).color(Color32::WHITE));
-                            ui.label(RichText::new("Kulaklığına özel hazır EQ profilleri").font(body(12.0)).color(DIM));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icon_button(ui, Icon::Close, 30.0, false).on_hover_text("Kapat (Esc)").clicked() {
@@ -355,7 +327,6 @@ impl App {
                                     ui.vertical_centered(|ui| {
                                         let dots = ".".repeat(1 + (self.ae.t0.elapsed().as_secs_f32() * 2.5) as usize % 3);
                                         ui.label(RichText::new(format!("Profil listesi indiriliyor{dots}")).font(bold(14.0)).color(TEXT));
-                                        ui.label(RichText::new("İlk kullanımda bir kez (~850 KB), sonra bilgisayarında saklanır.").font(body(12.0)).color(DIM));
                                     });
                                 }
                                 IndexState::Failed(msg) => {
@@ -371,20 +342,11 @@ impl App {
                                 }
                                 IndexState::Ready { .. } => {
                                     if self.ae.query.trim().is_empty() {
-                                        ui.add_space(50.0);
-                                        ui.vertical_centered(|ui| {
-                                            ui.label(RichText::new("Kulaklığının adını yaz").font(bold(14.0)).color(TEXT));
-                                            ui.add_space(2.0);
-                                            ui.label(RichText::new("ya da yukarıdaki kulaklık simgesine basıp çıkış cihazının adını kullan.").font(body(12.0)).color(DIM));
-                                            ui.add_space(2.0);
-                                            ui.label(RichText::new(format!("{} profil içinde arar.", crate::proof::group(total as u64))).font(body(12.0)).color(DIM));
-                                        });
+                                        // boş: yazmaya davet eden metin yok, alan kendiliğinden anlaşılır
                                     } else if rows.is_empty() {
                                         ui.add_space(50.0);
                                         ui.vertical_centered(|ui| {
-                                            ui.label(RichText::new(format!("\"{}\" için profil bulunamadı", self.ae.query.trim())).font(bold(14.0)).color(TEXT));
-                                            ui.add_space(2.0);
-                                            ui.label(RichText::new("Markasız, yalnızca model adını dene (ör. \"HD 600\").").font(body(12.0)).color(DIM));
+                                            ui.label(RichText::new("Sonuç bulunamadı").font(bold(14.0)).color(DIM));
                                         });
                                     } else {
                                         ui.label(RichText::new(format!("{} sonuç", rows.len())).font(body(12.0)).color(DIM));
@@ -422,12 +384,6 @@ impl App {
                                 // içerik pencereye sığmazsa kart içinde kayar (pencere taşmasın)
                                 egui::ScrollArea::vertical().id_salt("ae_prev").max_height(body_h - 32.0).auto_shrink([false, false]).show(ui, |ui| {
                                 let (Some(en), Some(pr)) = (&sel_entry, &profile) else {
-                                    ui.add_space(70.0);
-                                    ui.vertical_centered(|ui| {
-                                        ui.label(RichText::new("Önizleme").font(bold(14.0)).color(TEXT));
-                                        ui.add_space(2.0);
-                                        ui.label(RichText::new("Soldan bir profil seç: eğrisini burada görürsün,\nistersen çalan müzikte dinleyerek denersin.").font(body(12.0)).color(DIM));
-                                    });
                                     return;
                                 };
                                 ui.add(egui::Label::new(RichText::new(&en.name).font(bold(16.0)).color(Color32::WHITE)).wrap());
@@ -488,12 +444,6 @@ impl App {
                                         if pill_button(ui, "Kaydet ve kullan", Some(Icon::Save), true).clicked() {
                                             act = Some(Act::Save);
                                         }
-                                        ui.add_space(10.0);
-                                        ui.label(
-                                            RichText::new("Profil bu kulaklık modelinin ortalama ölçümüne göredir; senin ünitenin farkını telafi etmez. Başlangıç noktası olarak düşün, beğenmezsen Ekolayzır'dan ince ayar yap.")
-                                                .font(body(11.5))
-                                                .color(DIM),
-                                        );
                                     }
                                 }
                                 });
@@ -511,7 +461,7 @@ impl App {
                             }
                             _ => String::new(),
                         };
-                        ui.label(RichText::new(format!("Profiller AutoEq projesinden (MIT lisansı); ölçümler oratory1990, crinacle, Rtings vb. kaynaklara aittir.  {status}")).font(body(11.0)).color(alpha(DIM, 200)));
+                        ui.label(RichText::new(format!("AutoEq (MIT)  ·  {status}")).font(body(11.0)).color(alpha(DIM, 200)));
                         if matches!(state, IndexState::Ready { .. }) && !refreshing {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui.add(egui::Label::new(RichText::new("Listeyi yenile").font(body(11.0)).color(SKY)).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {

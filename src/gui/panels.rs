@@ -668,6 +668,8 @@ impl App {
                         if pill_button(ui, if on { "Ekolayzır açık" } else { "Ekolayzır kapalı" }, Some(Icon::Power), on).on_hover_text(tip).clicked() {
                             engine::EQ_OFF.store(on, Relaxed);
                         }
+                        // devrede bir otomatik EQ kuralı varsa nedenini göster
+                        self.auto_eq_chip(ui);
                     });
                 });
                 ui.add_space(10.0);
@@ -676,8 +678,6 @@ impl App {
                     return;
                 }
                 self.preset_strip(ui);
-                ui.add_space(8.0);
-                self.ae_bar(ui);
                 ui.add_space(8.0);
                 let total = ui.available_height();
                 let fader_h = 340.0;

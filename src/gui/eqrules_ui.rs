@@ -124,7 +124,7 @@ fn fit(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) -> String {
 }
 
 /// İki satırlı, tam genişlikte menü satırı.
-fn menu_row(ui: &mut egui::Ui, title: &str, sub: &str, enabled: bool) -> egui::Response {
+pub(super) fn menu_row(ui: &mut egui::Ui, title: &str, sub: &str, enabled: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(280.0), 42.0), if enabled { Sense::click() } else { Sense::hover() });
     let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered() && enabled, 0.1);
     ui.painter().rect_filled(rect, Rounding::same(8.0), alpha(BG3, (220.0 * h) as u8));
