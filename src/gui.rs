@@ -393,6 +393,8 @@ pub struct App {
     /// kütüphaneden "sıraya ekle" isteği: (parçalar, sıradaki olarak mı)
     pending_queue: Option<(Vec<PathBuf>, bool)>,
     undo: Option<(Undo, String, Instant)>,
+    /// söz kayması düğmesi basılı tutuluyor: (başlangıç, son adım, yön)
+    lyr_hold: Option<(Instant, Instant, i32)>,
     /// bit-perfect kanıtı: parça başı sayaç tabanı, görünen değerler ve son değişiklik zamanı
     proof_id: u64,
     proof_base: crate::proof::Counters,
@@ -543,6 +545,7 @@ impl App {
             resume_saved: Instant::now(),
             pending_queue: None,
             undo: None,
+            lyr_hold: None,
             proof_id: u64::MAX,
             proof_base: Default::default(),
             proof_view: Default::default(),

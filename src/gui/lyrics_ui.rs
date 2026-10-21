@@ -224,7 +224,8 @@ impl App {
         }
     }
 
-    /// Çark düğmesinin açtığı küçük pencere: sözler müzikten erken/geç kalıyorsa 0,1 sn adımlarla düzeltir; şarkı başına saklanır.
+    /// Çark düğmesinin açtığı küçük pencere: sözler müzikten erken/geç kalıyorsa düzeltir; şarkı başına saklanır.
+    /// `−`/`+` basılı tutulunca hızlanır; değer kutusuna tıklayıp klavyeden de yazılabilir (ör. -2,35).
     fn lyric_offset_popup(&mut self, ui: &mut egui::Ui, gear: &egui::Response, key: &str) {
         const STEP: i32 = 100;
         let id = gear.id.with("lyr_off");
@@ -233,23 +234,51 @@ impl App {
         }
         let cur = self.cfg.lyr_offsets.get(key).copied().unwrap_or(0);
         let mut next = cur;
+        let mut dir: Option<i32> = None;
         egui::popup_below_widget(ui, id, gear, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-            ui.set_min_width(210.0);
+            ui.set_min_width(230.0);
             ui.label(RichText::new("Söz kayması").font(bold(13.5)).color(Color32::WHITE));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if pill_button(ui, "−", None, false).clicked() {
-                    next -= STEP;
+                if pill_button(ui, "−", None, false).is_pointer_button_down_on() {
+                    dir = Some(-1);
                 }
-                ui.label(RichText::new(format!("{:+.1} sn", cur as f32 / 1000.0)).font(body(13.5)).color(TEXT));
-                if pill_button(ui, "+", None, false).clicked() {
-                    next += STEP;
+                let mut secs = cur as f64 / 1000.0;
+                let edit = egui::DragValue::new(&mut secs)
+                    .range(-10.0..=10.0)
+                    .speed(0.01)
+                    .custom_formatter(|v, _| format!("{v:+.2} sn"))
+                    .custom_parser(|s| s.trim().trim_end_matches("sn").trim().replace(',', ".").parse::<f64>().ok());
+                if ui.add(edit).on_hover_text("Tıklayıp yaz (ör. -2,35) ya da sürükle").changed() {
+                    next = (secs * 1000.0).round() as i32;
+                }
+                if pill_button(ui, "+", None, false).is_pointer_button_down_on() {
+                    dir = Some(1);
                 }
                 if cur != 0 && pill_button(ui, "Sıfırla", None, false).clicked() {
                     next = 0;
                 }
             });
         });
+        match dir {
+            Some(d) => {
+                let now = Instant::now();
+                match self.lyr_hold {
+                    Some((t0, last, hd)) if hd == d => {
+                        if let Some(step) = hold_repeat(t0.elapsed(), last.elapsed()) {
+                            next += d * step;
+                            self.lyr_hold = Some((t0, now, d));
+                        }
+                    }
+                    _ => {
+                        next += d * STEP;
+                        self.lyr_hold = Some((now, now, d));
+                    }
+                }
+                ui.ctx().request_repaint();
+            }
+            None => self.lyr_hold = None,
+        }
         if next != cur {
             if next == 0 {
                 self.cfg.lyr_offsets.remove(key);
@@ -360,5 +389,35 @@ impl App {
             // hemen yeniden çizim istemek döngüyü %100 CPU'ya çıkarır; ~40 fps akıcı kayma için yeter
             ctx.request_repaint_after(std::time::Duration::from_millis(40));
         }
+    }
+}
+
+/// Basılı tutma tekrarı: 0,4 sn sonra başlar, uzadıkça hızlanır. Dönen değer o an uygulanacak adım (ms); henüz sırası değilse `None`.
+fn hold_repeat(held: std::time::Duration, since_last: std::time::Duration) -> Option<i32> {
+    use std::time::Duration as D;
+    let (interval, step) = if held < D::from_millis(400) {
+        return None;
+    } else if held < D::from_millis(1200) {
+        (D::from_millis(100), 100)
+    } else if held < D::from_millis(2500) {
+        (D::from_millis(40), 100)
+    } else {
+        (D::from_millis(40), 500)
+    };
+    (since_last >= interval).then_some(step)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration as D;
+
+    #[test]
+    fn hold_waits_then_accelerates() {
+        assert_eq!(hold_repeat(D::from_millis(200), D::from_millis(200)), None, "ilk 0,4 sn tekrar yok");
+        assert_eq!(hold_repeat(D::from_millis(600), D::from_millis(50)), None, "aralık dolmadan adım yok");
+        assert_eq!(hold_repeat(D::from_millis(600), D::from_millis(100)), Some(100));
+        assert_eq!(hold_repeat(D::from_millis(1500), D::from_millis(40)), Some(100), "daha sık");
+        assert_eq!(hold_repeat(D::from_millis(3000), D::from_millis(40)), Some(500), "uzun basışta büyük adım");
     }
 }
