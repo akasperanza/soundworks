@@ -159,6 +159,8 @@ struct Config {
     dither: bool,
     /// ses motoru modül zinciri
     chain: Vec<crate::fx::FxSpec>,
+    /// otomatik EQ kuralları (şarkı / albüm / sanatçı -> ön ayar)
+    eq_rules: Vec<eqrules_ui::EqRule>,
     /// pencere: x, y, genişlik, yükseklik (mantıksal), ekran ölçeği, büyütülmüş mü
     win: Option<[f32; 6]>,
 }
@@ -203,6 +205,7 @@ impl Default for Config {
             ui_zoom: 0,
             dither: true,
             chain: Vec::new(),
+            eq_rules: Vec::new(),
             win: None,
         }
     }
@@ -234,6 +237,7 @@ mod proof_ui;
 mod queue_ui;
 mod search_ui;
 mod autoeq_ui;
+mod eqrules_ui;
 mod settings_ui;
 mod shell;
 mod tips_ui;
@@ -246,6 +250,7 @@ use shell::request_quit;
 enum Undo {
     Album(library::Album, usize),
     Preset(String, Vec<u8>),
+    Rule(eqrules_ui::EqRule, usize),
 }
 
 struct Running {
@@ -449,6 +454,11 @@ pub struct App {
     /// AutoEQ mağazası: indirme istemcisi ve pencere durumu
     autoeq: crate::autoeq::Client,
     ae: autoeq_ui::AeUi,
+    /// otomatik EQ: son değerlendirilen parça kimliği, yeniden değerlendirme isteği, şu an uygulanan kural, ayarlardaki ekleme formu
+    eq_rule_seen: u64,
+    eq_rule_dirty: bool,
+    rule_active: Option<eqrules_ui::EqRule>,
+    rule_new: Option<eqrules_ui::RuleNew>,
     search_query: String,
     search_sel: usize,
     search_focus: bool,
@@ -604,6 +614,10 @@ impl App {
             search_open: false,
             autoeq: crate::autoeq::Client::new(data_dir().join("autoeq_index.md")),
             ae: autoeq_ui::AeUi::new(),
+            eq_rule_seen: u64::MAX,
+            eq_rule_dirty: false,
+            rule_active: None,
+            rule_new: None,
             search_query: String::new(),
             search_sel: 0,
             search_focus: false,
@@ -723,6 +737,10 @@ impl App {
         if crate::devenv::dev_var("SW_LYRICS").is_ok() {
             app.lyrics_open = true;
         }
+        // SW_RULE_TRACK=yol: o dosya için "test.txt" ön ayarını otomatik uygulayan şarkı kuralı ekler (doğrulama)
+        if let Ok(path) = crate::devenv::dev_var("SW_RULE_TRACK") {
+            app.cfg.eq_rules.push(eqrules_ui::EqRule { scope: eqrules_ui::RuleScope::Track, key: path, label: "Test".into(), sub: String::new(), preset: Some("test.txt".into()) });
+        }
         if let Ok(q) = crate::devenv::dev_var("SW_AUTOEQ") {
             app.ae_open(false);
             app.ae.query = q;
@@ -826,7 +844,7 @@ impl App {
         if last.map(|t| t.elapsed().as_millis() >= 500).unwrap_or(true) {
             *last = Some(Instant::now());
             dev_trace(&format!(
-                "durum kare={} update_ms={} playing={} pos={:.1} vol={:.2} view={} engine={} idx={:?} kanıt={:?}",
+                "durum kare={} update_ms={} playing={} pos={:.1} vol={:.2} view={} engine={} idx={:?} kanıt={:?} ön_ayar={:?} kural={}",
                 FRAMES.swap(0, Relaxed),
                 UPDATE_US.swap(0, Relaxed) / 1000,
                 self.player.playing.load(Relaxed),
@@ -839,7 +857,9 @@ impl App {
                 },
                 self.running.is_some(),
                 self.player.current(),
-                self.proof_view
+                self.proof_view,
+                self.preset_name,
+                self.rule_active.is_some()
             ));
         }
         if crate::devenv::dev_var("SW_LOGS").is_ok() && last.map(|t| t.elapsed().as_millis() < 5).unwrap_or(false) {
@@ -1055,6 +1075,7 @@ impl eframe::App for App {
         }
         self.tick_stopping();
         self.tick_proof();
+        self.tick_eq_rules();
         if let Some(item) = &self.tray_eq {
             let on = !engine::EQ_OFF.load(Relaxed);
             if item.is_checked() != on {

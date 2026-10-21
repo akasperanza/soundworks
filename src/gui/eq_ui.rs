@@ -186,6 +186,7 @@ impl App {
                         self.save_preset();
                     }
                 });
+                self.auto_eq_button(ui);
             });
         });
         if let Some(n) = pick {

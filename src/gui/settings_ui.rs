@@ -12,7 +12,12 @@ impl App {
                 ui.set_opacity(fade);
                 let running = self.running.is_some();
                 let cfg_before = self.cfg.clone();
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
+                // doğrulama: SW_SCROLL=piksel ile sayfayı belirli bir yere kaydırır
+                if let Some(y) = crate::devenv::dev_var("SW_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) {
+                    area = area.vertical_scroll_offset(y);
+                }
+                area.show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Ayarlar").font(bold(20.0)));
                         if running {
@@ -238,6 +243,8 @@ impl App {
                 self.delete_preset(&n);
             }
         });
+        ui.add_space(10.0);
+        self.eq_rules_card(ui);
         ui.add_space(10.0);
         category(ui, "Uygulama");
         card(ui, |ui| {

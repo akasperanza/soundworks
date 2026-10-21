@@ -528,6 +528,12 @@ impl App {
                             self.lib.save();
                         }
                     }
+                    Undo::Rule(r, i) => {
+                        let at = i.min(self.cfg.eq_rules.len());
+                        self.cfg.eq_rules.insert(at, r);
+                        self.eq_rule_dirty = true;
+                        self.save_cfg();
+                    }
                     Undo::Preset(name, bytes) => {
                         let _ = std::fs::create_dir_all(presets_dir());
                         let _ = std::fs::write(presets_dir().join(&name), bytes);

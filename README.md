@@ -18,7 +18,10 @@ Soundworks'ün çıkış noktası şu soru: *"Bit-perfect çalıyorum"* demek ko
 
 **Ses işleme**
 - Parametrik EQ (APO uyumlu ön ayarlar), A/B karşılaştırma, bant solo.
-- Modül zinciri, true-peak limiter, crossfeed, denge, mono.
+- **AutoEQ mağazası:** kulaklık modelini ara (çıkış cihazının adından otomatik doldurulur), eğrisini gör, çalan müzikte geçici dinle, beğenirsen kaydet. Profiller [AutoEq](https://github.com/jaakkopasanen/AutoEq) projesinden (MIT) gelir.
+- **Otomatik EQ kuralları:** belirli bir şarkı, albüm ya da sanatçı çalınca ekolayzır seçtiğin ön ayara kendiliğinden geçer.
+- Modül marketi: Limiter (true-peak), Kompresör, Stereo Genişlik, Kazanç, Filtre (HPF/LPF), Ton (bas/tiz), Loudness (ses seviyesine bağlı), ayarlanabilir Crossfeed.
+- Denge, mono.
 - ReplayGain (parça/albüm), canlı LUFS (momentary, short-term, integrated) ve gerçek tepe ölçümü.
 - Sistem DSP kipi: sanal bir kablo (ör. VB-Cable) üzerinden tüm uygulamaların sesini yakalayıp işleyebilir.
 
@@ -61,6 +64,7 @@ cargo build --release --features devtools
 | `src/proof.rs` | Bit-perfect ölçümü (sayaçlar, ışık kararı) |
 | `src/dsd.rs` | DSF/DFF okuyucu, DSD→PCM dönüştürücü, DoP çerçeveleme |
 | `src/fx.rs`, `src/biquad.rs`, `src/loudness.rs` | Modüller, filtreler, LUFS/true-peak |
+| `src/autoeq.rs` | AutoEq profil indeksi, arama, indirme |
 | `src/library.rs`, `src/web.rs` | Kütüphane; söz, sanatçı ve tür sorguları |
 | `src/gui.rs`, `src/gui/` | Arayüz (konuya göre bölünmüş görünümler) |
 

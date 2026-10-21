@@ -174,7 +174,9 @@ impl App {
         let hint = self.ae_device_query();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            let w = (ui.available_width() - 44.0).clamp(200.0, 440.0);
+            // devrede bir otomatik EQ kuralı varsa sağda çipine yer bırak
+            let reserve = if self.rule_active.is_some() { 180.0 } else { 0.0 };
+            let w = (ui.available_width() - 44.0 - reserve).clamp(180.0, 440.0);
             let (rect, resp) = ui.allocate_exact_size(vec2(w, 34.0), Sense::click());
             let h = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.12);
             ui.painter().rect_filled(rect, Rounding::same(9.0), lerp_color(BG2, BG3, h));
@@ -187,6 +189,10 @@ impl App {
             if icon_button(ui, Icon::Headphones, 34.0, false).on_hover_text(tip).clicked() {
                 self.ae_open(true);
             }
+            // bir otomatik EQ kuralı devredeyse nedenini göster
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                self.auto_eq_chip(ui);
+            });
         });
     }
 
