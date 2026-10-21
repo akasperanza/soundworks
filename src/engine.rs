@@ -906,7 +906,8 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         let (mut pk_l, mut pk_r, mut clips) = (0f32, 0f32, 0u32);
         let mut pf = crate::proof::Counters::default();
         let mix_tgt = if ctl.bypass.load(Ordering::Relaxed) || EQ_OFF.load(Ordering::Relaxed) { 0f32 } else { 1f32 };
-        let dry_gain = if ctl.level_match.load(Ordering::Relaxed) { eq.preamp_gain() } else { 1.0 };
+        // seviye eşleme yalnızca A/B karşılaştırması içindir (basılı tut); EQ kalıcı kapatılınca sinyale dokunulmaz
+        let dry_gain = if ctl.level_match.load(Ordering::Relaxed) && ctl.bypass.load(Ordering::Relaxed) { eq.preamp_gain() } else { 1.0 };
         // sinyale dokunulmuyorsa (bit-perfect yol) dither eklenmez
         let chain_touched = (!eq.is_identity() && mix_tgt > 0.0)
             || chain.any_enabled()

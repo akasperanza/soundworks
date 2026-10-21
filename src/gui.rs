@@ -402,6 +402,10 @@ pub struct App {
     proof_dry_shown: u64,
     proof_alt_seen: u64,
     proof_alt_at: Instant,
+    /// her değişiklik nedeninin (bit sırası) en son görüldüğü an; makbuzda yalnızca güncel nedenler gösterilir
+    proof_cause_at: [Instant; 6],
+    proof_cause_mask: u32,
+    proof_frames_seen: u64,
     wave_fetcher: wave::WaveFetcher,
     wave_cache: HashMap<String, Arc<Vec<f32>>>,
     wave_drag: Option<f32>,
@@ -552,6 +556,9 @@ impl App {
             proof_dry_shown: 0,
             proof_alt_seen: 0,
             proof_alt_at: Instant::now() - std::time::Duration::from_secs(10),
+            proof_cause_at: [Instant::now() - std::time::Duration::from_secs(10); 6],
+            proof_cause_mask: 0,
+            proof_frames_seen: 0,
             wave_fetcher: wave::WaveFetcher::new(),
             wave_cache: HashMap::new(),
             wave_drag: None,
@@ -845,6 +852,12 @@ impl App {
                 once.0 = true;
                 dev_trace("pencere gizlendi");
                 hide_window();
+            }
+        }
+        // SW_EQOFF=sn: o andan itibaren ekolayzırı kapatır (arayüzdeki düğmeyle aynı durum)
+        if let Some(q) = crate::devenv::dev_var("SW_EQOFF").ok().and_then(|v| v.parse::<f32>().ok()) {
+            if el >= q {
+                engine::EQ_OFF.store(true, Relaxed);
             }
         }
         // SW_AUTOQUIT=sn: tepsi menüsündeki "Çıkış" ile aynı işlevi çağırır

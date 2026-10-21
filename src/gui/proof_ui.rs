@@ -22,15 +22,32 @@ impl App {
         };
         let cur = ctl.proof.read();
         let id = self.player.meta_id.load(Relaxed);
-        let mut causes = cur.causes;
+        let old = std::time::Duration::from_secs(10);
         if id != self.proof_id {
             self.proof_id = id;
             self.proof_base = cur;
             self.proof_dry_shown = 0;
             self.proof_alt_seen = cur.alt;
+            self.proof_cause_at = [Instant::now() - old; 6];
+            self.proof_cause_mask = 0;
+            self.proof_frames_seen = cur.ok + cur.alt;
             ctl.proof.causes.store(0, Relaxed);
-            causes = 0;
         }
+        // nedenler "yapışmaz": her neden son görüldüğü andan itibaren 1,5 sn geçerlidir. Yalnızca çerçeve yazılırken (çalarken) süre
+        // işler; duraklatınca son bilinen durum korunur.
+        let fresh = ctl.proof.causes.swap(0, Relaxed);
+        let now = Instant::now();
+        for (i, t) in self.proof_cause_at.iter_mut().enumerate() {
+            if fresh >> i & 1 == 1 {
+                *t = now;
+            }
+        }
+        let frames = cur.ok + cur.alt;
+        if frames != self.proof_frames_seen {
+            self.proof_frames_seen = frames;
+            self.proof_cause_mask = (0..6).filter(|&i| self.proof_cause_at[i].elapsed() < std::time::Duration::from_millis(1500)).fold(0, |m, i| m | 1 << i);
+        }
+        let causes = self.proof_cause_mask;
         let b = self.proof_base;
         let v = Counters { ok: cur.ok.saturating_sub(b.ok), ramp: cur.ramp.saturating_sub(b.ramp), alt: cur.alt.saturating_sub(b.alt), dry: cur.dry.saturating_sub(b.dry), causes };
         // parça sonunda halka doğal olarak boşalır: son saniyedeki boşalmalar kesinti sayılmaz
