@@ -327,6 +327,8 @@ pub struct App {
     toast: Option<(String, Instant)>,
     frames: u32,
     _tray: Option<TrayIcon>,
+    /// tepsideki "EQ açık" işareti; arayüzdeki düğmeyle senkron tutulur
+    tray_eq: Option<CheckMenuItem>,
     start_hidden: bool,
     quitting: bool,
     lib: Library,
@@ -449,6 +451,10 @@ impl App {
         let devices = engine::list_devices().unwrap_or_default();
         // eski sürümde cihaz adla saklanıyordu; kimliğe çevir
         let migrated = engine::migrate_device_ref(&devices, &mut cfg.to) | engine::migrate_device_ref(&devices, &mut cfg.from);
+        let (tray, tray_eq) = match make_tray(ctx) {
+            Some((t, e)) => (Some(t), Some(e)),
+            None => (None, None),
+        };
         let mut app = App {
             viz_mode: match cfg.viz_mode {
                 1 => VizMode::Spectrogram,
@@ -481,7 +487,8 @@ impl App {
             tint_target: BLUE,
             toast: None,
             frames: 0,
-            _tray: make_tray(ctx),
+            _tray: tray,
+            tray_eq,
             start_hidden: false,
             quitting: false,
             lib: Library::load(),
@@ -1015,6 +1022,12 @@ impl eframe::App for App {
         }
         self.tick_stopping();
         self.tick_proof();
+        if let Some(item) = &self.tray_eq {
+            let on = !engine::EQ_OFF.load(Relaxed);
+            if item.is_checked() != on {
+                item.set_checked(on);
+            }
+        }
         self.tick_dsd_volume_note();
         let note = self.player.note.lock().unwrap().take();
         if let Some(n) = note {

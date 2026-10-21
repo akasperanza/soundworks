@@ -662,6 +662,13 @@ impl App {
                     let mut t = self.motor_tab;
                     segmented(ui, &mut t, &[(0u8, "Ekolayzır", None), (1u8, "Modüller", None)]);
                     self.motor_tab = t;
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let on = !engine::EQ_OFF.load(Relaxed);
+                        let tip = if on { "Ekolayzırı devre dışı bırakır; sinyal EQ'dan geçmez" } else { "Ekolayzırı yeniden açar" };
+                        if pill_button(ui, if on { "Ekolayzır açık" } else { "Ekolayzır kapalı" }, Some(Icon::Power), on).on_hover_text(tip).clicked() {
+                            engine::EQ_OFF.store(on, Relaxed);
+                        }
+                    });
                 });
                 ui.add_space(10.0);
                 if self.motor_tab == 1 {

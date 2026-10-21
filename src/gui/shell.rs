@@ -74,7 +74,7 @@ pub fn run(start_hidden: bool) -> anyhow::Result<()> {
     .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-pub(super) fn make_tray(ctx: &egui::Context) -> Option<TrayIcon> {
+pub(super) fn make_tray(ctx: &egui::Context) -> Option<(TrayIcon, CheckMenuItem)> {
     // 32x32 mavi yuvarlak kare + dalga
     let n = 32usize;
     let mut px = vec![0u8; n * n * 4];
@@ -124,7 +124,7 @@ pub(super) fn make_tray(ctx: &egui::Context) -> Option<TrayIcon> {
             c3.request_repaint();
         }
     }));
-    Some(tray)
+    Some((tray, eq))
 }
 
 /// Tepsiden "Çıkış": önce temiz kapanış isteği (arayüz kapanışı görür, `Drop` ayarları kaydedip motoru durdurur);
