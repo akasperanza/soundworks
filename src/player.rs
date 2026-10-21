@@ -1232,9 +1232,14 @@ mod tests {
             before += drain(&p);
             std::thread::sleep(Duration::from_millis(2));
         }
+        // çözücü ölçüm sırasında ilerlemesin: duraklat, durmasını bekle, halkayı boşalt
+        p.playing.store(false, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(60));
+        drain(&p);
         p.set_rate(48000);
         let pos = p.position();
         p.reload_current();
+        p.playing.store(true, Ordering::Relaxed);
         let mut after = 0u64;
         let t1 = std::time::Instant::now();
         while t1.elapsed() < Duration::from_secs(8) {
