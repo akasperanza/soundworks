@@ -294,24 +294,23 @@ impl App {
             p.text_tr(pos2(rect.right() - margin, rect.bottom() - 10.0), Align2::RIGHT_BOTTOM, "Tab: sözler / sıradakiler", body(12.0), alpha(DIM, (160.0 * hint_a) as u8));
         }
         if self.ambient_on && ctl_a > 0.0 {
-            let labels = [crate::i18n::tr("Sözler"), crate::i18n::tr("Sıradakiler"), crate::i18n::tr("Kapat")];
-            let h = 34.0;
+            let icons = [Icon::Lyrics, Icon::List, Icon::Close];
+            let h = 38.0;
             let mut x = rect.right() - margin;
             let y0 = rect.top() + (margin * 0.35).max(14.0);
             let ptr = ctx.input(|i| i.pointer.hover_pos());
             let clicked = ctx.input(|i| i.pointer.primary_clicked());
             let mut hit: Option<usize> = None;
-            for (i, label) in labels.iter().enumerate().rev() {
-                let g = p.layout_no_wrap(label.clone(), bold(13.0), Color32::WHITE);
-                let r = Rect::from_min_max(pos2(x - g.size().x - 28.0, y0), pos2(x, y0 + h));
+            let mut ps = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("ambient_layer")));
+            ps.set_opacity(e * ctl_a);
+            for (i, icon) in icons.iter().enumerate().rev() {
+                let r = Rect::from_min_max(pos2(x - h, y0), pos2(x, y0 + h));
                 x = r.left() - 8.0;
                 let hov = ptr.map_or(false, |q| r.contains(q));
                 let on = (i == 0 && side == 1) || (i == 1 && side == 2);
                 let fill = if on { alpha(accent, 90) } else { alpha(Color32::WHITE, if hov { 40 } else { 18 }) };
-                let mut ps = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("ambient_layer")));
-                ps.set_opacity(e * ctl_a);
-                ps.rect_filled(r, Rounding::same(h * 0.5), fill);
-                ps.text(r.center(), Align2::CENTER_CENTER, label, bold(13.0), if on || hov { Color32::WHITE } else { TEXT });
+                ps.circle_filled(r.center(), h * 0.5, fill);
+                draw_icon(&ps, *icon, r.center(), 20.0, if on || hov { Color32::WHITE } else { TEXT });
                 if clicked && hov {
                     hit = Some(i);
                 }
