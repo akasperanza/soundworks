@@ -24,7 +24,7 @@ impl App {
     pub(super) fn ambient_tick(&mut self, ctx: &egui::Context) {
         let now = Instant::now();
         let last_ptr = &mut self.ambient_ptr;
-        let (active, f11) = ctx.input(|i| {
+        let (moved, button, wheel, keyed, f11, tab) = ctx.input(|i| {
             let mut moved = false;
             for e in &i.events {
                 match e {
@@ -38,18 +38,13 @@ impl App {
                     _ => {}
                 }
             }
-            let active = moved || i.events.iter().any(|e| {
-                matches!(
-                    e,
-                    egui::Event::PointerButton { .. }
-                        | egui::Event::MouseWheel { .. }
-                        | egui::Event::Text(_)
-                        | egui::Event::Touch { .. }
-                        | egui::Event::Key { pressed: true, .. }
-                )
-            });
-            (active, i.key_pressed(egui::Key::F11))
+            let any = |f: &dyn Fn(&egui::Event) -> bool| i.events.iter().any(|e| f(e));
+            let button = any(&|e| matches!(e, egui::Event::PointerButton { .. }));
+            let wheel = any(&|e| matches!(e, egui::Event::MouseWheel { .. }));
+            let keyed = any(&|e| matches!(e, egui::Event::Text(_) | egui::Event::Touch { .. } | egui::Event::Key { pressed: true, .. }));
+            (moved, button, wheel, keyed, i.key_pressed(egui::Key::F11), i.key_pressed(egui::Key::Tab))
         });
+        let active = moved || button || wheel || keyed;
         let swallow = |ctx: &egui::Context| {
             ctx.input_mut(|i| {
                 i.events.retain(|e| {
@@ -68,10 +63,18 @@ impl App {
                 })
             });
         };
-        if self.ambient_on && ctx.input(|i| i.key_pressed(egui::Key::Tab)) {
-            self.ambient_side = (self.ambient_side + 1) % 3;
+        if self.ambient_on {
+            if tab {
+                self.ambient_side = (self.ambient_side + 1) % 3;
+                self.ambient_ctl = now;
+                swallow(ctx);
+            } else if f11 || keyed {
+                self.ambient_on = false;
+                swallow(ctx);
+            } else if moved || wheel || button {
+                self.ambient_ctl = now;
+            }
             self.ambient_last = now;
-            swallow(ctx);
             return;
         }
         if f11 && !self.ambient_on && !self.ambient_blocked() {
@@ -82,14 +85,10 @@ impl App {
             return;
         }
         if active {
-            if self.ambient_on {
-                self.ambient_on = false;
-                swallow(ctx);
-            }
             self.ambient_last = now;
             return;
         }
-        if self.ambient_on || !self.cfg.ambient {
+        if !self.cfg.ambient {
             return;
         }
         let hidden = WINDOW_HIDDEN.load(Relaxed) || ctx.input(|i| i.viewport().minimized.unwrap_or(false));
@@ -106,7 +105,9 @@ impl App {
         if t <= 0.003 {
             return;
         }
-        if self.ambient_on {
+        let ctl_age = self.ambient_ctl.elapsed().as_secs_f32();
+        let ctl_a = (1.0 - (ctl_age - 2.6) / 0.6).clamp(0.0, 1.0);
+        if self.ambient_on && ctl_a <= 0.0 {
             ctx.set_cursor_icon(egui::CursorIcon::None);
         }
         let e = ease(t);
@@ -291,6 +292,39 @@ impl App {
         let hint_a = (1.0 - (self.ambient_since.elapsed().as_secs_f32() - 4.0) / 1.5).clamp(0.0, 1.0);
         if hint_a > 0.0 && self.ambient_on {
             p.text_tr(pos2(rect.right() - margin, rect.bottom() - 10.0), Align2::RIGHT_BOTTOM, "Tab: sözler / sıradakiler", body(12.0), alpha(DIM, (160.0 * hint_a) as u8));
+        }
+        if self.ambient_on && ctl_a > 0.0 {
+            let labels = [crate::i18n::tr("Sözler"), crate::i18n::tr("Sıradakiler"), crate::i18n::tr("Kapat")];
+            let h = 34.0;
+            let mut x = rect.right() - margin;
+            let y0 = rect.top() + (margin * 0.35).max(14.0);
+            let ptr = ctx.input(|i| i.pointer.hover_pos());
+            let clicked = ctx.input(|i| i.pointer.primary_clicked());
+            let mut hit: Option<usize> = None;
+            for (i, label) in labels.iter().enumerate().rev() {
+                let g = p.layout_no_wrap(label.clone(), bold(13.0), Color32::WHITE);
+                let r = Rect::from_min_max(pos2(x - g.size().x - 28.0, y0), pos2(x, y0 + h));
+                x = r.left() - 8.0;
+                let hov = ptr.map_or(false, |q| r.contains(q));
+                let on = (i == 0 && side == 1) || (i == 1 && side == 2);
+                let fill = if on { alpha(accent, 90) } else { alpha(Color32::WHITE, if hov { 40 } else { 18 }) };
+                let mut ps = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, Id::new("ambient_layer")));
+                ps.set_opacity(e * ctl_a);
+                ps.rect_filled(r, Rounding::same(h * 0.5), fill);
+                ps.text(r.center(), Align2::CENTER_CENTER, label, bold(13.0), if on || hov { Color32::WHITE } else { TEXT });
+                if clicked && hov {
+                    hit = Some(i);
+                }
+            }
+            match hit {
+                Some(0) => self.ambient_side = if self.ambient_side == 1 { 0 } else { 1 },
+                Some(1) => self.ambient_side = if self.ambient_side == 2 { 0 } else { 2 },
+                Some(_) => self.ambient_on = false,
+                None if clicked => self.ambient_on = false,
+                None => {}
+            }
+        } else if self.ambient_on && ctx.input(|i| i.pointer.primary_clicked()) {
+            self.ambient_on = false;
         }
         ctx.request_repaint_after(Duration::from_millis(33));
     }
