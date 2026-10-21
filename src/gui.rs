@@ -331,6 +331,8 @@ pub struct App {
     meta: TrackMeta,
     cover_id: u64,
     cover_tex: Option<TextureHandle>,
+    /// Soundworks logosu (koyu zemin için beyaz yazılı sürüm; şekiller orijinalle birebir aynı)
+    logo_tex: Option<TextureHandle>,
     cover_t0: Instant,
     tint: Color32,
     tint_target: Color32,
@@ -513,6 +515,11 @@ impl App {
             meta: TrackMeta::default(),
             cover_id: 0,
             cover_tex: None,
+            logo_tex: image::load_from_memory(include_bytes!("../assets/logo_dark.png")).ok().map(|im| {
+                let im = im.to_rgba8();
+                let (w, h) = im.dimensions();
+                ctx.load_texture("logo", ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &im), TextureOptions::LINEAR)
+            }),
             cover_t0: Instant::now(),
             tint: BLUE,
             tint_target: BLUE,

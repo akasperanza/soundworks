@@ -55,7 +55,16 @@ impl App {
                     if ub.clicked() {
                         self.upload_open = !self.upload_open;
                     }
-                    ui.label(RichText::new("Soundworks").font(bold(17.0)));
+                    // logo: 373×97 oranında, başlık satırına sığacak yükseklikte
+                    match &self.logo_tex {
+                        Some(t) => {
+                            let h = 28.0;
+                            ui.add(egui::Image::new((t.id(), vec2(h * 373.0 / 97.0, h))));
+                        }
+                        None => {
+                            ui.label(RichText::new("Soundworks").font(bold(17.0)));
+                        }
+                    }
                     ui.add_space(18.0);
                     for (v, n) in [(View::Library, "Kütüphane"), (View::Motor, "Motor")] {
                         if tab(ui, n, self.view == v).clicked() {
