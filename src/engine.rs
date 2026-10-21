@@ -1652,6 +1652,20 @@ mod dsp_tests {
 mod device_tests {
     use super::*;
 
+    /// Gerçek cihaz yoklaması (ses çalmaz, yalnızca biçim sorar): `SW_PROBE_ID=<cihaz kimliği> cargo test probe_real -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn probe_real_device() {
+        com_init().unwrap();
+        for d in list_devices().unwrap() {
+            println!("cihaz: {} | {:?} | varsayılan={} | {}", d.name, d.kind, d.is_default, d.id);
+        }
+        let id = std::env::var("SW_PROBE_ID").expect("SW_PROBE_ID");
+        let rates = supported_rates(&id);
+        println!("exclusive kabul edilen hızlar: {rates:?}");
+        println!("44.1 kHz parça için seçilen: {}", choose_rate(44100, &rates, 48000));
+    }
+
 
     fn dev(id: &str, name: &str) -> DeviceInfo {
         DeviceInfo { id: id.into(), name: name.into(), is_default: false, kind: DeviceKind::Unknown }

@@ -402,6 +402,8 @@ pub struct App {
     proof_dry_shown: u64,
     proof_alt_seen: u64,
     proof_alt_at: Instant,
+    /// cihazın son yoklamada kabul ettiği exclusive hızlar (makbuzda hız dönüşümünün nedenini göstermek için)
+    probe_rates: Vec<u32>,
     /// her değişiklik nedeninin (bit sırası) en son görüldüğü an; makbuzda yalnızca güncel nedenler gösterilir
     proof_cause_at: [Instant; 6],
     proof_cause_mask: u32,
@@ -556,6 +558,7 @@ impl App {
             proof_dry_shown: 0,
             proof_alt_seen: 0,
             proof_alt_at: Instant::now() - std::time::Duration::from_secs(10),
+            probe_rates: Vec::new(),
             proof_cause_at: [Instant::now() - std::time::Duration::from_secs(10); 6],
             proof_cause_mask: 0,
             proof_frames_seen: 0,

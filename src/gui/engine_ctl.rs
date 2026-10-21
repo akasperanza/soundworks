@@ -115,16 +115,26 @@ impl App {
         }
         let mut sup: Vec<u32> = vec![];
         if let Ok(d) = engine::resolve(to) {
-            sup = match self.rate_cache.get(&d.id) {
-                Some(s) => s.clone(),
-                None => {
-                    let s = engine::supported_rates(&d.id);
-                    if !s.is_empty() {
-                        self.rate_cache.insert(d.id.clone(), s.clone());
-                    }
-                    s
+            // her başlatmada yeniden sor (yoklama ~20 ms): cihaz modu değişmiş olabilir (ör. USB-C takıldı). Cihaz o an meşgulse
+            // ya da cevap vermezse birkaç kez dene; yine boşsa son bilinen listeye dön.
+            for attempt in 0..3 {
+                sup = engine::supported_rates(&d.id);
+                if !sup.is_empty() {
+                    break;
                 }
-            };
+                if attempt < 2 {
+                    std::thread::sleep(std::time::Duration::from_millis(150));
+                }
+            }
+            if sup.is_empty() {
+                sup = self.rate_cache.get(&d.id).cloned().unwrap_or_default();
+            } else {
+                self.rate_cache.insert(d.id.clone(), sup.clone());
+            }
+        }
+        self.probe_rates = sup.clone();
+        if sup.is_empty() {
+            self.say(format!("Cihazın kabul ettiği hızlar alınamadı; sabit {} kHz kullanılıyor", fixed as f32 / 1000.0));
         }
         self.player.set_follow(true, sup.clone(), fixed);
         let r = match self.start_rate.take() {

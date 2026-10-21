@@ -100,7 +100,13 @@ impl App {
                 } else {
                     let drift = v.causes & proof::DRIFT != 0;
                     rows.push(if self.meta.resampled || drift {
-                        (false, format!("Hız dönüştürülüyor (kaynak {:.1} kHz, çıkış {:.1} kHz)", self.meta.src_rate as f32 / 1000.0, o.rate as f32 / 1000.0))
+                        let why = if self.probe_rates.is_empty() {
+                            "cihazın kabul ettiği hızlar alınamadı".to_string()
+                        } else {
+                            let list: Vec<String> = self.probe_rates.iter().map(|r| format!("{:.1}", *r as f32 / 1000.0)).collect();
+                            format!("cihazın kabul ettiği: {} kHz", list.join(" · "))
+                        };
+                        (false, format!("Hız dönüştürülüyor ({:.1} → {:.1} kHz); {why}", self.meta.src_rate as f32 / 1000.0, o.rate as f32 / 1000.0))
                     } else {
                         (true, "Hız dönüşümü yok".into())
                     });
