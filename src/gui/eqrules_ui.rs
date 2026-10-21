@@ -9,6 +9,8 @@ pub(super) enum RuleScope {
     Track,
     Album,
     Artist,
+    /// çıkış cihazı: o cihaz seçiliyken (çalan parçadan bağımsız) uygulanır
+    Device,
 }
 
 impl RuleScope {
@@ -17,6 +19,7 @@ impl RuleScope {
             RuleScope::Track => "ŞARKI",
             RuleScope::Album => "ALBÜM",
             RuleScope::Artist => "SANATÇI",
+            RuleScope::Device => "CİHAZ",
         }
     }
     fn lower(self) -> &'static str {
@@ -24,6 +27,7 @@ impl RuleScope {
             RuleScope::Track => "şarkı",
             RuleScope::Album => "albüm",
             RuleScope::Artist => "sanatçı",
+            RuleScope::Device => "cihaz",
         }
     }
     fn color(self) -> Color32 {
@@ -31,6 +35,7 @@ impl RuleScope {
             RuleScope::Track => SKY,
             RuleScope::Album => GREEN,
             RuleScope::Artist => AMBER,
+            RuleScope::Device => Color32::from_rgb(190, 150, 255),
         }
     }
     /// Öncelik: küçük sayı önce kazanır.
@@ -39,6 +44,7 @@ impl RuleScope {
             RuleScope::Track => 0,
             RuleScope::Album => 1,
             RuleScope::Artist => 2,
+            RuleScope::Device => 3,
         }
     }
 }
@@ -71,15 +77,17 @@ pub(super) fn artist_key(name: &str) -> String {
     name.trim().to_lowercase()
 }
 
-/// Çalan parçaya uyan kuralı seçer: şarkı > albüm > sanatçı.
-pub(super) fn resolve_rule<'a>(rules: &'a [EqRule], now: &Playing) -> Option<&'a EqRule> {
-    let ak = artist_key(&now.artist);
+/// Çalan parçaya ve çıkış cihazına uyan kuralı seçer: şarkı > albüm > sanatçı > cihaz.
+/// Cihaz kuralı çalan parça olmadan da uygulanır (ör. kulaklık seçilince o kulaklığın düzeltmesi).
+pub(super) fn resolve_rule<'a>(rules: &'a [EqRule], now: Option<&Playing>, device: Option<&str>) -> Option<&'a EqRule> {
+    let ak = now.map(|n| artist_key(&n.artist)).unwrap_or_default();
     rules
         .iter()
         .filter(|r| match r.scope {
-            RuleScope::Track => r.key == now.path,
-            RuleScope::Album => now.album_key.as_deref() == Some(r.key.as_str()),
+            RuleScope::Track => now.map_or(false, |n| r.key == n.path),
+            RuleScope::Album => now.map_or(false, |n| n.album_key.as_deref() == Some(r.key.as_str())),
             RuleScope::Artist => !ak.is_empty() && r.key == ak,
+            RuleScope::Device => device == Some(r.key.as_str()),
         })
         .min_by_key(|r| r.scope.rank())
 }
@@ -121,6 +129,13 @@ fn fit(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) -> String {
         }
     }
     chars[..lo].iter().collect::<String>() + "…"
+}
+
+/// Kapsam rozeti (ŞARKI / ALBÜM / SANATÇI).
+pub(super) fn scope_badge(ui: &mut egui::Ui, scope: RuleScope) {
+    let (rect, _) = ui.allocate_exact_size(vec2(64.0, 22.0), Sense::hover());
+    ui.painter().rect_filled(rect, Rounding::same(6.0), alpha(scope.color(), 28));
+    ui.painter().text(rect.center(), Align2::CENTER_CENTER, scope.name(), bold(10.5), scope.color());
 }
 
 /// İki satırlı, tam genişlikte menü satırı.
@@ -171,15 +186,18 @@ impl App {
     /// Parça değişince (ya da kurallar değişince) uygun kuralı uygular; kural yoksa varsayılan ön ayara döner.
     pub(super) fn tick_eq_rules(&mut self) {
         let id = self.player.meta_id.load(Relaxed);
-        if id == self.eq_rule_seen && !self.eq_rule_dirty {
+        let dev = self.current_device_id();
+        if id == self.eq_rule_seen && dev == self.eq_rule_dev && !self.eq_rule_dirty {
             return;
         }
         self.eq_rule_seen = id;
+        self.eq_rule_dev = dev.clone();
         self.eq_rule_dirty = false;
         if self.cfg.eq_rules.is_empty() && self.rule_active.is_none() {
             return;
         }
-        let rule = self.playing_identity().and_then(|now| resolve_rule(&self.cfg.eq_rules, &now).cloned());
+        let now = self.playing_identity();
+        let rule = resolve_rule(&self.cfg.eq_rules, now.as_ref(), dev.as_deref()).cloned();
         match rule {
             Some(r) => {
                 if self.rule_active.as_ref() == Some(&r) && self.preset_name == r.preset {
@@ -202,17 +220,18 @@ impl App {
         }
     }
 
+    /// Hedef çıkış cihazının kimliği (Windows varsayılanı seçiliyse o an varsayılan olan cihaz).
+    pub(super) fn current_device_id(&self) -> Option<String> {
+        match &self.cfg.to {
+            Some(id) => Some(id.clone()),
+            None => self.devices.iter().find(|d| d.is_default).map(|d| d.id.clone()),
+        }
+    }
+
     fn add_rule_for_playing(&mut self, scope: RuleScope) {
         let Some(now) = self.playing_identity() else { return };
         let Some(preset) = self.preset_name.clone() else { return };
-        let (key, label, sub) = match scope {
-            RuleScope::Track => (now.path.clone(), now.title.clone(), format!("{} · {}", now.artist, now.album_title)),
-            RuleScope::Album => match &now.album_key {
-                Some(k) => (k.clone(), now.album_title.clone(), now.artist.clone()),
-                None => return,
-            },
-            RuleScope::Artist => (artist_key(&now.artist), now.artist.clone(), String::new()),
-        };
+        let Some((key, label, sub)) = super::presetprops_ui::playing_target(&now, scope) else { return };
         upsert_rule(&mut self.cfg.eq_rules, EqRule { scope, key, label: label.clone(), sub, preset: Some(preset.clone()) });
         self.eq_rule_dirty = true;
         self.save_cfg();
@@ -232,7 +251,7 @@ impl App {
         let mut remove: Option<EqRule> = None;
         let preset = self.preset_name.clone();
         let saved = preset.is_some() && !self.dirty;
-        let current_rule = now.as_ref().and_then(|n| resolve_rule(&self.cfg.eq_rules, n)).cloned();
+        let current_rule = resolve_rule(&self.cfg.eq_rules, now.as_ref(), self.current_device_id().as_deref()).cloned();
         egui::popup_below_widget(ui, id, &btn, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
             ui.set_min_width(300.0);
             ui.label(RichText::new("Otomatik EQ").font(bold(14.0)).color(Color32::WHITE));
@@ -295,9 +314,10 @@ impl App {
         }
     }
 
-    fn rule_candidates(&self, scope: RuleScope, q: &str) -> Vec<(String, String, String)> {
+    pub(super) fn rule_candidates(&self, scope: RuleScope, q: &str) -> Vec<(String, String, String)> {
         let q = q.trim().to_lowercase();
-        if q.chars().count() < 2 {
+        // cihaz listesi kısa: boş aramada hepsi gösterilir
+        if q.chars().count() < 2 && scope != RuleScope::Device {
             return vec![];
         }
         let has = |s: &str| s.to_lowercase().contains(&q);
@@ -323,6 +343,13 @@ impl App {
                         if has(&t.title) || has(&a.artist) {
                             out.push((t.path.clone(), t.title.clone(), format!("{} · {}", a.artist, a.title)));
                         }
+                    }
+                }
+            }
+            RuleScope::Device => {
+                for d in &self.devices {
+                    if has(&d.name) {
+                        out.push((d.id.clone(), d.name.clone(), String::new()));
                     }
                 }
             }
@@ -508,30 +535,43 @@ mod tests {
     #[test]
     fn track_beats_album_beats_artist() {
         let rules = vec![rule(RuleScope::Artist, "teddy picker", "art.txt"), rule(RuleScope::Album, "k1", "alb.txt"), rule(RuleScope::Track, "C:\\m\\a.flac", "trk.txt")];
-        assert_eq!(resolve_rule(&rules, &now()).unwrap().preset.as_deref(), Some("trk.txt"));
-        assert_eq!(resolve_rule(&rules[..2], &now()).unwrap().preset.as_deref(), Some("alb.txt"));
-        assert_eq!(resolve_rule(&rules[..1], &now()).unwrap().preset.as_deref(), Some("art.txt"));
-        assert!(resolve_rule(&[], &now()).is_none());
+        let n = now();
+        assert_eq!(resolve_rule(&rules, Some(&n), None).unwrap().preset.as_deref(), Some("trk.txt"));
+        assert_eq!(resolve_rule(&rules[..2], Some(&n), None).unwrap().preset.as_deref(), Some("alb.txt"));
+        assert_eq!(resolve_rule(&rules[..1], Some(&n), None).unwrap().preset.as_deref(), Some("art.txt"));
+        assert!(resolve_rule(&[], Some(&n), None).is_none());
     }
 
     #[test]
     fn rules_only_match_their_own_target() {
         let rules = vec![rule(RuleScope::Track, "başka.flac", "x.txt"), rule(RuleScope::Album, "k2", "y.txt"), rule(RuleScope::Artist, "başka sanatçı", "z.txt")];
-        assert!(resolve_rule(&rules, &now()).is_none());
+        assert!(resolve_rule(&rules, Some(&now()), None).is_none());
         // albüm anahtarı olmayan (kütüphanede olmayan) parçaya albüm kuralı uygulanmaz
         let mut n = now();
         n.album_key = None;
-        assert!(resolve_rule(&[rule(RuleScope::Album, "k1", "y.txt")], &n).is_none());
+        assert!(resolve_rule(&[rule(RuleScope::Album, "k1", "y.txt")], Some(&n), None).is_none());
         // sanatçı adı boşsa eşleşme olmaz
         n.artist = "  ".into();
-        assert!(resolve_rule(&[rule(RuleScope::Artist, "", "z.txt")], &n).is_none());
+        assert!(resolve_rule(&[rule(RuleScope::Artist, "", "z.txt")], Some(&n), None).is_none());
     }
 
     #[test]
     fn artist_keys_ignore_case_and_padding() {
         assert_eq!(artist_key("  Teddy PICKER "), "teddy picker");
         let rules = vec![rule(RuleScope::Artist, "teddy picker", "art.txt")];
-        assert!(resolve_rule(&rules, &now()).is_some());
+        assert!(resolve_rule(&rules, Some(&now()), None).is_some());
+    }
+
+    #[test]
+    fn device_rule_is_lowest_priority_and_needs_no_track() {
+        let rules = vec![rule(RuleScope::Device, "dev1", "kulaklik.txt"), rule(RuleScope::Artist, "teddy picker", "art.txt")];
+        // çalan parça yokken cihaz kuralı uygulanır
+        assert_eq!(resolve_rule(&rules, None, Some("dev1")).unwrap().preset.as_deref(), Some("kulaklik.txt"));
+        // parça kuralı cihaz kuralını geçer
+        assert_eq!(resolve_rule(&rules, Some(&now()), Some("dev1")).unwrap().preset.as_deref(), Some("art.txt"));
+        // başka cihazda cihaz kuralı yok
+        assert!(resolve_rule(&rules[..1], Some(&now()), Some("dev2")).is_none());
+        assert!(resolve_rule(&rules[..1], None, None).is_none());
     }
 
     #[test]

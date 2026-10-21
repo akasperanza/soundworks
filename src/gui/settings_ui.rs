@@ -212,37 +212,7 @@ impl App {
         });
         ui.add_space(10.0);
         category(ui, "Ekolayzır");
-        card(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                section_label(ui, "Presetler");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if pill_button(ui, "Klasörü aç", Some(Icon::Folder), false).clicked() {
-                        let _ = std::fs::create_dir_all(presets_dir());
-                        let _ = std::process::Command::new("explorer").arg(presets_dir()).spawn();
-                    }
-                });
-            });
-            ui.add_space(2.0);
-            if self.library.is_empty() {
-                ui.label(RichText::new("Henüz preset yok").font(body(12.5)).color(DIM));
-            }
-            let mut del = None;
-            for (n, p) in &self.library {
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(n.trim_end_matches(".txt")).font(body(13.0)));
-                    ui.label(RichText::new(format!("{} bant", p.bands.len())).font(body(12.0)).color(DIM));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_button(ui, Icon::Trash, 26.0, false).on_hover_text("Sil").clicked() {
-                            del = Some(n.clone());
-                        }
-                    });
-                });
-            }
-            if let Some(n) = del {
-                self.delete_preset(&n);
-            }
-        });
+        self.presets_manager_card(ui);
         ui.add_space(10.0);
         self.eq_rules_card(ui);
         ui.add_space(10.0);

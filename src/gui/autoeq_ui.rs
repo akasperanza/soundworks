@@ -516,6 +516,10 @@ impl App {
                     if std::fs::write(presets_dir().join(&name), apo::to_text(p)).is_ok() {
                         // geçici dinleme zaten uygulandıysa geri dönmeden kalıcı seçilir
                         self.ae_close(true);
+                        self.cfg.preset_meta.insert(
+                            name.clone(),
+                            presetprops_ui::PresetMeta { label: e.name.clone(), note: String::new(), source: format!("AutoEQ · {}", e.source) },
+                        );
                         self.refresh_library();
                         self.select(&name, false);
                         self.say(format!("AutoEQ uygulandı: {}", e.name));

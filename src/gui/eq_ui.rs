@@ -46,27 +46,8 @@ impl App {
         }
         match pick {
             1 => self.ae_open(true),
-            2 => self.new_preset_from_scratch(),
+            2 => self.props_open(None),
             _ => {}
-        }
-    }
-
-    /// Düz (0 dB) tek bantlı yeni bir ön ayar dosyası oluşturup seçer; bant ekleme grafikten yapılır.
-    fn new_preset_from_scratch(&mut self) {
-        let _ = std::fs::create_dir_all(presets_dir());
-        let mut n = 1;
-        let name = loop {
-            let name = if n == 1 { "Yeni ön ayar.txt".to_string() } else { format!("Yeni ön ayar {n}.txt") };
-            if !presets_dir().join(&name).exists() {
-                break name;
-            }
-            n += 1;
-        };
-        let p = Preset { preamp_db: 0.0, bands: vec![Band { kind: FilterKind::Peak, freq: 1000.0, gain_db: 0.0, q: 1.0 }] };
-        if std::fs::write(presets_dir().join(&name), apo::to_text(&p)).is_ok() {
-            self.refresh_library();
-            self.select(&name, false);
-            self.say("Yeni ön ayar oluşturuldu");
         }
     }
 
@@ -188,6 +169,7 @@ impl App {
         }
         let mut pick = None;
         let mut del = None;
+        let mut props: Option<String> = None;
         ui.horizontal(|ui| {
             if pill_button(ui, "İçe aktar", Some(Icon::Import), false).clicked() {
                 self.import();
@@ -212,6 +194,10 @@ impl App {
                                 pick = Some(name.clone());
                             }
                             resp.context_menu(|ui| {
+                                if ui.button("Özellikler…").clicked() {
+                                    props = Some(name.clone());
+                                    ui.close_menu();
+                                }
                                 if ui.button("Sil").clicked() {
                                     del = Some(name.clone());
                                     ui.close_menu();
@@ -239,6 +225,9 @@ impl App {
         if let Some(n) = pick {
             self.select(&n, true);
         }
+        if let Some(n) = props {
+            self.props_open(Some(&n));
+        }
         if let Some(n) = del {
             self.delete_preset(&n);
         }
@@ -249,6 +238,7 @@ impl App {
         let path = presets_dir().join(name);
         let bytes = std::fs::read(&path).unwrap_or_default();
         let _ = std::fs::remove_file(&path);
+        self.cfg.preset_meta.remove(name);
         if self.preset_name.as_deref() == Some(name) {
             self.preset_name = None;
             self.cfg.preset = None;

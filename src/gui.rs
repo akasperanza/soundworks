@@ -161,6 +161,8 @@ struct Config {
     chain: Vec<crate::fx::FxSpec>,
     /// otomatik EQ kuralları (şarkı / albüm / sanatçı -> ön ayar)
     eq_rules: Vec<eqrules_ui::EqRule>,
+    /// ön ayar dosya adı -> kulaklık etiketi, not, kaynak (APO dosyasının dışında tutulur)
+    preset_meta: BTreeMap<String, presetprops_ui::PresetMeta>,
     /// pencere: x, y, genişlik, yükseklik (mantıksal), ekran ölçeği, büyütülmüş mü
     win: Option<[f32; 6]>,
 }
@@ -206,6 +208,7 @@ impl Default for Config {
             dither: true,
             chain: Vec::new(),
             eq_rules: Vec::new(),
+            preset_meta: BTreeMap::new(),
             win: None,
         }
     }
@@ -238,6 +241,7 @@ mod queue_ui;
 mod search_ui;
 mod autoeq_ui;
 mod eqrules_ui;
+mod presetprops_ui;
 mod settings_ui;
 mod shell;
 mod tips_ui;
@@ -456,9 +460,14 @@ pub struct App {
     ae: autoeq_ui::AeUi,
     /// otomatik EQ: son değerlendirilen parça kimliği, yeniden değerlendirme isteği, şu an uygulanan kural, ayarlardaki ekleme formu
     eq_rule_seen: u64,
+    eq_rule_dev: Option<String>,
     eq_rule_dirty: bool,
     rule_active: Option<eqrules_ui::EqRule>,
     rule_new: Option<eqrules_ui::RuleNew>,
+    /// ön ayar özellikleri penceresi (yeni ön ayar ya da mevcut)
+    props: Option<presetprops_ui::PropsUi>,
+    /// Ayarlar > Ön ayarlar'daki düzenleme
+    props_inline: Option<presetprops_ui::PropsUi>,
     search_query: String,
     search_sel: usize,
     search_focus: bool,
@@ -615,9 +624,12 @@ impl App {
             autoeq: crate::autoeq::Client::new(data_dir().join("autoeq_index.md")),
             ae: autoeq_ui::AeUi::new(),
             eq_rule_seen: u64::MAX,
+            eq_rule_dev: None,
             eq_rule_dirty: false,
             rule_active: None,
             rule_new: None,
+            props: None,
+            props_inline: None,
             search_query: String::new(),
             search_sel: 0,
             search_focus: false,
@@ -740,6 +752,13 @@ impl App {
         // SW_RULE_TRACK=yol: o dosya için "test.txt" ön ayarını otomatik uygulayan şarkı kuralı ekler (doğrulama)
         if let Ok(path) = crate::devenv::dev_var("SW_RULE_TRACK") {
             app.cfg.eq_rules.push(eqrules_ui::EqRule { scope: eqrules_ui::RuleScope::Track, key: path, label: "Test".into(), sub: String::new(), preset: Some("test.txt".into()) });
+        }
+        // SW_PROPS=yeni | <ön ayar dosyası>: ön ayar özellikleri penceresini açar (doğrulama)
+        if let Ok(v) = crate::devenv::dev_var("SW_PROPS") {
+            app.props_open(if v == "yeni" { None } else { Some(v.as_str()) });
+            if let (Some(p), Ok(t)) = (app.props.as_mut(), crate::devenv::dev_var("SW_PROPSTAB")) {
+                p.dev_set_tab(&t);
+            }
         }
         if let Ok(q) = crate::devenv::dev_var("SW_AUTOEQ") {
             app.ae_open(false);
@@ -1244,6 +1263,7 @@ impl eframe::App for App {
 
         self.search_overlay(ctx);
         self.autoeq_overlay(ctx);
+        self.props_overlay(ctx);
         self.tip_banner(ctx);
         self.dsd_dialog_ui(ctx);
 
