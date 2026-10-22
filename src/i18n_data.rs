@@ -561,4 +561,11 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Tab: sözler / sıradakiler", "Tab: lyrics / up next", "Tab: Text / Als Nächstes"),
     ("Karıştırma açık: sıradaki parça belli değil", "Shuffle is on: the next track isn't known", "Zufallswiedergabe an: der nächste Titel steht nicht fest"),
     ("Tam ekran (F11)", "Full screen (F11)", "Vollbild (F11)"),
+    ("Eklentiler", "Extensions", "Erweiterungen"),
+    ("Eklenti yok. Bir eklenti klasörünü eklentiler klasörüne kopyala, sonra Yenile'ye bas.", "No extensions yet. Copy an extension folder into the extensions folder, then press Refresh.", "Noch keine Erweiterungen. Kopiere einen Erweiterungsordner in den Erweiterungsordner und drücke dann Aktualisieren."),
+    ("Yerel kanal erişimi: {}", "Local pipe access: {}", "Zugriff auf lokale Pipe: {}"),
+    ("Yüklenemedi: {}", "Couldn't load: {}", "Konnte nicht geladen werden: {}"),
+    ("Hata: {}", "Error: {}", "Fehler: {}"),
+    ("Eklentiler klasörünü aç", "Open extensions folder", "Erweiterungsordner öffnen"),
+    ("Yenile", "Refresh", "Aktualisieren"),
 ];

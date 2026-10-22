@@ -12,6 +12,7 @@ mod fsutil;
 mod fx;
 mod gui;
 mod i18n;
+mod plugins;
 mod library;
 mod loudness;
 mod lyrics;

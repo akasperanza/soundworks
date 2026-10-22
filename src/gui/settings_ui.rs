@@ -291,6 +291,8 @@ impl App {
         });
         ui.add_space(10.0);
         self.tips_settings(ui);
+        ui.add_space(10.0);
+        self.plugins_settings(ui);
 
     }
 

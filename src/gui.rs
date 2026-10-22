@@ -151,6 +151,7 @@ struct Config {
     ui_zoom: u32,
     ambient: bool,
     ambient_secs: u32,
+    plugins: Vec<String>,
     #[serde(default)]
     lang: Option<String>,
 
@@ -206,6 +207,7 @@ impl Default for Config {
             ui_zoom: 0,
             ambient: true,
             ambient_secs: 60,
+            plugins: vec![],
             lang: None,
             dither: true,
             chain: Vec::new(),
@@ -240,6 +242,7 @@ mod lyrics_ui;
 mod panels;
 mod proof_ui;
 mod ambient_ui;
+mod plugins_ui;
 mod queue_ui;
 mod search_ui;
 mod autoeq_ui;
@@ -335,6 +338,12 @@ pub struct App {
     wordmark_tex: Option<(TextureHandle, f32)>,
     cover_t0: Instant,
     ambient_on: bool,
+    plugin_host: crate::plugins::PluginHost,
+    plugin_list: Vec<crate::plugins::Discovered>,
+    plug_id: u64,
+    plug_playing: bool,
+    plug_pos: f64,
+    plug_at: Instant,
     ambient_side: u8,
     ambient_ctl: Instant,
     ambient_ptr: Option<egui::Pos2>,
@@ -536,6 +545,12 @@ impl App {
             },
             cover_t0: Instant::now(),
             ambient_on: false,
+            plugin_host: crate::plugins::PluginHost::new(),
+            plugin_list: vec![],
+            plug_id: u64::MAX,
+            plug_playing: false,
+            plug_pos: 0.0,
+            plug_at: Instant::now(),
             ambient_side: 0,
             ambient_ctl: Instant::now(),
             ambient_ptr: None,
@@ -676,6 +691,7 @@ impl App {
             crate::media::start(move || c.request_repaint());
         }
         let _ = ctx;
+        app.plugins_refresh();
         match crate::devenv::dev_var("SW_VIEW").as_deref() {
             Ok("settings") => app.view = View::Settings,
             Ok("library") => app.view = View::Library,
@@ -1185,6 +1201,7 @@ impl eframe::App for App {
             self.lib_add_paths(files);
         }
         self.sync_cover(ctx, dt);
+        self.plugins_tick();
 
         let kb = ctx.wants_keyboard_input();
         let mut ab_held = false;

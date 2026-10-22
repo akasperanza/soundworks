@@ -21,6 +21,7 @@ Soundworks'ün çıkış noktası şu soru: *"Bit-perfect çalıyorum"* demek ko
 - **AutoEQ mağazası:** kulaklık modelini ara (çıkış cihazının adından otomatik doldurulur), eğrisini gör, çalan müzikte geçici dinle, beğenirsen kaydet. Profiller [AutoEq](https://github.com/jaakkopasanen/AutoEq) projesinden (MIT) gelir.
 - **Otomatik EQ kuralları:** belirli bir şarkı, albüm ya da sanatçı çalınca ekolayzır seçtiğin ön ayara kendiliğinden geçer.
 - **Bekleme ekranı:** müzik çalarken fare ve klavye bir süre (varsayılan 1 dk) kullanılmazsa kapak, parça bilgisi, ilerleme çubuğu ve canlı spektrum tam ekran görünür. F11 elle açıp kapatır; Tab sağ paneli sözler ve sıradakiler arasında değiştirir.
+- **Eklentiler:** JavaScript ile yazılan eklentiler çalan parçaya tepki verir ve dış dünyayla konuşur (izinli). Örnek: Discord Rich Presence. Yazım rehberi: [docs/EXTENSIONS.md](docs/EXTENSIONS.md), örnekler: [examples](examples).
 - **Diller:** Türkçe, İngilizce ve Almanca. İlk açılışta Windows diline göre seçilir; Ayarlar > Uygulama > Görünüm'den değiştirilir.
 - Modül marketi: Limiter (true-peak), Kompresör, Stereo Genişlik, Kazanç, Filtre (HPF/LPF), Ton (bas/tiz), Loudness (ses seviyesine bağlı), ayarlanabilir Crossfeed.
 - Denge, mono.

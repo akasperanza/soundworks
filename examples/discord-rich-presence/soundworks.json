@@ -1,0 +1,16 @@
+{
+  "id": "discord-rich-presence",
+  "name": "Discord Rich Presence",
+  "version": "1.0.0",
+  "author": "Soundworks",
+  "description": "Shows the track you are listening to on your Discord profile.",
+  "api": 1,
+  "main": "main.js",
+  "permissions": ["pipe:discord-ipc-*"],
+  "config": {
+    "clientId": "",
+    "largeImage": "soundworks",
+    "showWhenPaused": false,
+    "pipeBase": "discord-ipc-"
+  }
+}

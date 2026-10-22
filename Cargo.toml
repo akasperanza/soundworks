@@ -29,6 +29,9 @@ windows = { version = "0.58", features = [
   "Win32_System_Com",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Variant",
+  "Win32_System_Pipes",
+  "Win32_System_IO",
+  "Win32_Storage_FileSystem",
   "Win32_System_Threading",
   "Win32_System_Console",
   "Win32_Security",
@@ -38,6 +41,7 @@ windows = { version = "0.58", features = [
   "Win32_Devices_FunctionDiscovery",
 ] }
 regex = "1"
+rquickjs = "0.9"
 
 [dependencies.log]
 version = "0.4"

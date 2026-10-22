@@ -1,0 +1,783 @@
+use rquickjs::{Context, Ctx, Error as JsError, Function, Object, Runtime};
+use serde::Deserialize;
+use std::collections::{HashMap, VecDeque};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::os::windows::io::AsRawHandle;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::System::Pipes::PeekNamedPipe;
+
+pub const API_VERSION: u32 = 1;
+const PRELUDE: &str = include_str!("plugins_prelude.js");
+const CALL_LIMIT: Duration = Duration::from_secs(2);
+const MEMORY_LIMIT: usize = 64 << 20;
+const STORAGE_LIMIT: usize = 1 << 20;
+const MAX_PENDING_TOASTS: usize = 20;
+const MAX_LOG_LINES: usize = 200;
+const LOG_FILE_LIMIT: u64 = 256 * 1024;
+
+pub fn plugins_dir() -> PathBuf {
+    app_dir().join("plugins")
+}
+
+pub fn data_dir() -> PathBuf {
+    app_dir().join("plugin-data")
+}
+
+fn app_dir() -> PathBuf {
+    let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    base.join("Soundworks")
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct Manifest {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub description: String,
+    pub main: String,
+    pub api: u32,
+    pub permissions: Vec<String>,
+    pub config: serde_json::Map<String, serde_json::Value>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Discovered {
+    pub id: String,
+    pub dir: PathBuf,
+    pub manifest: Option<Manifest>,
+    pub error: Option<String>,
+}
+
+pub fn validate(m: &Manifest, dir: &Path) -> Result<(), String> {
+    let id_ok = !m.id.is_empty()
+        && m.id.chars().next().map_or(false, |c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && m.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.' || c == '_');
+    if !id_ok {
+        return Err("id must use lowercase letters, digits, '-', '.' or '_'".into());
+    }
+    if m.name.trim().is_empty() {
+        return Err("name is missing".into());
+    }
+    if m.api == 0 || m.api > API_VERSION {
+        return Err(format!("needs plugin API {} but this Soundworks provides {}", m.api, API_VERSION));
+    }
+    let main = if m.main.is_empty() { "main.js" } else { m.main.as_str() };
+    let p = Path::new(main);
+    if p.is_absolute() || p.components().any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::Prefix(_))) {
+        return Err("main must be a relative path inside the plugin folder".into());
+    }
+    if !dir.join(main).is_file() {
+        return Err(format!("{main} not found"));
+    }
+    for perm in &m.permissions {
+        let known = perm.strip_prefix("pipe:").map_or(false, |n| !n.is_empty() && !n.contains(['\\', '/']) && !n.contains(".."));
+        if !known {
+            return Err(format!("unknown permission '{perm}'"));
+        }
+    }
+    Ok(())
+}
+
+pub fn discover(root: &Path) -> Vec<Discovered> {
+    let mut out = vec![];
+    let Ok(rd) = std::fs::read_dir(root) else { return out };
+    for e in rd.flatten() {
+        let dir = e.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let folder = e.file_name().to_string_lossy().to_string();
+        let file = dir.join("soundworks.json");
+        if !file.is_file() {
+            continue;
+        }
+        let parsed = std::fs::read(&file)
+            .map_err(|e| e.to_string())
+            .and_then(|b| serde_json::from_slice::<Manifest>(&b).map_err(|e| e.to_string()));
+        match parsed {
+            Ok(m) => {
+                let err = validate(&m, &dir).err();
+                out.push(Discovered { id: if m.id.is_empty() { folder } else { m.id.clone() }, dir, manifest: Some(m), error: err });
+            }
+            Err(e) => out.push(Discovered { id: folder, dir, manifest: None, error: Some(e) }),
+        }
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+pub fn allows_pipe(perms: &[String], name: &str) -> bool {
+    if name.is_empty() || name.contains(['\\', '/']) || name.contains("..") {
+        return false;
+    }
+    perms.iter().filter_map(|p| p.strip_prefix("pipe:")).any(|pat| match pat.strip_suffix('*') {
+        Some(prefix) => name.starts_with(prefix),
+        None => name == pat,
+    })
+}
+
+enum Msg {
+    Event(String, String),
+    Stop,
+}
+
+#[derive(Default)]
+struct Shared {
+    toasts: Mutex<Vec<String>>,
+    logs: Mutex<VecDeque<String>>,
+    error: Mutex<Option<String>>,
+    file: Option<PathBuf>,
+}
+
+fn append_log(path: &Path, level: &str, msg: &str) {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if std::fs::metadata(path).map_or(false, |m| m.len() > LOG_FILE_LIMIT) {
+        let _ = std::fs::rename(path, path.with_extension("log.old"));
+    }
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
+        let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let _ = writeln!(f, "{secs} [{level}] {}", msg.replace('\n', " | "));
+    }
+}
+
+impl Shared {
+    fn log(&self, level: &str, msg: &str) {
+        let mut l = self.logs.lock().unwrap();
+        if l.len() >= MAX_LOG_LINES {
+            l.pop_front();
+        }
+        l.push_back(format!("[{level}] {msg}"));
+        if let Some(path) = &self.file {
+            append_log(path, level, msg);
+        }
+        if level == "error" {
+            *self.error.lock().unwrap() = Some(msg.lines().next().unwrap_or("").to_string());
+        }
+    }
+}
+
+struct Running {
+    tx: Sender<Msg>,
+    shared: Arc<Shared>,
+}
+
+pub struct PluginHost {
+    data_dir: PathBuf,
+    running: HashMap<String, Running>,
+}
+
+impl PluginHost {
+    pub fn new() -> PluginHost {
+        PluginHost::with_data_dir(data_dir())
+    }
+
+    pub fn with_data_dir(data_dir: PathBuf) -> PluginHost {
+        PluginHost { data_dir, running: HashMap::new() }
+    }
+
+    pub fn is_running(&self, id: &str) -> bool {
+        self.running.contains_key(id)
+    }
+
+    pub fn start(&mut self, d: &Discovered) -> Result<(), String> {
+        let m = d.manifest.clone().ok_or_else(|| d.error.clone().unwrap_or_default())?;
+        if let Some(e) = &d.error {
+            return Err(e.clone());
+        }
+        self.stop(&m.id);
+        let main = if m.main.is_empty() { "main.js".to_string() } else { m.main.clone() };
+        let script = std::fs::read_to_string(d.dir.join(&main)).map_err(|e| e.to_string())?;
+        let mut config = m.config.clone();
+        if let Ok(b) = std::fs::read(d.dir.join("config.json")) {
+            if let Ok(serde_json::Value::Object(over)) = serde_json::from_slice::<serde_json::Value>(&b) {
+                for (k, v) in over {
+                    config.insert(k, v);
+                }
+            }
+        }
+        let shared = Arc::new(Shared { file: Some(self.data_dir.join(format!("{}.log", m.id))), ..Default::default() });
+        let (tx, rx) = channel::<Msg>();
+        let job = Job { id: m.id.clone(), permissions: m.permissions.clone(), config: serde_json::Value::Object(config).to_string(), script, data_dir: self.data_dir.clone(), shared: shared.clone() };
+        std::thread::Builder::new()
+            .name(format!("plugin-{}", m.id))
+            .spawn(move || run(job, rx))
+            .map_err(|e| e.to_string())?;
+        self.running.insert(m.id.clone(), Running { tx, shared });
+        Ok(())
+    }
+
+    pub fn stop(&mut self, id: &str) {
+        if let Some(r) = self.running.remove(id) {
+            let _ = r.tx.send(Msg::Stop);
+        }
+    }
+
+    pub fn stop_all(&mut self) {
+        let ids: Vec<String> = self.running.keys().cloned().collect();
+        for id in ids {
+            self.stop(&id);
+        }
+    }
+
+    pub fn broadcast(&self, event: &str, state_json: &str) {
+        for r in self.running.values() {
+            let _ = r.tx.send(Msg::Event(event.to_string(), state_json.to_string()));
+        }
+    }
+
+    pub fn drain_toasts(&self) -> Vec<String> {
+        let mut out = vec![];
+        for r in self.running.values() {
+            out.append(&mut r.shared.toasts.lock().unwrap());
+        }
+        out
+    }
+
+    pub fn last_error(&self, id: &str) -> Option<String> {
+        self.running.get(id).and_then(|r| r.shared.error.lock().unwrap().clone())
+    }
+
+    pub fn logs(&self, id: &str) -> Vec<String> {
+        self.running.get(id).map(|r| r.shared.logs.lock().unwrap().iter().cloned().collect()).unwrap_or_default()
+    }
+}
+
+impl Drop for PluginHost {
+    fn drop(&mut self) {
+        self.stop_all();
+    }
+}
+
+struct Job {
+    id: String,
+    permissions: Vec<String>,
+    config: String,
+    script: String,
+    data_dir: PathBuf,
+    shared: Arc<Shared>,
+}
+
+fn epoch_ms() -> f64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64() * 1000.0).unwrap_or(0.0)
+}
+
+fn pipe_available(f: &File) -> Option<u32> {
+    let mut avail = 0u32;
+    unsafe { PeekNamedPipe(HANDLE(f.as_raw_handle()), None, 0, None, Some(&mut avail), None).ok()? };
+    Some(avail)
+}
+
+fn error_text(ctx: &Ctx, e: JsError) -> String {
+    if matches!(e, JsError::Exception) {
+        let v = ctx.catch();
+        if let Some(ex) = v.as_exception() {
+            let msg = ex.message().unwrap_or_default();
+            let stack = ex.stack().unwrap_or_default();
+            return format!("{msg}\n{stack}");
+        }
+        return format!("{v:?}");
+    }
+    e.to_string()
+}
+
+struct Store {
+    path: PathBuf,
+    map: HashMap<String, String>,
+}
+
+impl Store {
+    fn load(path: PathBuf) -> Store {
+        let map = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        Store { path, map }
+    }
+
+    fn set(&mut self, k: String, v: String) -> bool {
+        let before = self.map.insert(k.clone(), v);
+        let total: usize = self.map.iter().map(|(k, v)| k.len() + v.len()).sum();
+        if total > STORAGE_LIMIT {
+            match before {
+                Some(old) => self.map.insert(k, old),
+                None => self.map.remove(&k),
+            };
+            return false;
+        }
+        if let Some(dir) = self.path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        serde_json::to_vec(&self.map).ok().map_or(false, |j| std::fs::write(&self.path, j).is_ok())
+    }
+}
+
+fn put<'js>(o: &Object<'js>, name: &str, f: Function<'js>) -> Result<(), String> {
+    o.set(name, f).map_err(|e| e.to_string())
+}
+
+fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
+    let shared = job.shared.clone();
+    let fail = |msg: String| {
+        shared.log("error", &msg);
+    };
+    let Ok(rt) = Runtime::new() else { return fail("could not start the JavaScript runtime".into()) };
+    rt.set_memory_limit(MEMORY_LIMIT);
+    rt.set_max_stack_size(512 * 1024);
+    let started = Instant::now();
+    let deadline = Arc::new(AtomicU64::new(u64::MAX));
+    {
+        let d = deadline.clone();
+        rt.set_interrupt_handler(Some(Box::new(move || started.elapsed().as_millis() as u64 > d.load(Ordering::Relaxed))));
+    }
+    let Ok(ctx) = Context::full(&rt) else { return fail("could not create the JavaScript context".into()) };
+
+    let pipes: Arc<Mutex<HashMap<i32, File>>> = Arc::new(Mutex::new(HashMap::new()));
+    let next_pipe = Arc::new(Mutex::new(1i32));
+    let store = Arc::new(Mutex::new(Store::load(job.data_dir.join(format!("{}.json", job.id)))));
+
+    let setup = ctx.with(|ctx| -> Result<(), String> {
+        let native = Object::new(ctx.clone()).map_err(|e| e.to_string())?;
+
+        let sh = shared.clone();
+        put(&native, "log", Function::new(ctx.clone(), move |level: String, msg: String| sh.log(&level, &msg)).map_err(|e| e.to_string())?)?;
+
+        let sh = shared.clone();
+        put(&native, 
+            "toast",
+            Function::new(ctx.clone(), move |msg: String| {
+                let mut t = sh.toasts.lock().unwrap();
+                if t.len() < MAX_PENDING_TOASTS {
+                    t.push(msg.chars().take(200).collect());
+                }
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
+        put(&native, "now", Function::new(ctx.clone(), || epoch_ms()).map_err(|e| e.to_string())?)?;
+        put(&native, "pid", Function::new(ctx.clone(), || std::process::id() as f64).map_err(|e| e.to_string())?)?;
+        put(&native, "version", Function::new(ctx.clone(), || env!("CARGO_PKG_VERSION").to_string()).map_err(|e| e.to_string())?)?;
+        let cfg = job.config.clone();
+        put(&native, "config", Function::new(ctx.clone(), move || cfg.clone()).map_err(|e| e.to_string())?)?;
+
+        let st = store.clone();
+        put(&native, "storage_get", Function::new(ctx.clone(), move |k: String| st.lock().unwrap().map.get(&k).cloned()).map_err(|e| e.to_string())?)?;
+        let st = store.clone();
+        put(&native, "storage_set", Function::new(ctx.clone(), move |k: String, v: String| st.lock().unwrap().set(k, v)).map_err(|e| e.to_string())?)?;
+
+        let (perms, tbl, counter, sh) = (job.permissions.clone(), pipes.clone(), next_pipe.clone(), shared.clone());
+        put(&native, 
+            "pipe_open",
+            Function::new(ctx.clone(), move |name: String| -> i32 {
+                if !allows_pipe(&perms, &name) {
+                    sh.log("error", &format!("pipe '{name}' is not allowed by the manifest permissions"));
+                    return -1;
+                }
+                match OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\{name}")) {
+                    Ok(f) => {
+                        let mut c = counter.lock().unwrap();
+                        let id = *c;
+                        *c += 1;
+                        tbl.lock().unwrap().insert(id, f);
+                        id
+                    }
+                    Err(_) => -1,
+                }
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
+        let tbl = pipes.clone();
+        put(&native, 
+            "pipe_write",
+            Function::new(ctx.clone(), move |id: i32, bytes: Vec<u8>| -> bool {
+                let mut t = tbl.lock().unwrap();
+                match t.get_mut(&id) {
+                    Some(f) => {
+                        let ok = f.write_all(&bytes).and_then(|_| f.flush()).is_ok();
+                        if !ok {
+                            t.remove(&id);
+                        }
+                        ok
+                    }
+                    None => false,
+                }
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
+        let tbl = pipes.clone();
+        put(&native, 
+            "pipe_read",
+            Function::new(ctx.clone(), move |id: i32| -> Option<Vec<u8>> {
+                let mut t = tbl.lock().unwrap();
+                let f = t.get_mut(&id)?;
+                let avail = match pipe_available(f) {
+                    Some(a) => a as usize,
+                    None => {
+                        t.remove(&id);
+                        return None;
+                    }
+                };
+                let mut buf = vec![0u8; avail.min(1 << 16)];
+                if buf.is_empty() {
+                    return Some(buf);
+                }
+                match f.read(&mut buf) {
+                    Ok(n) => {
+                        buf.truncate(n);
+                        Some(buf)
+                    }
+                    Err(_) => {
+                        t.remove(&id);
+                        None
+                    }
+                }
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
+        let tbl = pipes.clone();
+        put(&native, "pipe_close", Function::new(ctx.clone(), move |id: i32| { tbl.lock().unwrap().remove(&id); }).map_err(|e| e.to_string())?)?;
+
+        ctx.globals().set("__native", native).map_err(|e| e.to_string())?;
+        ctx.eval::<(), _>(PRELUDE).map_err(|e| error_text(&ctx, e))?;
+        Ok(())
+    });
+    if let Err(e) = setup {
+        return fail(e);
+    }
+
+    let guarded = |f: &dyn Fn(&Ctx) -> Result<(), String>| {
+        deadline.store(started.elapsed().as_millis() as u64 + CALL_LIMIT.as_millis() as u64, Ordering::Relaxed);
+        let r = ctx.with(|c| f(&c));
+        deadline.store(u64::MAX, Ordering::Relaxed);
+        if let Err(e) = r {
+            shared.log("error", &e);
+        }
+    };
+
+    guarded(&|c| c.eval::<(), _>(job.script.as_str()).map_err(|e| error_text(c, e)));
+
+    let call = |c: &Ctx, name: &str, args: Vec<String>| -> Result<(), String> {
+        let f: Function = c.globals().get(name).map_err(|e| error_text(c, e))?;
+        match args.len() {
+            0 => f.call::<_, ()>(()),
+            _ => f.call::<_, ()>((args[0].clone(), args[1].clone())),
+        }
+        .map_err(|e| error_text(c, e))
+    };
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(40)) {
+            Ok(Msg::Event(name, json)) => guarded(&|c| call(c, "__dispatch", vec![name.clone(), json.clone()])),
+            Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => {
+                guarded(&|c| call(c, "__dispatch", vec!["stop".into(), "{}".into()]));
+                break;
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+        guarded(&|c| call(c, "__tick", vec![]));
+    }
+    pipes.lock().unwrap().clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("sw_plugin_test_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn make_plugin(root: &Path, id: &str, manifest_extra: &str, script: &str) -> Discovered {
+        let dir = root.join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("soundworks.json"), format!(r#"{{"id":"{id}","name":"T","version":"1","api":1{manifest_extra}}}"#)).unwrap();
+        std::fs::write(dir.join("main.js"), script).unwrap();
+        discover(root).into_iter().find(|d| d.id == id).unwrap()
+    }
+
+    fn wait_for<T>(mut f: impl FnMut() -> Option<T>) -> Option<T> {
+        for _ in 0..150 {
+            if let Some(v) = f() {
+                return Some(v);
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        None
+    }
+
+    fn first_toast(host: &PluginHost) -> Option<String> {
+        wait_for(|| host.drain_toasts().into_iter().next())
+    }
+
+    #[test]
+    fn manifest_validation_rejects_bad_input() {
+        let root = temp_dir("validate");
+        let good = make_plugin(&root, "good-one", "", "");
+        assert!(good.error.is_none());
+        let dir = root.join("bad");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("main.js"), "").unwrap();
+        for (manifest, needle) in [
+            (r#"{"id":"Bad Id","name":"x","api":1}"#, "id must"),
+            (r#"{"id":"x","name":"","api":1}"#, "name"),
+            (r#"{"id":"x","name":"x","api":9}"#, "API"),
+            (r#"{"id":"x","name":"x","api":1,"main":"../evil.js"}"#, "relative"),
+            (r#"{"id":"x","name":"x","api":1,"main":"nope.js"}"#, "not found"),
+            (r#"{"id":"x","name":"x","api":1,"permissions":["fs:all"]}"#, "unknown permission"),
+        ] {
+            std::fs::write(dir.join("soundworks.json"), manifest).unwrap();
+            let found = discover(&root).into_iter().find(|d| d.dir == dir).unwrap();
+            let err = found.error.unwrap_or_default();
+            assert!(err.contains(needle), "{manifest} -> {err}");
+        }
+        std::fs::write(dir.join("soundworks.json"), "not json").unwrap();
+        assert!(discover(&root).into_iter().find(|d| d.dir == dir).unwrap().manifest.is_none());
+    }
+
+    #[test]
+    fn pipe_permissions_match_by_prefix_or_exact_name() {
+        let p = vec!["pipe:discord-ipc-*".to_string(), "pipe:exact".to_string()];
+        assert!(allows_pipe(&p, "discord-ipc-0"));
+        assert!(allows_pipe(&p, "exact"));
+        assert!(!allows_pipe(&p, "exact2"));
+        assert!(!allows_pipe(&p, "other"));
+        assert!(!allows_pipe(&p, r"discord-ipc-0\..\x"));
+        assert!(!allows_pipe(&p, ""));
+        assert!(!allows_pipe(&[], "discord-ipc-0"));
+    }
+
+    #[test]
+    fn events_reach_the_plugin_with_player_state() {
+        let root = temp_dir("events");
+        let d = make_plugin(&root, "ev", "", r#"sw.on("trackchange", s => sw.toast(s.title + " / " + s.artist + " / " + s.playing));"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        host.broadcast("trackchange", r#"{"state":{"title":"Song","artist":"Band","playing":true}}"#);
+        assert_eq!(first_toast(&host).as_deref(), Some("Song / Band / true"));
+    }
+
+    #[test]
+    fn timers_fire_and_clear() {
+        let root = temp_dir("timers");
+        let d = make_plugin(
+            &root,
+            "tm",
+            "",
+            r#"var n = 0; var id = setInterval(function(){ n++; if (n == 3) { sw.toast("three"); clearInterval(id); } }, 20);
+               setTimeout(function(){ sw.toast("once"); }, 30);"#,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let mut seen = vec![];
+        wait_for(|| {
+            seen.extend(host.drain_toasts());
+            (seen.len() >= 2).then_some(())
+        })
+        .unwrap();
+        assert!(seen.contains(&"once".to_string()) && seen.contains(&"three".to_string()));
+    }
+
+    #[test]
+    fn runaway_plugin_is_interrupted_and_stays_isolated() {
+        let root = temp_dir("loop");
+        let bad = make_plugin(&root, "bad", "", r#"sw.on("play", function(){ while(true){} });"#);
+        let good = make_plugin(&root, "good", "", r#"sw.on("pause", function(){ sw.toast("alive"); });"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&bad).unwrap();
+        host.start(&good).unwrap();
+        host.broadcast("play", r#"{"state":{}}"#);
+        host.broadcast("pause", r#"{"state":{}}"#);
+        assert_eq!(first_toast(&host).as_deref(), Some("alive"));
+        let err = wait_for(|| host.last_error("bad")).expect("interrupt should be reported");
+        assert!(err.to_lowercase().contains("interrupt"), "{err}");
+        host.broadcast("pause", r#"{"state":{}}"#);
+        assert!(host.is_running("bad"));
+    }
+
+    #[test]
+    fn script_errors_are_reported_not_fatal() {
+        let root = temp_dir("err");
+        let d = make_plugin(&root, "er", "", r#"sw.on("play", function(){ throw new Error("boom"); }); sw.on("pause", function(){ sw.toast("ok"); });"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        host.broadcast("play", r#"{"state":{}}"#);
+        host.broadcast("pause", r#"{"state":{}}"#);
+        assert_eq!(first_toast(&host).as_deref(), Some("ok"));
+        assert!(host.last_error("er").unwrap().contains("boom"));
+    }
+
+    #[test]
+    fn disallowed_pipe_is_denied() {
+        let root = temp_dir("pipe");
+        let d = make_plugin(&root, "pp", "", r#"var id = sw.pipe.open("not-allowed"); sw.toast(String(id));"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("null"));
+        assert!(host.logs("pp").iter().any(|l| l.contains("not allowed")));
+    }
+
+    #[test]
+    fn storage_and_config_persist() {
+        let root = temp_dir("store");
+        let d = make_plugin(
+            &root,
+            "st",
+            r#","config":{"greeting":"hi"}"#,
+            r#"var n = sw.storage.get("runs", 0) + 1; sw.storage.set("runs", n); sw.toast(sw.config.greeting + n);"#,
+        );
+        std::fs::write(d.dir.join("config.json"), r#"{"greeting":"yo"}"#).unwrap();
+        let data = root.join("data");
+        let mut host = PluginHost::with_data_dir(data.clone());
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("yo1"));
+        host.stop("st");
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("yo2"));
+    }
+
+    #[test]
+    fn utf8_helpers_roundtrip_including_astral_characters() {
+        let root = temp_dir("utf8");
+        let d = make_plugin(
+            &root,
+            "u8",
+            "",
+            r#"var s = "şarkı ♪ 🎵 ok"; var b = sw.utf8.encode(s); sw.toast(sw.utf8.decode(b) === s ? "same:" + b.length : "diff");"#,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let expected = "şarkı ♪ 🎵 ok".len();
+        assert_eq!(first_toast(&host), Some(format!("same:{expected}")));
+    }
+
+    #[test]
+    fn player_state_position_advances_while_playing() {
+        let root = temp_dir("pos");
+        let d = make_plugin(&root, "ps", "", r#"sw.on("play", function(s){ setTimeout(function(){ sw.toast(String(sw.player.getState().position >= 10.05)); }, 120); });"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        host.broadcast("play", r#"{"state":{"position":10,"duration":100,"playing":true}}"#);
+        assert_eq!(first_toast(&host).as_deref(), Some("true"));
+    }
+
+    #[test]
+    fn restarting_replaces_the_running_plugin() {
+        let root = temp_dir("restart");
+        let d = make_plugin(&root, "rs", "", r#"sw.toast("start");"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("start"));
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("start"));
+        host.stop_all();
+        assert!(!host.is_running("rs"));
+    }
+
+    struct MockDiscord {
+        frames: Arc<Mutex<Vec<(u32, String)>>>,
+    }
+
+    fn read_frame(f: &mut File) -> Option<(u32, String)> {
+        let mut head = [0u8; 8];
+        f.read_exact(&mut head).ok()?;
+        let op = u32::from_le_bytes(head[0..4].try_into().unwrap());
+        let len = u32::from_le_bytes(head[4..8].try_into().unwrap()) as usize;
+        let mut body = vec![0u8; len];
+        f.read_exact(&mut body).ok()?;
+        Some((op, String::from_utf8(body).ok()?))
+    }
+
+    fn start_mock_discord(pipe_name: &str) -> MockDiscord {
+        use std::os::windows::io::FromRawHandle;
+        use windows::core::PCWSTR;
+        use windows::Win32::Storage::FileSystem::PIPE_ACCESS_DUPLEX;
+        use windows::Win32::System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT};
+        let wide: Vec<u16> = format!(r"\\.\pipe\{pipe_name}").encode_utf16().chain(Some(0)).collect();
+        let handle = unsafe { CreateNamedPipeW(PCWSTR(wide.as_ptr()), PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT, 1, 65536, 65536, 0, None) };
+        let frames: Arc<Mutex<Vec<(u32, String)>>> = Arc::new(Mutex::new(vec![]));
+        let sink = frames.clone();
+        let raw = handle.0 as usize;
+        std::thread::spawn(move || {
+            let handle = HANDLE(raw as *mut std::ffi::c_void);
+            let _ = unsafe { ConnectNamedPipe(handle, None) };
+            let mut f = unsafe { File::from_raw_handle(handle.0) };
+            let Some(hello) = read_frame(&mut f) else { return };
+            sink.lock().unwrap().push(hello);
+            let ready = br#"{"cmd":"DISPATCH","evt":"READY","data":{}}"#;
+            let mut out = 1u32.to_le_bytes().to_vec();
+            out.extend((ready.len() as u32).to_le_bytes());
+            out.extend(ready);
+            if f.write_all(&out).is_err() {
+                return;
+            }
+            while let Some(fr) = read_frame(&mut f) {
+                sink.lock().unwrap().push(fr);
+            }
+        });
+        MockDiscord { frames }
+    }
+
+    fn wait_frame(m: &MockDiscord, from: usize, pred: impl Fn(&serde_json::Value) -> bool) -> Option<serde_json::Value> {
+        wait_for(|| {
+            let frames = m.frames.lock().unwrap();
+            frames.iter().skip(from).filter_map(|(_, t)| serde_json::from_str::<serde_json::Value>(t).ok()).find(|v| pred(v))
+        })
+    }
+
+    #[test]
+    fn discord_example_talks_the_ipc_protocol() {
+        let root = temp_dir("discord");
+        let dir = root.join("discord-rich-presence");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("soundworks.json"), include_str!("../examples/discord-rich-presence/soundworks.json")).unwrap();
+        std::fs::write(dir.join("main.js"), include_str!("../examples/discord-rich-presence/main.js")).unwrap();
+        let base = format!("discord-ipc-t{}-", std::process::id());
+        std::fs::write(dir.join("config.json"), format!(r#"{{"clientId":"123456789","pipeBase":"{base}"}}"#)).unwrap();
+        let mock = start_mock_discord(&format!("{base}0"));
+        let d = discover(&root).into_iter().next().unwrap();
+        assert!(d.error.is_none(), "{:?}", d.error);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+
+        let hello = wait_frame(&mock, 0, |v| v.get("client_id").is_some()).expect("handshake");
+        assert_eq!(hello["v"], 1);
+        assert_eq!(hello["client_id"], "123456789");
+
+        host.broadcast("trackchange", r#"{"state":{"title":"Şarkı 🎵","artist":"Sanatçı","album":"Albüm","duration":200,"position":10,"playing":true}}"#);
+        let set = wait_frame(&mock, 0, |v| v["cmd"] == "SET_ACTIVITY" && !v["args"]["activity"].is_null()).expect("activity");
+        let act = &set["args"]["activity"];
+        assert_eq!(set["args"]["pid"], std::process::id());
+        assert_eq!(act["type"], 2);
+        assert_eq!(act["details"], "Şarkı 🎵");
+        assert_eq!(act["state"], "Sanatçı");
+        assert_eq!(act["assets"]["large_text"], "Albüm");
+        let start = act["timestamps"]["start"].as_i64().unwrap();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+        assert!((now - 10 - start).abs() <= 3, "start {start} now {now}");
+        assert_eq!(act["timestamps"]["end"].as_i64().unwrap(), start + 200);
+
+        let seen = mock.frames.lock().unwrap().len();
+        host.broadcast("pause", r#"{"state":{"playing":false,"position":12}}"#);
+        wait_frame(&mock, seen, |v| v["cmd"] == "SET_ACTIVITY" && v["args"]["activity"].is_null()).expect("cleared on pause");
+
+        let seen = mock.frames.lock().unwrap().len();
+        host.broadcast("play", r#"{"state":{"playing":true,"position":12}}"#);
+        wait_frame(&mock, seen, |v| v["cmd"] == "SET_ACTIVITY" && !v["args"]["activity"].is_null()).expect("activity again");
+
+        let seen = mock.frames.lock().unwrap().len();
+        host.stop("discord-rich-presence");
+        wait_frame(&mock, seen, |v| v["cmd"] == "SET_ACTIVITY" && v["args"]["activity"].is_null()).expect("cleared on stop");
+    }
+}
