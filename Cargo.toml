@@ -58,6 +58,12 @@ winres = "0.1"
 # yalnızca doğrulama derlemesi: durum izi ve otomatik kapatma kancaları (`cargo build --features devtools`)
 devtools = ["dep:log"]
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 opt-level = 3
 
