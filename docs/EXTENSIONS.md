@@ -2,19 +2,24 @@
 
 Extensions are small JavaScript programs that run inside Soundworks, react to what the player is doing and talk to the outside world. This page is everything you need to write one.
 
-If you only want to see a real one, read [`examples/discord-rich-presence`](../examples/discord-rich-presence): about 150 lines, covers events, timers, binary I/O, permissions and configuration.
+If you only want to see real ones, read the two examples:
+
+- [`examples/discord-rich-presence`](../examples/discord-rich-presence): events, timers, binary I/O over a named pipe, permissions and configuration.
+- [`examples/sleep-timer`](../examples/sleep-timer): a panel in the interface, bottom bar button, commands in the search box and playback control.
 
 - [Quick start](#quick-start)
 - [How an extension is laid out](#how-an-extension-is-laid-out)
 - [The manifest](#the-manifest)
 - [Runtime environment](#runtime-environment)
 - [API reference](#api-reference)
+- [Interface: buttons, panels and commands](#interface-buttons-panels-and-commands)
 - [Events](#events)
 - [Permissions](#permissions)
 - [Configuration and storage](#configuration-and-storage)
 - [Debugging](#debugging)
 - [Limits and isolation](#limits-and-isolation)
 - [Example: Discord Rich Presence](#example-discord-rich-presence)
+- [Example: Sleep Timer](#example-sleep-timer)
 - [Sharing your extension](#sharing-your-extension)
 - [What is not available yet](#what-is-not-available-yet)
 
@@ -68,7 +73,7 @@ You can split code into more files only by bundling them into `main.js` yourself
 | `version` | no | Your version, shown in Settings. |
 | `author` | no | Shown in Settings. |
 | `description` | no | One sentence, shown in Settings. |
-| `api` | yes | The extension API version you wrote for. Currently `1`. Soundworks refuses extensions that need a newer API. |
+| `api` | yes | The extension API version you wrote for. Currently `2` (version 1 plus the interface and playback features below). Soundworks refuses extensions that need a newer API than it has. |
 | `main` | no | Entry file, relative to the folder. Default `main.js`. |
 | `permissions` | no | List of permissions the extension needs. See [Permissions](#permissions). |
 | `config` | no | Default settings. Users override them in `config.json`. |
@@ -91,13 +96,16 @@ Not available: the DOM, `window`, Node.js APIs (`require`, `fs`, `process`), `fe
 ## API reference
 
 ### `sw.api`, `sw.version`, `sw.pid`
-`sw.api` is the API version of the host (`1`), `sw.version` the Soundworks version string, `sw.pid` the process id of Soundworks (some protocols, like Discord's, want it).
+`sw.api` is the API version of the host (`2`), `sw.version` the Soundworks version string, `sw.pid` the process id of Soundworks (some protocols, like Discord's, want it).
 
 ### `sw.on(event, callback)` / `sw.off(event, callback)`
 Subscribe or unsubscribe. See [Events](#events). Callbacks receive a [player state](#player-state) object. A callback that throws does not stop the extension; the error is logged and shown in Settings.
 
 ### `sw.player.getState()`
 Returns the current [player state](#player-state). `position` is extrapolated while playing, so you can call it any time and get a fresh value.
+
+### `sw.player` controls (needs the `playback` permission)
+`sw.player.play()`, `pause()`, `toggle()`, `next()`, `prev()`, `seek(seconds)` and `setVolume(0..1)`. They return `true` if the request was queued. Controls act asynchronously: the player state changes a moment later and you get the matching event.
 
 ### `sw.toast(text)`
 Shows a short message at the bottom of the Soundworks window. At most 20 pending, 200 characters each.
@@ -125,6 +133,69 @@ Talk to a local Windows named pipe, the way many desktop apps expose a local API
 ### `sw.utf8.encode(string)` / `sw.utf8.decode(bytes)`
 Convert between strings and arrays of UTF-8 bytes. Needed for anything that goes through `sw.pipe`.
 
+## Interface: buttons, panels and commands
+
+These need the `ui` permission. Everything is declarative: you describe what you want, Soundworks draws it with its own look, so extensions always match the app and cannot break the layout. When your extension is switched off, everything it added disappears.
+
+### Buttons
+
+```js
+sw.ui.addButton({
+  id: "reload",            // unique inside your extension
+  icon: "settings",        // see the icon list below
+  tooltip: "Do the thing",
+  onClick: function () { sw.toast("clicked"); },
+});
+sw.ui.removeButton("reload");
+```
+Buttons appear at the right end of the bottom bar. At most 8 per extension.
+
+### Panels
+
+A panel opens in the right sidebar (like lyrics and the queue) and gets its own toggle button in the bottom bar.
+
+```js
+sw.ui.addPanel({
+  id: "main",
+  title: "My panel",
+  icon: "list",
+  content: [ /* nodes */ ],
+  onOpen:  function () { /* panel was opened */ },
+  onClose: function () { /* panel was closed */ },
+  onAction: function (action) {
+    // action = { type: "click" | "input" | "switch" | "select", id: "...", value: ... }
+  },
+});
+sw.ui.setContent("main", [ /* new nodes */ ]);   // redraws the panel
+sw.ui.removePanel("main");
+```
+
+Content is a list of nodes. To change what is shown, call `setContent` again with the full new list. At most 4 panels, 300 nodes per panel.
+
+| Node | Fields | Action sent to `onAction` |
+|---|---|---|
+| `{ type: "text" }` | `text`, `style`: `"title"`, `"heading"`, `"dim"` or omitted | none |
+| `{ type: "button" }` | `id`, `label`, `primary` (bool) | `click`, `id` |
+| `{ type: "list" }` | `id`, `items`: `[{ id, title, subtitle }]` | `select`, `id` = the list id, `value` = the item id |
+| `{ type: "input" }` | `id`, `value`, `placeholder` | `input` when the user leaves the field or presses Enter, `value` = the text |
+| `{ type: "switch" }` | `id`, `label`, `value` (bool) | `switch`, `value` = new state |
+| `{ type: "divider" }` | | none |
+| `{ type: "space" }` | | none |
+
+Unknown node types are ignored, so an extension written for a newer Soundworks still opens in an older one.
+
+### Commands
+
+```js
+sw.commands.register({ id: "next-album", title: "Skip to the next album", run: function () { ... } });
+sw.commands.unregister("next-album");
+```
+Commands show up in the search box (F8): type `>` to list all of them, or any text that matches the title. At most 50 per extension.
+
+### Icons
+
+`play pause prev next repeat shuffle volume close trash power list import undo save folder spectrum spectrogram scope wave search user track upload lyrics settings headphones maximize plus`. An unknown name shows `plus`.
+
 ## Events
 
 Subscribe with `sw.on("name", function (state) { ... })`.
@@ -147,6 +218,7 @@ Events are delivered one at a time, in order. Position updates while playing are
   artist: "Band",
   album: "Album",
   year: "2015",        // empty string if the file has no valid year tag
+  volume: 0.8,         // 0..1
   duration: 200.5,     // seconds, 0 if unknown
   position: 12.3,      // seconds
   playing: true
@@ -160,6 +232,8 @@ Extensions can compute and react to the player freely. Anything that reaches out
 | Permission | Allows |
 |---|---|
 | `pipe:<name>` | Opening the named pipe `<name>`. A trailing `*` matches a prefix: `pipe:discord-ipc-*`. Names may not contain `\`, `/` or `..`. |
+| `ui` | Adding buttons, panels and commands to the interface. |
+| `playback` | Controlling playback: play, pause, next, previous, seek and volume. |
 
 Ask for as little as you can. Users decide whether to trust you from this list.
 
@@ -217,6 +291,10 @@ To use it:
 
 Other settings in `config.json`: `largeImage` (art asset name, default `soundworks`), `showWhenPaused` (default `false`: the status is cleared when you pause).
 
+## Example: Sleep Timer
+
+[`examples/sleep-timer`](../examples/sleep-timer) pauses playback after a chosen time and fades the volume out at the end. It uses a panel with buttons and a switch, four commands in the search box, `sw.storage` to remember the switch, and `sw.player` to control the volume and pause. Copy the folder into `%APPDATA%\Soundworks\plugins\` like any other extension. Its `config.json` can change the presets (`"presets": [10, 20, 90]`) and the fade length (`"fadeSeconds": 30`).
+
 ## Sharing your extension
 
 - Put the extension folder at the root of a GitHub repository (or in a subfolder), with a short README that tells people what permissions it needs and why.
@@ -228,8 +306,8 @@ Other settings in `config.json`: `largeImage` (art asset name, default `soundwor
 
 The first API is deliberately small. These are planned, and your feedback decides the order:
 
-- Adding buttons, menu items, panels and settings pages to the Soundworks interface.
-- Registering commands for the search/command box and keyboard shortcuts.
+- Menu items (for albums and tracks), settings pages and keyboard shortcuts.
+- Custom drawing: a canvas for visualisations and whole new views.
 - HTTP (`fetch`) with a `network:<host>` permission.
 - Providing a new music source (for example a Subsonic server).
 - Themes and replacing whole views.

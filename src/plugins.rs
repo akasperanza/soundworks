@@ -12,7 +12,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::Pipes::PeekNamedPipe;
 
-pub const API_VERSION: u32 = 1;
+pub const API_VERSION: u32 = 2;
+const MAX_UI_JSON: usize = 256 * 1024;
+const MAX_BUTTONS: usize = 8;
+const MAX_PANELS: usize = 4;
+const MAX_COMMANDS: usize = 50;
+const MAX_NODES: usize = 300;
+const MAX_ITEMS: usize = 500;
+const CONTROL_COMMANDS: [&str; 7] = ["play", "pause", "toggle", "next", "prev", "seek", "volume"];
 const PRELUDE: &str = include_str!("plugins_prelude.js");
 const CALL_LIMIT: Duration = Duration::from_secs(2);
 const MEMORY_LIMIT: usize = 64 << 20;
@@ -78,7 +85,9 @@ pub fn validate(m: &Manifest, dir: &Path) -> Result<(), String> {
         return Err(format!("{main} not found"));
     }
     for perm in &m.permissions {
-        let known = perm.strip_prefix("pipe:").map_or(false, |n| !n.is_empty() && !n.contains(['\\', '/']) && !n.contains(".."));
+        let known = perm == "ui"
+            || perm == "playback"
+            || perm.strip_prefix("pipe:").map_or(false, |n| !n.is_empty() && !n.contains(['\\', '/']) && !n.contains(".."));
         if !known {
             return Err(format!("unknown permission '{perm}'"));
         }
@@ -126,7 +135,143 @@ pub fn allows_pipe(perms: &[String], name: &str) -> bool {
 
 enum Msg {
     Event(String, String),
+    Action(String, String, String),
     Stop,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct UiButton {
+    pub id: String,
+    pub icon: String,
+    pub tooltip: String,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct UiCommand {
+    pub id: String,
+    pub title: String,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct UiItem {
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum UiNode {
+    Text {
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        style: String,
+    },
+    Button {
+        id: String,
+        #[serde(default)]
+        label: String,
+        #[serde(default)]
+        primary: bool,
+    },
+    List {
+        id: String,
+        #[serde(default)]
+        items: Vec<UiItem>,
+    },
+    Input {
+        id: String,
+        #[serde(default)]
+        value: String,
+        #[serde(default)]
+        placeholder: String,
+    },
+    Switch {
+        id: String,
+        #[serde(default)]
+        label: String,
+        #[serde(default)]
+        value: bool,
+    },
+    Divider,
+    Space,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct UiPanel {
+    pub id: String,
+    pub title: String,
+    pub icon: String,
+    pub content: Vec<UiNode>,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct UiSnapshot {
+    pub buttons: Vec<UiButton>,
+    pub panels: Vec<UiPanel>,
+    pub commands: Vec<UiCommand>,
+}
+
+fn clip(s: &mut String, max: usize) {
+    if s.chars().count() > max {
+        *s = s.chars().take(max).collect();
+    }
+}
+
+fn sanitize(ui: &mut UiSnapshot) {
+    ui.buttons.truncate(MAX_BUTTONS);
+    ui.panels.truncate(MAX_PANELS);
+    ui.commands.truncate(MAX_COMMANDS);
+    for b in &mut ui.buttons {
+        clip(&mut b.id, 64);
+        clip(&mut b.icon, 32);
+        clip(&mut b.tooltip, 120);
+    }
+    for c in &mut ui.commands {
+        clip(&mut c.id, 64);
+        clip(&mut c.title, 120);
+    }
+    for p in &mut ui.panels {
+        clip(&mut p.id, 64);
+        clip(&mut p.title, 80);
+        clip(&mut p.icon, 32);
+        p.content.truncate(MAX_NODES);
+        for n in &mut p.content {
+            match n {
+                UiNode::Text { text, style } => {
+                    clip(text, 4000);
+                    clip(style, 16);
+                }
+                UiNode::Button { id, label, .. } | UiNode::Switch { id, label, .. } => {
+                    clip(id, 64);
+                    clip(label, 120);
+                }
+                UiNode::List { id, items } => {
+                    clip(id, 64);
+                    items.truncate(MAX_ITEMS);
+                    for i in items {
+                        clip(&mut i.id, 64);
+                        clip(&mut i.title, 200);
+                        clip(&mut i.subtitle, 200);
+                    }
+                }
+                UiNode::Input { id, value, placeholder } => {
+                    clip(id, 64);
+                    clip(value, 1000);
+                    clip(placeholder, 120);
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -134,6 +279,8 @@ struct Shared {
     toasts: Mutex<Vec<String>>,
     logs: Mutex<VecDeque<String>>,
     error: Mutex<Option<String>>,
+    ui: Mutex<UiSnapshot>,
+    control: Mutex<Vec<(String, f64)>>,
     file: Option<PathBuf>,
 }
 
@@ -232,6 +379,26 @@ impl PluginHost {
     pub fn broadcast(&self, event: &str, state_json: &str) {
         for r in self.running.values() {
             let _ = r.tx.send(Msg::Event(event.to_string(), state_json.to_string()));
+        }
+    }
+
+    pub fn ui_snapshots(&self) -> Vec<(String, UiSnapshot)> {
+        let mut out: Vec<(String, UiSnapshot)> = self.running.iter().map(|(id, r)| (id.clone(), r.shared.ui.lock().unwrap().clone())).collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    pub fn drain_control(&self) -> Vec<(String, f64)> {
+        let mut out = vec![];
+        for r in self.running.values() {
+            out.append(&mut r.shared.control.lock().unwrap());
+        }
+        out
+    }
+
+    pub fn send_action(&self, plugin: &str, kind: &str, id: &str, payload: &str) {
+        if let Some(r) = self.running.get(plugin) {
+            let _ = r.tx.send(Msg::Action(kind.to_string(), id.to_string(), payload.to_string()));
         }
     }
 
@@ -443,6 +610,55 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
             .map_err(|e| e.to_string())?,
         )?;
 
+        let (perms, sh) = (job.permissions.clone(), shared.clone());
+        put(
+            &native,
+            "ui_publish",
+            Function::new(ctx.clone(), move |json: String| -> bool {
+                if !perms.iter().any(|p| p == "ui") {
+                    sh.log("error", "sw.ui and sw.commands need the 'ui' permission");
+                    return false;
+                }
+                if json.len() > MAX_UI_JSON {
+                    sh.log("error", "interface description is too large");
+                    return false;
+                }
+                match serde_json::from_str::<UiSnapshot>(&json) {
+                    Ok(mut ui) => {
+                        sanitize(&mut ui);
+                        *sh.ui.lock().unwrap() = ui;
+                        true
+                    }
+                    Err(e) => {
+                        sh.log("error", &format!("invalid interface description: {e}"));
+                        false
+                    }
+                }
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
+        let (perms, sh) = (job.permissions.clone(), shared.clone());
+        put(
+            &native,
+            "player_cmd",
+            Function::new(ctx.clone(), move |name: String, arg: f64| -> bool {
+                if !perms.iter().any(|p| p == "playback") {
+                    sh.log("error", "controlling playback needs the 'playback' permission");
+                    return false;
+                }
+                if !CONTROL_COMMANDS.contains(&name.as_str()) {
+                    return false;
+                }
+                let mut q = sh.control.lock().unwrap();
+                if q.len() < MAX_PENDING_TOASTS {
+                    q.push((name, arg));
+                }
+                true
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
         let tbl = pipes.clone();
         put(&native, "pipe_close", Function::new(ctx.clone(), move |id: i32| { tbl.lock().unwrap().remove(&id); }).map_err(|e| e.to_string())?)?;
 
@@ -469,7 +685,8 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
         let f: Function = c.globals().get(name).map_err(|e| error_text(c, e))?;
         match args.len() {
             0 => f.call::<_, ()>(()),
-            _ => f.call::<_, ()>((args[0].clone(), args[1].clone())),
+            2 => f.call::<_, ()>((args[0].clone(), args[1].clone())),
+            _ => f.call::<_, ()>((args[0].clone(), args[1].clone(), args[2].clone())),
         }
         .map_err(|e| error_text(c, e))
     };
@@ -477,6 +694,7 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
     loop {
         match rx.recv_timeout(Duration::from_millis(40)) {
             Ok(Msg::Event(name, json)) => guarded(&|c| call(c, "__dispatch", vec![name.clone(), json.clone()])),
+            Ok(Msg::Action(kind, id, payload)) => guarded(&|c| call(c, "__action", vec![kind.clone(), id.clone(), payload.clone()])),
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 guarded(&|c| call(c, "__dispatch", vec!["stop".into(), "{}".into()]));
                 break;
@@ -779,5 +997,147 @@ mod tests {
         let seen = mock.frames.lock().unwrap().len();
         host.stop("discord-rich-presence");
         wait_frame(&mock, seen, |v| v["cmd"] == "SET_ACTIVITY" && v["args"]["activity"].is_null()).expect("cleared on stop");
+    }
+
+    #[test]
+    fn interface_calls_need_the_ui_permission() {
+        let root = temp_dir("noui");
+        let d = make_plugin(&root, "nu", "", r#"sw.ui.addButton({id:"b", icon:"plus", onClick:function(){}}); sw.toast("done");"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("done"));
+        wait_for(|| host.logs("nu").iter().any(|l| l.contains("'ui' permission")).then_some(())).expect("permission error logged");
+        assert!(host.ui_snapshots()[0].1.buttons.is_empty());
+    }
+
+    #[test]
+    fn buttons_panels_and_commands_round_trip() {
+        let root = temp_dir("ui");
+        let d = make_plugin(
+            &root,
+            "ui",
+            r#","permissions":["ui"]"#,
+            r#"
+            sw.ui.addButton({ id: "go", icon: "lyrics", tooltip: "Go", onClick: function () { sw.toast("button"); } });
+            sw.ui.addPanel({
+              id: "main", title: "Main", icon: "list",
+              content: [
+                { type: "text", text: "Hello", style: "title" },
+                { type: "button", id: "b1", label: "Press", primary: true },
+                { type: "list", id: "l1", items: [{ id: "i1", title: "One", subtitle: "first" }] },
+                { type: "input", id: "in", value: "x", placeholder: "type" },
+                { type: "switch", id: "sw", label: "On", value: true },
+                { type: "divider" },
+                { type: "from-the-future", foo: 1 }
+              ],
+              onAction: function (a) { sw.toast("action:" + a.type + ":" + a.id + ":" + a.value); },
+              onOpen: function () { sw.toast("opened"); },
+            });
+            sw.commands.register({ id: "cmd", title: "Do it", run: function () { sw.toast("ran"); } });
+            "#,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let snap = wait_for(|| {
+            let s = host.ui_snapshots().into_iter().next().unwrap().1;
+            (!s.panels.is_empty() && !s.commands.is_empty() && !s.buttons.is_empty()).then_some(s)
+        })
+        .expect("snapshot published");
+        assert_eq!(snap.buttons[0].icon, "lyrics");
+        assert_eq!(snap.panels[0].content.len(), 7);
+        assert!(matches!(snap.panels[0].content[1], UiNode::Button { primary: true, .. }));
+        assert!(matches!(snap.panels[0].content[6], UiNode::Unknown));
+        assert_eq!(snap.commands[0].title, "Do it");
+
+        host.send_action("ui", "button", "go", "");
+        assert_eq!(first_toast(&host).as_deref(), Some("button"));
+        host.send_action("ui", "command", "cmd", "");
+        assert_eq!(first_toast(&host).as_deref(), Some("ran"));
+        host.send_action("ui", "open", "main", "");
+        assert_eq!(first_toast(&host).as_deref(), Some("opened"));
+        host.send_action("ui", "panel", "main", r#"{"type":"input","id":"in","value":"hi"}"#);
+        assert_eq!(first_toast(&host).as_deref(), Some("action:input:in:hi"));
+    }
+
+    #[test]
+    fn panel_content_can_be_updated_and_is_limited() {
+        let root = temp_dir("uilimit");
+        let d = make_plugin(
+            &root,
+            "ul",
+            r#","permissions":["ui"]"#,
+            r#"
+            sw.ui.addPanel({ id: "p", title: "P", content: [] });
+            var nodes = [];
+            for (var i = 0; i < 1000; i++) nodes.push({ type: "text", text: "line " + i });
+            sw.ui.setContent("p", nodes);
+            for (var i = 0; i < 20; i++) sw.ui.addButton({ id: "b" + i, icon: "plus" });
+            "#,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let snap = wait_for(|| {
+            let s = host.ui_snapshots().into_iter().next().unwrap().1;
+            (s.panels.first().map_or(0, |p| p.content.len()) > 0).then_some(s)
+        })
+        .unwrap();
+        assert_eq!(snap.panels[0].content.len(), MAX_NODES);
+        assert_eq!(snap.buttons.len(), MAX_BUTTONS);
+    }
+
+    #[test]
+    fn playback_control_needs_its_permission_and_known_commands() {
+        let root = temp_dir("ctl");
+        let denied = make_plugin(&root, "denied", "", r#"sw.player.pause(); sw.toast("tried");"#);
+        let allowed = make_plugin(
+            &root,
+            "allowed",
+            r#","permissions":["playback"]"#,
+            r#"sw.player.pause(); sw.player.seek(42); sw.player.setVolume(5); sw.toast("sent");"#,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&denied).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("tried"));
+        assert!(host.drain_control().is_empty());
+        host.stop_all();
+        host.start(&allowed).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("sent"));
+        let cmds = host.drain_control();
+        assert_eq!(cmds, vec![("pause".to_string(), 0.0), ("seek".to_string(), 42.0), ("volume".to_string(), 1.0)]);
+    }
+
+    #[test]
+    fn sleep_timer_example_fades_pauses_and_restores_volume() {
+        let root = temp_dir("sleep");
+        let dir = root.join("sleep-timer");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("soundworks.json"), include_str!("../examples/sleep-timer/soundworks.json")).unwrap();
+        std::fs::write(dir.join("main.js"), include_str!("../examples/sleep-timer/main.js")).unwrap();
+        let d = discover(&root).into_iter().next().unwrap();
+        assert!(d.error.is_none(), "{:?}", d.error);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        host.broadcast("play", r#"{"state":{"playing":true,"volume":0.8,"title":"x"}}"#);
+        let snap = wait_for(|| {
+            let s = host.ui_snapshots().into_iter().next().unwrap().1;
+            (!s.panels.is_empty() && !s.commands.is_empty()).then_some(s)
+        })
+        .expect("ui published");
+        assert_eq!(snap.commands.len(), 4);
+        host.send_action("sleep-timer", "panel", "sleep", r#"{"type":"click","id":"start:0.03"}"#);
+        let mut sent: Vec<(String, f64)> = vec![];
+        wait_for(|| {
+            sent.extend(host.drain_control());
+            sent.iter().any(|(c, _)| c == "pause").then_some(())
+        })
+        .expect("pauses when the time is up");
+        std::thread::sleep(Duration::from_millis(300));
+        sent.extend(host.drain_control());
+        let vols: Vec<f64> = sent.iter().filter(|(c, _)| c == "volume").map(|(_, v)| *v).collect();
+        assert!(vols.len() >= 2, "{sent:?}");
+        assert!(vols[0] <= 0.8 + 1e-9, "fade starts at or below the start volume: {vols:?}");
+        assert!((vols.last().unwrap() - 0.8).abs() < 1e-9, "volume restored: {vols:?}");
+        let toasts = host.drain_toasts();
+        assert!(toasts.is_empty() || toasts.iter().any(|t| t.contains("Sleep timer")));
     }
 }

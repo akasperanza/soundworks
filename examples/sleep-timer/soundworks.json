@@ -1,0 +1,14 @@
+{
+  "id": "sleep-timer",
+  "name": "Sleep Timer",
+  "version": "1.0.0",
+  "author": "Soundworks",
+  "description": "Fades out and pauses after a set time. Panel, command box and playback control example.",
+  "api": 2,
+  "main": "main.js",
+  "permissions": ["ui", "playback"],
+  "config": {
+    "presets": [15, 30, 45, 60],
+    "fadeSeconds": 20
+  }
+}

@@ -5,8 +5,16 @@
   var handlers = {};
   var timers = [];
   var nextTimer = 1;
-  var state = { title: "", artist: "", album: "", year: "", duration: 0, position: 0, playing: false };
+  var state = { title: "", artist: "", album: "", year: "", duration: 0, position: 0, playing: false, volume: 1 };
   var stateAt = N.now();
+  var uiButtons = {};
+  var uiPanels = {};
+  var uiCommands = {};
+  var uiDirty = false;
+
+  function values(o) {
+    return Object.keys(o).map(function (k) { return o[k]; });
+  }
 
   function fmt(args) {
     var out = [];
@@ -79,7 +87,7 @@
   };
 
   var sw = {
-    api: 1,
+    api: 2,
     version: N.version(),
     pid: N.pid(),
     config: JSON.parse(N.config()),
@@ -96,7 +104,50 @@
     log: function () { N.log("info", fmt(arguments)); },
     toast: function (msg) { N.toast(String(msg)); },
     now: function () { return N.now(); },
-    player: { getState: snapshot },
+    player: {
+      getState: snapshot,
+      play: function () { return N.player_cmd("play", 0); },
+      pause: function () { return N.player_cmd("pause", 0); },
+      toggle: function () { return N.player_cmd("toggle", 0); },
+      next: function () { return N.player_cmd("next", 0); },
+      prev: function () { return N.player_cmd("prev", 0); },
+      seek: function (seconds) { return N.player_cmd("seek", Number(seconds) || 0); },
+      setVolume: function (v) { return N.player_cmd("volume", Math.max(0, Math.min(1, Number(v) || 0))); },
+    },
+    ui: {
+      addButton: function (o) {
+        uiButtons[String(o.id)] = { id: String(o.id), icon: String(o.icon || "plus"), tooltip: String(o.tooltip || ""), onClick: o.onClick };
+        uiDirty = true;
+      },
+      removeButton: function (id) { delete uiButtons[String(id)]; uiDirty = true; },
+      addPanel: function (o) {
+        uiPanels[String(o.id)] = {
+          id: String(o.id),
+          title: String(o.title || o.id),
+          icon: String(o.icon || "list"),
+          content: o.content || [],
+          onAction: o.onAction,
+          onOpen: o.onOpen,
+          onClose: o.onClose,
+        };
+        uiDirty = true;
+      },
+      setContent: function (id, nodes) {
+        var p = uiPanels[String(id)];
+        if (p) {
+          p.content = nodes || [];
+          uiDirty = true;
+        }
+      },
+      removePanel: function (id) { delete uiPanels[String(id)]; uiDirty = true; },
+    },
+    commands: {
+      register: function (o) {
+        uiCommands[String(o.id)] = { id: String(o.id), title: String(o.title || o.id), run: o.run };
+        uiDirty = true;
+      },
+      unregister: function (id) { delete uiCommands[String(id)]; uiDirty = true; },
+    },
     storage: {
       get: function (key, fallback) {
         var v = N.storage_get(String(key));
@@ -149,7 +200,29 @@
     for (var i = 0; i < list.length; i++) guard("on(" + name + ")", list[i], snapshot());
   };
 
+  g.__action = function (kind, id, payloadJson) {
+    var payload = payloadJson ? JSON.parse(payloadJson) : {};
+    if (kind === "button") {
+      var b = uiButtons[id];
+      if (b && b.onClick) guard("button " + id, b.onClick, undefined);
+    } else if (kind === "command") {
+      var c = uiCommands[id];
+      if (c && c.run) guard("command " + id, c.run, undefined);
+    } else if (kind === "open" || kind === "close") {
+      var pn = uiPanels[id];
+      var fn = pn && (kind === "open" ? pn.onOpen : pn.onClose);
+      if (fn) guard("panel " + kind, fn, undefined);
+    } else if (kind === "panel") {
+      var panel = uiPanels[id];
+      if (panel && panel.onAction) guard("panel " + id, panel.onAction, payload);
+    }
+  };
+
   g.__tick = function () {
+    if (uiDirty) {
+      uiDirty = false;
+      N.ui_publish(JSON.stringify({ buttons: values(uiButtons), panels: values(uiPanels), commands: values(uiCommands) }));
+    }
     var now = N.now();
     var due = timers.filter(function (t) { return t.at <= now; });
     for (var i = 0; i < due.length; i++) {

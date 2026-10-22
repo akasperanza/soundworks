@@ -300,6 +300,7 @@ enum SearchItem {
     Artist(String),
     Album(String),
     Track(String, usize),
+    Command(String, String, String),
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -340,6 +341,10 @@ pub struct App {
     ambient_on: bool,
     plugin_host: crate::plugins::PluginHost,
     plugin_list: Vec<crate::plugins::Discovered>,
+    plug_ui: Vec<(String, crate::plugins::UiSnapshot)>,
+    plugin_panel: Option<(String, String)>,
+    plug_shown: Option<(String, String)>,
+    plug_inputs: BTreeMap<String, (String, String)>,
     plug_id: u64,
     plug_playing: bool,
     plug_pos: f64,
@@ -547,6 +552,10 @@ impl App {
             ambient_on: false,
             plugin_host: crate::plugins::PluginHost::new(),
             plugin_list: vec![],
+            plug_ui: vec![],
+            plugin_panel: None,
+            plug_shown: None,
+            plug_inputs: BTreeMap::new(),
             plug_id: u64::MAX,
             plug_playing: false,
             plug_pos: 0.0,
@@ -692,6 +701,11 @@ impl App {
         }
         let _ = ctx;
         app.plugins_refresh();
+        if let Ok(v) = crate::devenv::dev_var("SW_PLUGPANEL") {
+            if let Some((p, id)) = v.split_once('/') {
+                app.plugin_panel = Some((p.to_string(), id.to_string()));
+            }
+        }
         match crate::devenv::dev_var("SW_VIEW").as_deref() {
             Ok("settings") => app.view = View::Settings,
             Ok("library") => app.view = View::Library,
@@ -1285,6 +1299,7 @@ impl eframe::App for App {
             self.bottom_bar(ctx);
             self.lyrics_sidebar(ctx);
             self.queue_sidebar(ctx);
+            self.plugin_sidebar(ctx);
             match self.view {
                 View::Motor => {
                     self.side_panel(ctx, fade);

@@ -15,6 +15,17 @@ impl App {
         if q.is_empty() {
             return out;
         }
+        let commands = |needle: &str, limit: usize| -> Vec<SearchItem> {
+            self.plug_ui
+                .iter()
+                .flat_map(|(pid, s)| s.commands.iter().map(move |c| SearchItem::Command(pid.clone(), c.id.clone(), c.title.clone())))
+                .filter(|it| matches!(it, SearchItem::Command(_, _, t) if needle.is_empty() || t.to_lowercase().contains(needle)))
+                .take(limit)
+                .collect()
+        };
+        if let Some(rest) = q.strip_prefix('>') {
+            return commands(rest.trim(), 50);
+        }
         for (name, _, _) in self.lib.artists().into_iter().filter(|(n, _, _)| n.to_lowercase().contains(&q)).take(4) {
             out.push(SearchItem::Artist(name));
         }
@@ -39,6 +50,7 @@ impl App {
                 }
             }
         }
+        out.extend(commands(&q, 5));
         out
     }
 
@@ -49,6 +61,7 @@ impl App {
                 let (t, a) = self.lib.albums.iter().find(|a| &a.key == key).map(|a| (a.title.clone(), a.artist.clone())).unwrap_or_default();
                 (t, format!("Albüm · {a}"))
             }
+            SearchItem::Command(pid, _, title) => (title.clone(), format!("Eklenti komutu · {pid}")),
             SearchItem::Track(key, i) => self
                 .lib
                 .albums
@@ -69,6 +82,7 @@ impl App {
                 self.lib_open = Some(key);
             }
             SearchItem::Track(key, idx) => self.play_album(&key, idx),
+            SearchItem::Command(pid, id, _) => self.plugin_host.send_action(&pid, "command", &id, ""),
         }
         self.search_open = false;
     }
@@ -142,7 +156,7 @@ impl App {
                         ui.separator();
                         if self.search_query.trim().is_empty() {
                             ui.add_space(6.0);
-                            ui.label(RichText::new("Yazmaya başla · Enter: aç · Esc: kapat").font(body(12.5)).color(DIM));
+                            ui.label(RichText::new("Yazmaya başla · Enter: aç · Esc: kapat · > ile eklenti komutları").font(body(12.5)).color(DIM));
                         } else if items.is_empty() {
                             ui.add_space(6.0);
                             ui.label(RichText::new("Sonuç yok").font(body(13.0)).color(DIM));
@@ -154,11 +168,12 @@ impl App {
                                     SearchItem::Artist(_) => 0,
                                     SearchItem::Album(_) => 1,
                                     SearchItem::Track(..) => 2,
+                                    SearchItem::Command(..) => 3,
                                 };
                                 if kind != last_kind {
                                     last_kind = kind;
                                     ui.add_space(6.0);
-                                    section_label(ui, ["Sanatçılar", "Albümler", "Parçalar"][kind]);
+                                    section_label(ui, ["Sanatçılar", "Albümler", "Parçalar", "Komutlar"][kind]);
                                     ui.add_space(2.0);
                                 }
                                 let (title0, sub0) = self.search_texts(it);
@@ -200,6 +215,10 @@ impl App {
                                                 draw_icon(ui.painter(), Icon::Wave, thumb.center(), 14.0, DIM);
                                             }
                                         }
+                                    }
+                                    SearchItem::Command(..) => {
+                                        ui.painter().circle_filled(thumb.center(), 17.0, BG2);
+                                        draw_icon(ui.painter(), Icon::Settings, thumb.center(), 14.0, DIM);
                                     }
                                     SearchItem::Track(key, i) => {
                                         let _ = i;

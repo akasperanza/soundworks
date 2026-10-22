@@ -421,7 +421,7 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Kuyruk", "Queue", "Warteschlange"),
     ("Temizle", "Clear", "Leeren"),
     ("Sanatçı, albüm ya da parça ara…", "Search artists, albums or tracks…", "Künstler, Alben oder Titel suchen…"),
-    ("Yazmaya başla · Enter: aç · Esc: kapat", "Start typing · Enter: open · Esc: close", "Tippen · Enter: öffnen · Esc: schließen"),
+    ("Yazmaya başla · Enter: aç · Esc: kapat · > ile eklenti komutları", "Start typing · Enter: open · Esc: close · > for extension commands", "Tippen · Enter: öffnen · Esc: schließen · > für Erweiterungsbefehle"),
     ("Sistem DSP çalışırken kaynak ve çıkış ayarları kilitli", "Source and output settings are locked while System DSP is running", "Quellen- und Ausgabeeinstellungen sind gesperrt, solange System-DSP läuft"),
     ("Çalarken kaynak ve çıkış ayarları kilitli", "Source and output settings are locked during playback", "Quellen- und Ausgabeeinstellungen sind während der Wiedergabe gesperrt"),
     ("Windows varsayılan çıkışı", "Windows default output", "Windows-Standardausgabe"),
@@ -568,4 +568,8 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Hata: {}", "Error: {}", "Fehler: {}"),
     ("Eklentiler klasörünü aç", "Open extensions folder", "Erweiterungsordner öffnen"),
     ("Yenile", "Refresh", "Aktualisieren"),
+    ("Arayüze düğme, panel ve komut ekler", "Adds buttons, panels and commands to the interface", "Fügt der Oberfläche Schaltflächen, Panels und Befehle hinzu"),
+    ("Çalmayı denetler (oynat, duraklat, atla)", "Controls playback (play, pause, skip)", "Steuert die Wiedergabe (abspielen, pausieren, springen)"),
+    ("Eklenti komutu · {}", "Extension command · {}", "Erweiterungsbefehl · {}"),
+    ("Komutlar", "Commands", "Befehle"),
 ];

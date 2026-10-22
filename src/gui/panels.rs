@@ -360,7 +360,7 @@ impl App {
                     let dur = self.player.duration();
                     let pos = self.player.position();
                     ui.label(RichText::new(fmt_time(pos)).font(body(12.0)).color(DIM));
-                    let seek_w = (ui.available_width() - 222.0).max(120.0);
+                    let seek_w = (ui.available_width() - 222.0 - 36.0 * self.plugin_bar_count() as f32).max(120.0);
                     let cur = self.current_path();
                     if let Some(p) = &cur {
                         if !self.wave_cache.contains_key(p) && !self.wave_fetcher.is_pending(p) {
@@ -409,6 +409,7 @@ impl App {
                         self.lyrics_open = !self.lyrics_open;
                         if self.lyrics_open {
                             self.queue_open = false;
+                            self.plugin_set_panel(None);
                         }
                     }
                     self.proof_light(ui);
@@ -417,8 +418,10 @@ impl App {
                         self.queue_open = !self.queue_open;
                         if self.queue_open {
                             self.lyrics_open = false;
+                            self.plugin_set_panel(None);
                         }
                     }
+                    self.plugin_bar_buttons(ui);
                     let fb = icon_button(ui, Icon::Maximize, 32.0, false).on_hover_text_tr("Tam ekran (F11)");
                     if fb.clicked() && !self.meta.title.is_empty() {
                         self.ambient_on = true;
