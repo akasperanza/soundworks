@@ -80,6 +80,12 @@ impl App {
         for t in self.plugin_host.drain_toasts() {
             self.say(t);
         }
+        let added = self.plugin_host.drain_library();
+        if !added.is_empty() {
+            let n = added.len();
+            self.lib_add_paths(added);
+            self.say(format!("{n} parça kütüphaneye eklendi"));
+        }
         for (cmd, arg) in self.plugin_host.drain_control() {
             let playing = self.player.playing.load(Relaxed);
             match cmd.as_str() {
@@ -323,6 +329,14 @@ impl App {
                             "Arayüze düğme, panel ve komut ekler".to_string()
                         } else if perm == "playback" {
                             "Çalmayı denetler (oynat, duraklat, atla)".to_string()
+                        } else if perm == "download" {
+                            "Müzik klasörüne dosya indirir".to_string()
+                        } else if perm == "library" {
+                            "İndirdiği ses dosyalarını kütüphaneye ekler".to_string()
+                        } else if perm == "network:*" {
+                            "Herhangi bir internet sitesine bağlanabilir".to_string()
+                        } else if let Some(h) = perm.strip_prefix("network:") {
+                            format!("Şu sunucuya bağlanır: {h}")
                         } else {
                             continue;
                         };

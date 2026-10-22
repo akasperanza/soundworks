@@ -11,6 +11,67 @@
   var uiPanels = {};
   var uiCommands = {};
   var uiDirty = false;
+  var netPending = {};
+  var nextNet = 1;
+
+  function headerMap(h) {
+    var out = {};
+    if (h) {
+      Object.keys(h).forEach(function (k) { out[String(k)] = String(h[k]); });
+    }
+    return out;
+  }
+
+  function bodyBytes(body) {
+    if (body === undefined || body === null) return [];
+    if (typeof body === "string") return utf8.encode(body);
+    if (typeof body === "object" && typeof body.length === "number") return Array.prototype.slice.call(body);
+    return utf8.encode(JSON.stringify(body));
+  }
+
+  function netStart(kind, url, o) {
+    o = o || {};
+    return new Promise(function (resolve, reject) {
+      var id = nextNet++;
+      netPending[id] = { resolve: resolve, reject: reject, kind: kind };
+      var ok = N.net_start(
+        id,
+        kind,
+        String(url),
+        JSON.stringify({ method: String(o.method || "GET"), headers: headerMap(o.headers), timeout: Number(o.timeout) || 0, filename: String(o.filename || "") }),
+        bodyBytes(o.body)
+      );
+      if (!ok) {
+        delete netPending[id];
+        reject(new Error("request was refused (see the extension log)"));
+      }
+    });
+  }
+
+  function makeResponse(id, meta) {
+    var headers = meta.headers || {};
+    var res = {
+      ok: meta.status >= 200 && meta.status < 300,
+      status: meta.status,
+      statusText: meta.statusText,
+      url: meta.url,
+      headers: {
+        get: function (name) {
+          var v = headers[String(name).toLowerCase()];
+          return v === undefined ? null : v;
+        },
+        all: headers,
+      },
+      text: function () { return Promise.resolve(N.net_text(id)); },
+      json: function () {
+        return new Promise(function (resolve, reject) {
+          try { resolve(JSON.parse(N.net_text(id))); } catch (e) { reject(e); }
+        });
+      },
+      bytes: function () { return Promise.resolve(N.net_bytes(id)); },
+    };
+    return res;
+  }
 
   function values(o) {
     return Object.keys(o).map(function (k) { return o[k]; });
@@ -141,6 +202,14 @@
       },
       removePanel: function (id) { delete uiPanels[String(id)]; uiDirty = true; },
     },
+    fetch: function (url, o) { return netStart("fetch", url, o); },
+    download: function (url, o) { return netStart("download", url, o); },
+    library: {
+      add: function (paths) {
+        var list = typeof paths === "string" ? [paths] : paths;
+        return N.library_add(JSON.stringify(list));
+      },
+    },
     commands: {
       register: function (o) {
         uiCommands[String(o.id)] = { id: String(o.id), title: String(o.title || o.id), run: o.run };
@@ -198,6 +267,21 @@
     }
     var list = (handlers[name] || []).slice();
     for (var i = 0; i < list.length; i++) guard("on(" + name + ")", list[i], snapshot());
+  };
+
+  g.__net_done = function (idText, json) {
+    var id = Number(idText);
+    var p = netPending[id];
+    if (!p) return;
+    delete netPending[id];
+    var meta = JSON.parse(json);
+    if (!meta.ok) {
+      p.reject(new Error(meta.error));
+    } else if (p.kind === "download") {
+      p.resolve({ ok: meta.status >= 200 && meta.status < 300, status: meta.status, path: meta.path, size: meta.size, url: meta.url });
+    } else {
+      p.resolve(makeResponse(id, meta));
+    }
   };
 
   g.__action = function (kind, id, payloadJson) {

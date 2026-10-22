@@ -1,0 +1,11 @@
+{
+  "id": "download-from-url",
+  "name": "Download from URL",
+  "version": "1.0.0",
+  "author": "Soundworks",
+  "description": "Paste a direct link to an audio file: it is downloaded and added to your library.",
+  "api": 2,
+  "main": "main.js",
+  "permissions": ["ui", "download", "library", "network:*"],
+  "config": {}
+}

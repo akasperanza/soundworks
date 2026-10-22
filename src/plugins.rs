@@ -5,7 +5,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -19,6 +19,12 @@ const MAX_PANELS: usize = 4;
 const MAX_COMMANDS: usize = 50;
 const MAX_NODES: usize = 300;
 const MAX_ITEMS: usize = 500;
+const MAX_BODY: usize = 16 << 20;
+const MAX_DOWNLOAD: u64 = 512 << 20;
+const MAX_INFLIGHT: usize = 4;
+const MAX_REDIRECTS: usize = 5;
+const MAX_KEPT_BODIES: usize = 32;
+const AUDIO_EXTENSIONS: [&str; 14] = ["flac", "wav", "mp3", "m4a", "aac", "ogg", "opus", "wma", "aiff", "aif", "alac", "dsf", "dff", "ape"];
 const CONTROL_COMMANDS: [&str; 7] = ["play", "pause", "toggle", "next", "prev", "seek", "volume"];
 const PRELUDE: &str = include_str!("plugins_prelude.js");
 const CALL_LIMIT: Duration = Duration::from_secs(2);
@@ -87,6 +93,9 @@ pub fn validate(m: &Manifest, dir: &Path) -> Result<(), String> {
     for perm in &m.permissions {
         let known = perm == "ui"
             || perm == "playback"
+            || perm == "download"
+            || perm == "library"
+            || perm.strip_prefix("network:").map_or(false, |h| !h.is_empty() && !h.contains(['/', ':', ' ', '\\']))
             || perm.strip_prefix("pipe:").map_or(false, |n| !n.is_empty() && !n.contains(['\\', '/']) && !n.contains(".."));
         if !known {
             return Err(format!("unknown permission '{perm}'"));
@@ -134,9 +143,164 @@ pub fn allows_pipe(perms: &[String], name: &str) -> bool {
 }
 
 enum Msg {
+    Net(i32, NetDone),
     Event(String, String),
     Action(String, String, String),
     Stop,
+}
+
+struct NetOk {
+    status: u16,
+    status_text: String,
+    headers: Vec<(String, String)>,
+    url: String,
+    body: Vec<u8>,
+    path: Option<PathBuf>,
+    size: u64,
+}
+
+type NetDone = Result<NetOk, String>;
+
+pub fn is_ip_or_local(host: &str) -> bool {
+    let h = host.trim_matches(|c| c == '[' || c == ']').to_lowercase();
+    h.parse::<std::net::IpAddr>().is_ok() || h == "localhost" || h.ends_with(".localhost") || h.ends_with(".local") || h.ends_with(".internal") || !h.contains('.')
+}
+
+pub fn allows_host(perms: &[String], host: &str) -> bool {
+    let host = host.to_lowercase();
+    perms.iter().filter_map(|p| p.strip_prefix("network:")).any(|pat| {
+        let pat = pat.to_lowercase();
+        if pat == "*" {
+            !is_ip_or_local(&host)
+        } else if let Some(suffix) = pat.strip_prefix("*.") {
+            !is_ip_or_local(&host) && host.len() > suffix.len() + 1 && host.ends_with(&format!(".{suffix}"))
+        } else {
+            host == pat
+        }
+    })
+}
+
+fn safe_file_name(name: &str) -> String {
+    let cleaned: String = name.chars().map(|c| if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c }).collect();
+    let cleaned = cleaned.trim().trim_matches('.').to_string();
+    let cleaned: String = cleaned.chars().take(150).collect();
+    if cleaned.is_empty() {
+        "download".to_string()
+    } else {
+        cleaned
+    }
+}
+
+fn unique_path(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
+        _ => (name.to_string(), String::new()),
+    };
+    for n in 1..1000 {
+        let p = dir.join(format!("{stem} ({n}){ext}"));
+        if !p.exists() {
+            return p;
+        }
+    }
+    dir.join(format!("{stem}-{}{ext}", epoch_ms() as u64))
+}
+
+struct NetRequest {
+    perms: Vec<String>,
+    url: String,
+    method: String,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+    timeout: Duration,
+    download: Option<(PathBuf, String)>,
+}
+
+fn run_request(r: NetRequest) -> NetDone {
+    let mut url = url::Url::parse(&r.url).map_err(|e| format!("invalid url: {e}"))?;
+    let mut method = r.method.to_uppercase();
+    let mut body = r.body;
+    let agent = ureq::AgentBuilder::new().redirects(0).timeout(r.timeout).build();
+    for _hop in 0..=MAX_REDIRECTS {
+        if url.scheme() != "http" && url.scheme() != "https" {
+            return Err("only http and https are allowed".into());
+        }
+        let host = url.host_str().unwrap_or("").to_string();
+        if !allows_host(&r.perms, &host) {
+            return Err(format!("host '{host}' is not allowed by the manifest permissions"));
+        }
+        let mut req = agent.request(&method, url.as_str());
+        for (k, v) in &r.headers {
+            if !k.eq_ignore_ascii_case("host") {
+                req = req.set(k, v);
+            }
+        }
+        let res = if body.is_empty() { req.call() } else { req.send_bytes(&body) };
+        let resp = match res {
+            Ok(resp) => resp,
+            Err(ureq::Error::Status(_, resp)) => resp,
+            Err(e) => return Err(e.to_string()),
+        };
+        let status = resp.status();
+        if (301..=308).contains(&status) && status != 304 {
+            if let Some(loc) = resp.header("location") {
+                url = url.join(loc).map_err(|e| format!("bad redirect: {e}"))?;
+                if status != 307 && status != 308 {
+                    method = "GET".into();
+                    body.clear();
+                }
+                continue;
+            }
+        }
+        let status_text = resp.status_text().to_string();
+        let headers: Vec<(String, String)> = resp
+            .headers_names()
+            .into_iter()
+            .filter_map(|n| resp.header(&n).map(|v| (n.to_lowercase(), v.to_string())))
+            .collect();
+        let final_url = url.to_string();
+        let mut reader = resp.into_reader();
+        if let Some((dir, name)) = &r.download {
+            if !(200..300).contains(&status) {
+                return Err(format!("HTTP {status} {status_text}"));
+            }
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let target = unique_path(dir, &safe_file_name(name));
+            let part = target.with_extension("part");
+            let mut file = File::create(&part).map_err(|e| e.to_string())?;
+            let mut size = 0u64;
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                let n = reader.read(&mut buf).map_err(|e| {
+                    let _ = std::fs::remove_file(&part);
+                    e.to_string()
+                })?;
+                if n == 0 {
+                    break;
+                }
+                size += n as u64;
+                if size > MAX_DOWNLOAD {
+                    let _ = std::fs::remove_file(&part);
+                    return Err("download is too large".into());
+                }
+                file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+            }
+            drop(file);
+            std::fs::rename(&part, &target).map_err(|e| e.to_string())?;
+            return Ok(NetOk { status, status_text, headers, url: final_url, body: vec![], path: Some(target), size });
+        }
+        let mut data = Vec::new();
+        reader.take(MAX_BODY as u64 + 1).read_to_end(&mut data).map_err(|e| e.to_string())?;
+        if data.len() > MAX_BODY {
+            return Err("response is too large".into());
+        }
+        let size = data.len() as u64;
+        return Ok(NetOk { status, status_text, headers, url: final_url, body: data, path: None, size });
+    }
+    Err("too many redirects".into())
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -281,6 +445,7 @@ struct Shared {
     error: Mutex<Option<String>>,
     ui: Mutex<UiSnapshot>,
     control: Mutex<Vec<(String, f64)>>,
+    library: Mutex<Vec<PathBuf>>,
     file: Option<PathBuf>,
 }
 
@@ -320,16 +485,35 @@ struct Running {
 
 pub struct PluginHost {
     data_dir: PathBuf,
+    downloads_dir: PathBuf,
     running: HashMap<String, Running>,
 }
 
 impl PluginHost {
     pub fn new() -> PluginHost {
-        PluginHost::with_data_dir(data_dir())
+        let music = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(".")).join("Music").join("Soundworks");
+        PluginHost::with_dirs(data_dir(), music)
+    }
+
+    pub fn with_dirs(data_dir: PathBuf, downloads_dir: PathBuf) -> PluginHost {
+        PluginHost { data_dir, downloads_dir, running: HashMap::new() }
     }
 
     pub fn with_data_dir(data_dir: PathBuf) -> PluginHost {
-        PluginHost { data_dir, running: HashMap::new() }
+        let downloads = data_dir.join("downloads");
+        PluginHost::with_dirs(data_dir, downloads)
+    }
+
+    pub fn downloads_dir(&self) -> &Path {
+        &self.downloads_dir
+    }
+
+    pub fn drain_library(&self) -> Vec<PathBuf> {
+        let mut out = vec![];
+        for r in self.running.values() {
+            out.append(&mut r.shared.library.lock().unwrap());
+        }
+        out
     }
 
     pub fn is_running(&self, id: &str) -> bool {
@@ -354,7 +538,16 @@ impl PluginHost {
         }
         let shared = Arc::new(Shared { file: Some(self.data_dir.join(format!("{}.log", m.id))), ..Default::default() });
         let (tx, rx) = channel::<Msg>();
-        let job = Job { id: m.id.clone(), permissions: m.permissions.clone(), config: serde_json::Value::Object(config).to_string(), script, data_dir: self.data_dir.clone(), shared: shared.clone() };
+        let job = Job {
+            id: m.id.clone(),
+            permissions: m.permissions.clone(),
+            config: serde_json::Value::Object(config).to_string(),
+            script,
+            data_dir: self.data_dir.clone(),
+            downloads_dir: self.downloads_dir.clone(),
+            shared: shared.clone(),
+            tx: tx.clone(),
+        };
         std::thread::Builder::new()
             .name(format!("plugin-{}", m.id))
             .spawn(move || run(job, rx))
@@ -431,7 +624,9 @@ struct Job {
     config: String,
     script: String,
     data_dir: PathBuf,
+    downloads_dir: PathBuf,
     shared: Arc<Shared>,
+    tx: Sender<Msg>,
 }
 
 fn epoch_ms() -> f64 {
@@ -507,6 +702,7 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
 
     let pipes: Arc<Mutex<HashMap<i32, File>>> = Arc::new(Mutex::new(HashMap::new()));
     let next_pipe = Arc::new(Mutex::new(1i32));
+    let body_store: Arc<Mutex<VecDeque<(i32, Vec<u8>)>>> = Arc::new(Mutex::new(VecDeque::new()));
     let store = Arc::new(Mutex::new(Store::load(job.data_dir.join(format!("{}.json", job.id)))));
 
     let setup = ctx.with(|ctx| -> Result<(), String> {
@@ -659,6 +855,97 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
             .map_err(|e| e.to_string())?,
         )?;
 
+        let (perms, sh, tx, inflight) = (job.permissions.clone(), shared.clone(), job.tx.clone(), Arc::new(AtomicUsize::new(0)));
+        let downloads = job.downloads_dir.clone();
+        put(
+            &native,
+            "net_start",
+            Function::new(ctx.clone(), move |id: i32, kind: String, url: String, opts_json: String, body: Vec<u8>| -> bool {
+                let opts: serde_json::Value = serde_json::from_str(&opts_json).unwrap_or_default();
+                let method = opts["method"].as_str().unwrap_or("GET").to_string();
+                let timeout_ms = opts["timeout"].as_f64().unwrap_or(0.0);
+                let filename = opts["filename"].as_str().unwrap_or("").to_string();
+                let headers_json = opts["headers"].to_string();
+                let need = if kind == "download" { "download" } else { "" };
+                if !need.is_empty() && !perms.iter().any(|p| p == need) {
+                    sh.log("error", "sw.download needs the 'download' permission");
+                    return false;
+                }
+                if !perms.iter().any(|p| p.starts_with("network:")) {
+                    sh.log("error", "network access needs a 'network:<host>' permission");
+                    return false;
+                }
+                if inflight.load(Ordering::Relaxed) >= MAX_INFLIGHT {
+                    sh.log("error", "too many requests in flight");
+                    return false;
+                }
+                let headers: Vec<(String, String)> = serde_json::from_str::<HashMap<String, String>>(&headers_json).unwrap_or_default().into_iter().collect();
+                let default_timeout = if kind == "download" { 600.0 } else { 30.0 };
+                let secs = if timeout_ms > 0.0 { timeout_ms / 1000.0 } else { default_timeout };
+                let req = NetRequest {
+                    perms: perms.clone(),
+                    url,
+                    method: if method.is_empty() { "GET".into() } else { method },
+                    headers,
+                    body,
+                    timeout: Duration::from_secs_f64(secs.clamp(1.0, 900.0)),
+                    download: (kind == "download").then(|| (downloads.clone(), filename)),
+                };
+                inflight.fetch_add(1, Ordering::Relaxed);
+                let (tx, counter) = (tx.clone(), inflight.clone());
+                std::thread::spawn(move || {
+                    let r = run_request(req);
+                    counter.fetch_sub(1, Ordering::Relaxed);
+                    let _ = tx.send(Msg::Net(id, r));
+                });
+                true
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
+        let bodies = body_store.clone();
+        put(
+            &native,
+            "net_text",
+            Function::new(ctx.clone(), move |id: i32| -> String {
+                bodies.lock().unwrap().iter().find(|(i, _)| *i == id).map(|(_, b)| String::from_utf8_lossy(b).to_string()).unwrap_or_default()
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+        let bodies = body_store.clone();
+        put(
+            &native,
+            "net_bytes",
+            Function::new(ctx.clone(), move |id: i32| -> Vec<u8> { bodies.lock().unwrap().iter().find(|(i, _)| *i == id).map(|(_, b)| b.clone()).unwrap_or_default() }).map_err(|e| e.to_string())?,
+        )?;
+
+        let (perms, sh, dl) = (job.permissions.clone(), shared.clone(), job.downloads_dir.clone());
+        put(
+            &native,
+            "library_add",
+            Function::new(ctx.clone(), move |json: String| -> bool {
+                if !perms.iter().any(|p| p == "library") {
+                    sh.log("error", "sw.library.add needs the 'library' permission");
+                    return false;
+                }
+                let Ok(paths) = serde_json::from_str::<Vec<String>>(&json) else { return false };
+                let root = std::fs::canonicalize(&dl).unwrap_or(dl.clone());
+                let mut ok = false;
+                for p in paths.into_iter().take(500) {
+                    let Ok(full) = std::fs::canonicalize(&p) else { continue };
+                    let audio = full.extension().and_then(|e| e.to_str()).map_or(false, |e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()));
+                    if full.starts_with(&root) && full.is_file() && audio {
+                        sh.library.lock().unwrap().push(full);
+                        ok = true;
+                    } else {
+                        sh.log("error", &format!("library.add only accepts audio files inside the downloads folder: {p}"));
+                    }
+                }
+                ok
+            })
+            .map_err(|e| e.to_string())?,
+        )?;
+
         let tbl = pipes.clone();
         put(&native, "pipe_close", Function::new(ctx.clone(), move |id: i32| { tbl.lock().unwrap().remove(&id); }).map_err(|e| e.to_string())?)?;
 
@@ -670,9 +957,21 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
         return fail(e);
     }
 
+    {
+        let sh = shared.clone();
+        rt.set_host_promise_rejection_tracker(Some(Box::new(move |ctx, _promise, reason, handled| {
+            if !handled {
+                let text = reason.as_exception().map(|e| e.message().unwrap_or_default()).unwrap_or_else(|| format!("{reason:?}"));
+                let _ = ctx;
+                sh.log("error", &format!("unhandled promise rejection: {text}"));
+            }
+        })));
+    }
+
     let guarded = |f: &dyn Fn(&Ctx) -> Result<(), String>| {
         deadline.store(started.elapsed().as_millis() as u64 + CALL_LIMIT.as_millis() as u64, Ordering::Relaxed);
         let r = ctx.with(|c| f(&c));
+        while rt.execute_pending_job().unwrap_or(false) {}
         deadline.store(u64::MAX, Ordering::Relaxed);
         if let Err(e) = r {
             shared.log("error", &e);
@@ -693,6 +992,29 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
 
     loop {
         match rx.recv_timeout(Duration::from_millis(40)) {
+            Ok(Msg::Net(id, result)) => {
+                let meta = match result {
+                    Ok(ok) => {
+                        let mut b = body_store.lock().unwrap();
+                        b.push_back((id, ok.body));
+                        while b.len() > MAX_KEPT_BODIES {
+                            b.pop_front();
+                        }
+                        serde_json::json!({
+                            "ok": true,
+                            "status": ok.status,
+                            "statusText": ok.status_text,
+                            "headers": ok.headers.into_iter().collect::<HashMap<String, String>>(),
+                            "url": ok.url,
+                            "path": ok.path.map(|p| p.to_string_lossy().to_string()),
+                            "size": ok.size,
+                        })
+                    }
+                    Err(e) => serde_json::json!({ "ok": false, "error": e }),
+                };
+                let text = meta.to_string();
+                guarded(&|c| call(c, "__net_done", vec![id.to_string(), text.clone()]));
+            }
             Ok(Msg::Event(name, json)) => guarded(&|c| call(c, "__dispatch", vec![name.clone(), json.clone()])),
             Ok(Msg::Action(kind, id, payload)) => guarded(&|c| call(c, "__action", vec![kind.clone(), id.clone(), payload.clone()])),
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => {
@@ -1139,5 +1461,246 @@ mod tests {
         assert!((vols.last().unwrap() - 0.8).abs() < 1e-9, "volume restored: {vols:?}");
         let toasts = host.drain_toasts();
         assert!(toasts.is_empty() || toasts.iter().any(|t| t.contains("Sleep timer")));
+    }
+
+    fn serve_http() -> u16 {
+        use std::io::{BufRead, BufReader};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                std::thread::spawn(move || {
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut stream = stream;
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).is_err() {
+                        return;
+                    }
+                    let mut parts = line.split_whitespace();
+                    let (method, path) = (parts.next().unwrap_or("").to_string(), parts.next().unwrap_or("").to_string());
+                    let mut len = 0usize;
+                    let mut token = String::new();
+                    loop {
+                        let mut h = String::new();
+                        if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
+                            break;
+                        }
+                        let lower = h.to_lowercase();
+                        if let Some(v) = lower.strip_prefix("content-length:") {
+                            len = v.trim().parse().unwrap_or(0);
+                        }
+                        if let Some(v) = h.to_lowercase().strip_prefix("x-token:") {
+                            token = v.trim().to_string();
+                        }
+                    }
+                    let mut body = vec![0u8; len];
+                    let _ = reader.read_exact(&mut body);
+                    let (status, extra, payload): (&str, String, Vec<u8>) = match path.as_str() {
+                        "/json" => ("200 OK", "Content-Type: application/json\r\nX-Test: yes\r\n".into(), br#"{"a":1}"#.to_vec()),
+                        "/redirect" => ("302 Found", format!("Location: http://localhost:{port}/json\r\n"), vec![]),
+                        "/missing" => ("404 Not Found", String::new(), b"nope".to_vec()),
+                        "/echo" => ("200 OK", String::new(), format!("{method}|{token}|{}", String::from_utf8_lossy(&body)).into_bytes()),
+                        "/audio.flac" => ("200 OK", String::new(), b"fLaC-test-bytes".to_vec()),
+                        _ => ("404 Not Found", String::new(), vec![]),
+                    };
+                    let head = format!("HTTP/1.1 {status}\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n", payload.len());
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(&payload);
+                });
+            }
+        });
+        port
+    }
+
+    fn net_plugin(root: &Path, id: &str, perms: &str, script: &str, port: u16) -> Discovered {
+        make_plugin(root, id, &format!(r#","permissions":[{perms}],"config":{{"base":"http://127.0.0.1:{port}"}}"#), script)
+    }
+
+    #[test]
+    fn host_patterns_never_match_local_addresses_through_wildcards() {
+        let any = vec!["network:*".to_string()];
+        assert!(allows_host(&any, "example.com"));
+        assert!(!allows_host(&any, "127.0.0.1"));
+        assert!(!allows_host(&any, "localhost"));
+        assert!(!allows_host(&any, "192.168.1.5"));
+        assert!(!allows_host(&any, "printer.local"));
+        let sub = vec!["network:*.example.com".to_string()];
+        assert!(allows_host(&sub, "a.example.com"));
+        assert!(allows_host(&sub, "A.B.Example.com"));
+        assert!(!allows_host(&sub, "example.com"));
+        assert!(!allows_host(&sub, "evilexample.com"));
+        let exact = vec!["network:127.0.0.1".to_string(), "network:api.site.org".to_string()];
+        assert!(allows_host(&exact, "127.0.0.1"));
+        assert!(allows_host(&exact, "API.site.org"));
+        assert!(!allows_host(&exact, "site.org"));
+        assert!(!allows_host(&[], "example.com"));
+    }
+
+    #[test]
+    fn fetch_returns_status_headers_and_json() {
+        let port = serve_http();
+        let root = temp_dir("fetch1");
+        let d = net_plugin(
+            &root,
+            "f1",
+            r#""network:127.0.0.1""#,
+            r#"sw.fetch(sw.config.base + "/json").then(function (r) {
+                 return r.json().then(function (j) { sw.toast(r.status + ":" + r.ok + ":" + j.a + ":" + r.headers.get("X-Test")); });
+               });
+               sw.fetch(sw.config.base + "/missing").then(function (r) { return r.text().then(function (t) { sw.toast("m:" + r.status + ":" + r.ok + ":" + t); }); });"#,
+            port,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let mut seen = vec![];
+        wait_for(|| {
+            seen.extend(host.drain_toasts());
+            (seen.len() >= 2).then_some(())
+        })
+        .unwrap();
+        assert!(seen.contains(&"200:true:1:yes".to_string()), "{seen:?}");
+        assert!(seen.contains(&"m:404:false:nope".to_string()), "{seen:?}");
+    }
+
+    #[test]
+    fn fetch_sends_method_headers_and_body() {
+        let port = serve_http();
+        let root = temp_dir("fetch2");
+        let d = net_plugin(
+            &root,
+            "f2",
+            r#""network:127.0.0.1""#,
+            r#"sw.fetch(sw.config.base + "/echo", { method: "POST", headers: { "X-Token": "abc" }, body: "şarkı" })
+                 .then(function (r) { return r.text(); }).then(function (t) { sw.toast(t); });"#,
+            port,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        assert_eq!(first_toast(&host).as_deref(), Some("POST|abc|şarkı"));
+    }
+
+    #[test]
+    fn fetch_refuses_hosts_outside_the_permissions_including_redirects() {
+        let port = serve_http();
+        let root = temp_dir("fetch3");
+        let d = net_plugin(
+            &root,
+            "f3",
+            r#""network:127.0.0.1""#,
+            r#"sw.fetch("http://example.com/").catch(function (e) { sw.toast("a:" + e.message); });
+               sw.fetch(sw.config.base + "/redirect").catch(function (e) { sw.toast("b:" + e.message); });"#,
+            port,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let mut seen = vec![];
+        wait_for(|| {
+            seen.extend(host.drain_toasts());
+            (seen.len() >= 2).then_some(())
+        })
+        .unwrap();
+        assert!(seen.iter().any(|t| t.starts_with("a:") && t.contains("not allowed")), "{seen:?}");
+        assert!(seen.iter().any(|t| t.starts_with("b:") && t.contains("localhost") && t.contains("not allowed")), "{seen:?}");
+    }
+
+    #[test]
+    fn fetch_needs_a_network_permission_and_logs_unhandled_rejections() {
+        let root = temp_dir("fetch4");
+        let d = make_plugin(&root, "f4", "", r#"sw.fetch("http://example.com/");"#);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        wait_for(|| {
+            let logs = host.logs("f4");
+            (logs.iter().any(|l| l.contains("'network:<host>' permission")) && logs.iter().any(|l| l.contains("unhandled promise rejection"))).then_some(())
+        })
+        .expect("permission error and unhandled rejection logged");
+    }
+
+    #[test]
+    fn download_saves_into_the_downloads_folder_and_library_add_is_confined_to_it() {
+        let port = serve_http();
+        let root = temp_dir("download");
+        let outside = root.join("outside.flac");
+        std::fs::write(&outside, b"x").unwrap();
+        let outside_js = outside.to_string_lossy().replace('\\', "\\\\");
+        let d = net_plugin(
+            &root,
+            "dl",
+            r#""network:127.0.0.1","download","library""#,
+            &format!(
+                r#"sw.download(sw.config.base + "/audio.flac", {{ filename: "a/b:c.flac" }}).then(function (r) {{
+                     sw.toast("saved:" + r.size);
+                     sw.toast("add:" + sw.library.add(r.path));
+                     sw.toast("outside:" + sw.library.add("{outside_js}"));
+                   }});"#
+            ),
+            port,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let mut seen = vec![];
+        wait_for(|| {
+            seen.extend(host.drain_toasts());
+            (seen.len() >= 3).then_some(())
+        })
+        .unwrap();
+        assert_eq!(seen, vec!["saved:15".to_string(), "add:true".to_string(), "outside:false".to_string()]);
+        let saved = host.downloads_dir().join("a_b_c.flac");
+        assert_eq!(std::fs::read(&saved).unwrap(), b"fLaC-test-bytes");
+        let added = host.drain_library();
+        assert_eq!(added.len(), 1);
+        assert_eq!(std::fs::canonicalize(&saved).unwrap(), added[0]);
+        assert!(!host.downloads_dir().join("a_b_c.part").exists());
+    }
+
+    #[test]
+    fn download_picks_a_free_name_instead_of_overwriting() {
+        let port = serve_http();
+        let root = temp_dir("download2");
+        let d = net_plugin(
+            &root,
+            "d2",
+            r#""network:127.0.0.1","download""#,
+            r#"sw.download(sw.config.base + "/audio.flac", { filename: "t.flac" }).then(function () {
+                 return sw.download(sw.config.base + "/audio.flac", { filename: "t.flac" });
+               }).then(function (r) { sw.toast(r.path); });"#,
+            port,
+        );
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        let path = first_toast(&host).unwrap();
+        assert!(path.ends_with("t (1).flac"), "{path}");
+        assert!(host.downloads_dir().join("t.flac").exists());
+    }
+
+    #[test]
+    fn download_from_url_example_downloads_and_adds_to_the_library() {
+        let port = serve_http();
+        let root = temp_dir("dlurl");
+        let dir = root.join("download-from-url");
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest = include_str!("../examples/download-from-url/soundworks.json").replace("network:*", "network:127.0.0.1");
+        std::fs::write(dir.join("soundworks.json"), manifest).unwrap();
+        std::fs::write(dir.join("main.js"), include_str!("../examples/download-from-url/main.js")).unwrap();
+        let d = discover(&root).into_iter().next().unwrap();
+        assert!(d.error.is_none(), "{:?}", d.error);
+        let mut host = PluginHost::with_data_dir(root.join("data"));
+        host.start(&d).unwrap();
+        wait_for(|| host.ui_snapshots().into_iter().next().filter(|(_, s)| !s.panels.is_empty()).map(|_| ())).expect("panel published");
+        let url = format!("http://127.0.0.1:{port}/audio.flac");
+        host.send_action("download-from-url", "panel", "download", &serde_json::json!({"type":"input","id":"url","value":url}).to_string());
+        host.send_action("download-from-url", "panel", "download", r#"{"type":"click","id":"go"}"#);
+        let status = wait_for(|| {
+            let snap = host.ui_snapshots().into_iter().next()?.1;
+            match snap.panels[0].content.first() {
+                Some(UiNode::Text { text, .. }) if text.starts_with("Added to your library") => Some(text.clone()),
+                _ => None,
+            }
+        })
+        .expect("download finished");
+        assert!(status.ends_with("audio.flac"), "{status}");
+        assert_eq!(host.drain_library().len(), 1);
+        assert_eq!(std::fs::read(host.downloads_dir().join("audio.flac")).unwrap(), b"fLaC-test-bytes");
     }
 }

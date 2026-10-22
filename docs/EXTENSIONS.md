@@ -6,12 +6,14 @@ If you only want to see real ones, read the two examples:
 
 - [`examples/discord-rich-presence`](../examples/discord-rich-presence): events, timers, binary I/O over a named pipe, permissions and configuration.
 - [`examples/sleep-timer`](../examples/sleep-timer): a panel in the interface, bottom bar button, commands in the search box and playback control.
+- [`examples/download-from-url`](../examples/download-from-url): `sw.fetch`-style networking: a panel where you paste a link, the file is downloaded and added to your library.
 
 - [Quick start](#quick-start)
 - [How an extension is laid out](#how-an-extension-is-laid-out)
 - [The manifest](#the-manifest)
 - [Runtime environment](#runtime-environment)
 - [API reference](#api-reference)
+- [Networking and downloads](#networking-and-downloads)
 - [Interface: buttons, panels and commands](#interface-buttons-panels-and-commands)
 - [Events](#events)
 - [Permissions](#permissions)
@@ -20,6 +22,7 @@ If you only want to see real ones, read the two examples:
 - [Limits and isolation](#limits-and-isolation)
 - [Example: Discord Rich Presence](#example-discord-rich-presence)
 - [Example: Sleep Timer](#example-sleep-timer)
+- [Example: Download from URL](#example-download-from-url)
 - [Sharing your extension](#sharing-your-extension)
 - [What is not available yet](#what-is-not-available-yet)
 
@@ -91,7 +94,7 @@ Available:
 - `console.log / info / warn / error`.
 - The global `sw` object described below.
 
-Not available: the DOM, `window`, Node.js APIs (`require`, `fs`, `process`), `fetch`, `XMLHttpRequest`, `TextEncoder`/`TextDecoder` (use `sw.utf8`), and `import`/`export`. Your file is a plain script.
+Not available: the DOM, `window`, Node.js APIs (`require`, `fs`, `process`), the global `fetch` (use `sw.fetch`), `XMLHttpRequest`, `TextEncoder`/`TextDecoder` (use `sw.utf8`), and `import`/`export`. Your file is a plain script.
 
 ## API reference
 
@@ -132,6 +135,58 @@ Talk to a local Windows named pipe, the way many desktop apps expose a local API
 
 ### `sw.utf8.encode(string)` / `sw.utf8.decode(bytes)`
 Convert between strings and arrays of UTF-8 bytes. Needed for anything that goes through `sw.pipe`.
+
+## Networking and downloads
+
+These need permissions that name exactly what you talk to. Without them every call is refused.
+
+### `sw.fetch(url, options)` (needs `network:<host>`)
+
+Returns a Promise of a response, modelled on the web `fetch`:
+
+```js
+sw.fetch("https://api.example.com/search?q=" + encodeURIComponent(q), {
+  method: "GET",                       // default "GET"
+  headers: { Authorization: "Bearer " + token },
+  body: JSON.stringify({ a: 1 }),      // string, or an array of byte values
+  timeout: 20000,                      // milliseconds, default 30000
+})
+  .then(function (res) {
+    // res.ok, res.status, res.statusText, res.url
+    // res.headers.get("content-type"), res.headers.all
+    return res.json();                 // or res.text(), or res.bytes() (array of byte values)
+  })
+  .then(function (data) { /* ... */ })
+  .catch(function (err) { sw.log("failed", err.message); });
+```
+
+- HTTP error statuses (404, 500, ...) are **not** errors: the promise resolves and `res.ok` is `false`. The promise rejects only when the request could not be made (blocked by permissions, network failure, timeout, response too large).
+- Responses are limited to 16 MB. For anything bigger use `sw.download`.
+- Redirects are followed (up to 5), and **every** redirect target is checked against your permissions again.
+- Up to 4 requests in flight per extension. A rejection nobody handles is written to the extension log.
+- HTTP and HTTPS only.
+
+### `sw.download(url, options)` (needs `download` and `network:<host>`)
+
+Streams the response into a file in the Soundworks downloads folder (`%USERPROFILE%\Music\Soundworks`) and resolves to `{ ok, status, path, size, url }`. Options: `filename` (sanitised; path separators and special characters are replaced), `headers`, `method`, `body`, `timeout` (default 10 minutes). Existing files are never overwritten: the name becomes `song (1).flac`. A file only appears under its final name when the download is complete. Limit: 512 MB per file.
+
+### `sw.library.add(paths)` (needs `library`)
+
+Adds audio files to the Soundworks library. It accepts a path or an array of paths and only works for audio files **inside the downloads folder**, so combine it with `sw.download`. Returns `true` if at least one file was accepted. Soundworks then reads the tags and shows the tracks like any other.
+
+```js
+sw.download(url, { filename: "song.flac" }).then(function (r) { sw.library.add(r.path); });
+```
+
+### Which hosts a `network:` permission allows
+
+| Permission | Allows |
+|---|---|
+| `network:api.example.com` | exactly that host (any port, http or https) |
+| `network:*.example.com` | any subdomain of `example.com`, not `example.com` itself |
+| `network:*` | any public host |
+
+Wildcards never match IP addresses, `localhost` or `.local` / `.internal` names, so an extension cannot be tricked into probing your home network. If you really need a local server, name it exactly: `network:192.168.1.20` or `network:localhost`. Prefer narrow permissions: users see them in Settings, and `network:*` is shown as "can connect to any website".
 
 ## Interface: buttons, panels and commands
 
@@ -232,6 +287,9 @@ Extensions can compute and react to the player freely. Anything that reaches out
 | Permission | Allows |
 |---|---|
 | `pipe:<name>` | Opening the named pipe `<name>`. A trailing `*` matches a prefix: `pipe:discord-ipc-*`. Names may not contain `\`, `/` or `..`. |
+| `network:<host>` | `sw.fetch` and `sw.download` to that host. `*` and `*.domain` wildcards, see [above](#which-hosts-a-network-permission-allows). |
+| `download` | `sw.download`: writing files into the downloads folder. |
+| `library` | `sw.library.add`: adding downloaded audio files to the library. |
 | `ui` | Adding buttons, panels and commands to the interface. |
 | `playback` | Controlling playback: play, pause, next, previous, seek and volume. |
 
@@ -295,6 +353,10 @@ Other settings in `config.json`: `largeImage` (art asset name, default `soundwor
 
 [`examples/sleep-timer`](../examples/sleep-timer) pauses playback after a chosen time and fades the volume out at the end. It uses a panel with buttons and a switch, four commands in the search box, `sw.storage` to remember the switch, and `sw.player` to control the volume and pause. Copy the folder into `%APPDATA%\Soundworks\plugins\` like any other extension. Its `config.json` can change the presets (`"presets": [10, 20, 90]`) and the fade length (`"fadeSeconds": 30`).
 
+## Example: Download from URL
+
+[`examples/download-from-url`](../examples/download-from-url) adds a panel with a text field and a button. Paste a direct link to an audio file, press **Download**, and the file is saved and appears in your library. It shows `sw.download`, `sw.library.add`, promises with `.catch`, and a panel whose content is rebuilt as the state changes. It asks for `network:*` because it must reach whichever host you paste; an extension for one service should ask for that service only.
+
 ## Sharing your extension
 
 - Put the extension folder at the root of a GitHub repository (or in a subfolder), with a short README that tells people what permissions it needs and why.
@@ -308,8 +370,7 @@ The first API is deliberately small. These are planned, and your feedback decide
 
 - Menu items (for albums and tracks), settings pages and keyboard shortcuts.
 - Custom drawing: a canvas for visualisations and whole new views.
-- HTTP (`fetch`) with a `network:<host>` permission.
-- Providing a new music source (for example a Subsonic server).
+- Providing a new music source that plays straight from a stream (for example a Subsonic server) without downloading first.
 - Themes and replacing whole views.
 
 If you need one of these, open an issue and describe what you want to build. Real use cases shape the API far better than guesses.

@@ -572,4 +572,9 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Çalmayı denetler (oynat, duraklat, atla)", "Controls playback (play, pause, skip)", "Steuert die Wiedergabe (abspielen, pausieren, springen)"),
     ("Eklenti komutu · {}", "Extension command · {}", "Erweiterungsbefehl · {}"),
     ("Komutlar", "Commands", "Befehle"),
+    ("Müzik klasörüne dosya indirir", "Downloads files into the music folder", "Lädt Dateien in den Musikordner herunter"),
+    ("İndirdiği ses dosyalarını kütüphaneye ekler", "Adds the audio files it downloads to the library", "Fügt heruntergeladene Audiodateien der Bibliothek hinzu"),
+    ("Herhangi bir internet sitesine bağlanabilir", "Can connect to any website", "Kann sich mit jeder Website verbinden"),
+    ("Şu sunucuya bağlanır: {}", "Connects to this server: {}", "Verbindet sich mit diesem Server: {}"),
+    ("{} parça kütüphaneye eklendi", "{} tracks added to the library", "{} Titel zur Bibliothek hinzugefügt"),
 ];
