@@ -337,7 +337,6 @@ pub struct App {
     cover_id: u64,
     cover_tex: Option<TextureHandle>,
 
-    wordmark_tex: Option<(TextureHandle, u32, u32)>,
     cover_t0: Instant,
     ambient_on: bool,
     plugin_host: crate::plugins::PluginHost,
@@ -545,7 +544,6 @@ impl App {
             meta: TrackMeta::default(),
             cover_id: 0,
             cover_tex: None,
-            wordmark_tex: None,
             cover_t0: Instant::now(),
             ambient_on: false,
             plugin_host: crate::plugins::PluginHost::new(),

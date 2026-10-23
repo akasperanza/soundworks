@@ -131,6 +131,8 @@ pub fn setup(ctx: &Context) {
     }
     bold_fam.extend(fonts.families[&FontFamily::Proportional].clone());
     fonts.families.insert(FontFamily::Name("bold".into()), bold_fam);
+    fonts.font_data.insert("barlow_sb".to_owned(), FontData::from_static(include_bytes!("../assets/fonts/Barlow-SemiBold.ttf")));
+    fonts.families.insert(FontFamily::Name("wordmark".into()), vec!["barlow_sb".to_owned()]);
     ctx.set_fonts(fonts);
 
     ctx.set_theme(egui::ThemePreference::Dark);
@@ -172,6 +174,10 @@ pub fn setup(ctx: &Context) {
 
     v.widgets.noninteractive.bg_stroke = Stroke::NONE;
     ctx.set_visuals(v);
+    ctx.style_mut(|s| {
+        s.interaction.selectable_labels = false;
+        s.interaction.multi_widget_text_select = false;
+    });
 
     ctx.style_mut(|s| {
         s.spacing.item_spacing = vec2(12.0, 10.0);

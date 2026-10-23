@@ -82,7 +82,7 @@ Proje aktif geliştirme altında.
 ## Lisans
 
 Henüz belirtilmedi. `vendor/` altındaki üçüncü taraf kodlar kendi lisanslarına tabidir. İkonlar [Lucide](https://lucide.dev) (ISC lisansı).
-Uygulama simgesindeki harfler [Barlow](https://github.com/jpt/barlow) SemiBold'un (© The Barlow Project Authors, [SIL Open Font License 1.1](https://openfontlicense.org)) ana hatlarından çizilmiştir.
+Uygulama simgesindeki harfler ve başlıktaki "Soundworks" yazısı [Barlow](https://github.com/jpt/barlow) SemiBold'un (© The Barlow Project Authors, [SIL Open Font License 1.1](https://openfontlicense.org)) ana hatlarından çizilmiştir.
 
 ## Lisans
 
