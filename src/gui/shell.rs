@@ -155,8 +155,12 @@ pub(super) fn window_on_screen(x: f32, y: f32, w: f32, h: f32, scale: f32) -> bo
 }
 
 pub(super) fn style_titlebar() -> bool {
+    style_titlebar_for("Soundworks")
+}
+
+pub(super) fn style_titlebar_for(title: &str) -> bool {
     use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
-    let Some(h) = find_window() else { return false };
+    let Some(h) = find_window_titled(title) else { return false };
     let bgr = |r: u32, g: u32, b: u32| -> u32 { r | (g << 8) | (b << 16) };
     let dark: i32 = 1;
     let caption = bgr(9, 13, 22);
@@ -171,9 +175,14 @@ pub(super) fn style_titlebar() -> bool {
 }
 
 pub(super) fn find_window() -> Option<windows::Win32::Foundation::HWND> {
-    use windows::core::{w, PCWSTR};
+    find_window_titled("Soundworks")
+}
+
+fn find_window_titled(title: &str) -> Option<windows::Win32::Foundation::HWND> {
+    use windows::core::PCWSTR;
     use windows::Win32::UI::WindowsAndMessaging::FindWindowW;
-    unsafe { FindWindowW(PCWSTR::null(), w!("Soundworks")).ok() }
+    let wide: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
+    unsafe { FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr())).ok() }
 }
 
 pub(super) static HIDDEN_AT: std::sync::Mutex<Option<(i32, i32, bool)>> = std::sync::Mutex::new(None);

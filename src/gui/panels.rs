@@ -57,11 +57,22 @@ impl App {
                     }
                     ui.add_space(8.0);
                     for (v, n) in [(View::Library, "Kütüphane"), (View::Motor, "Motor")] {
-                        if tab(ui, n, self.view == v).clicked() {
-                            self.set_view(v);
-                            if v == View::Library {
-                                self.lib_artist = None;
-                                self.lib_open = None;
+                        if v == View::Motor && self.motor_detached {
+                            continue;
+                        }
+                        let resp = tab(ui, n, self.view == v);
+                        if v == View::Motor {
+                            resp.clone().on_hover_text_tr("Ctrl + tıklama: ayrı pencerede aç");
+                        }
+                        if resp.clicked() {
+                            if v == View::Motor && ui.input(|i| i.modifiers.command) {
+                                self.detach_motor();
+                            } else {
+                                self.set_view(v);
+                                if v == View::Library {
+                                    self.lib_artist = None;
+                                    self.lib_open = None;
+                                }
                             }
                         }
                     }

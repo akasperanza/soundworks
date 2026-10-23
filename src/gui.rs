@@ -242,6 +242,7 @@ mod lyrics_ui;
 mod panels;
 mod proof_ui;
 mod ambient_ui;
+mod motor_window;
 mod plugins_ui;
 mod queue_ui;
 mod search_ui;
@@ -339,6 +340,8 @@ pub struct App {
 
     cover_t0: Instant,
     ambient_on: bool,
+    motor_detached: bool,
+    motor_titlebar: Option<String>,
     plugin_host: crate::plugins::PluginHost,
     plugin_list: Vec<crate::plugins::Discovered>,
     plug_ui: Vec<(String, crate::plugins::UiSnapshot)>,
@@ -546,6 +549,8 @@ impl App {
             cover_tex: None,
             cover_t0: Instant::now(),
             ambient_on: false,
+            motor_detached: false,
+            motor_titlebar: None,
             plugin_host: crate::plugins::PluginHost::new(),
             plugin_list: vec![],
             plug_ui: vec![],
@@ -746,6 +751,9 @@ impl App {
                 _ => VizMode::Spectrum,
             };
         }
+        if crate::devenv::dev_var("SW_DETACH").is_ok() {
+            app.detach_motor();
+        }
         if crate::devenv::dev_var("SW_AMBIENT").is_ok() {
             app.ambient_on = true;
             app.ambient_side = crate::devenv::dev_var("SW_AMBSIDE").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -884,10 +892,49 @@ impl App {
     }
 
     fn set_view(&mut self, v: View) {
+        if v == View::Motor && self.motor_detached {
+            return;
+        }
         if self.view != v {
             self.view_epoch += 1;
             self.view = v;
             self.view_t0 = Instant::now();
+        }
+    }
+
+    fn dev_capture(&mut self, ctx: &egui::Context, in_child: bool) {
+        let Ok(path) = crate::devenv::dev_var("SW_SHOT") else { return };
+        let want_child = self.motor_detached && crate::devenv::dev_var("SW_SHOTWIN").map_or(false, |v| v == "motor");
+        if in_child != want_child {
+            return;
+        }
+        let wait = crate::devenv::dev_var("SW_FRAMES").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
+        if self.frames == wait {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+        }
+        let shot = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(img) = shot {
+            let (w, h) = (img.width() as u32, img.height() as u32);
+            let mut raw = Vec::with_capacity((w * h * 4) as usize);
+            for p in &img.pixels {
+                raw.extend_from_slice(&[p.r(), p.g(), p.b(), p.a()]);
+            }
+            if let Ok(f) = std::fs::File::create(&path) {
+                let mut enc = png::Encoder::new(std::io::BufWriter::new(f), w, h);
+                enc.set_color(png::ColorType::Rgba);
+                enc.set_depth(png::BitDepth::Eight);
+                if let Ok(mut wr) = enc.write_header() {
+                    let _ = wr.write_image_data(&raw);
+                }
+            }
+            self.stop();
+            self.restore_route();
+            std::process::exit(0);
         }
     }
 
@@ -1115,12 +1162,12 @@ impl eframe::App for App {
         }
 
         let hidden = WINDOW_HIDDEN.load(Relaxed) || ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-        let busy = self.player.playing.load(Relaxed) || (self.view == View::Motor && self.running.is_some());
+        let busy = self.player.playing.load(Relaxed) || ((self.view == View::Motor || self.motor_detached) && self.running.is_some());
         #[allow(unused_mut)]
         let mut every = if hidden {
             500
         } else if busy {
-            if self.view == View::Motor { 50 } else { 83 }
+            if self.view == View::Motor || self.motor_detached { 50 } else { 83 }
         } else {
             400
         };
@@ -1328,6 +1375,7 @@ impl eframe::App for App {
                 View::Extensions => self.extensions_view(ctx, fade),
             }
         }
+        self.motor_window(ctx, &mut ab_held);
         if let Some(r) = &self.running {
             let c = &r.ctl;
             c.bypass.store(ab_held, Relaxed);
@@ -1359,41 +1407,14 @@ impl eframe::App for App {
         }
         self.ambient_overlay(ctx);
 
-        if let Ok(path) = crate::devenv::dev_var("SW_SHOT") {
+        if crate::devenv::dev_var("SW_SHOT").is_ok() {
             self.frames += 1;
             if self.frames == 90 {
                 if let Some(s) = crate::devenv::dev_var("SW_SEEK").ok().and_then(|v| v.parse::<f64>().ok()) {
                     self.player.seek(s);
                 }
             }
-            let wait = crate::devenv::dev_var("SW_FRAMES").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
-            if self.frames == wait {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
-            }
-            let shot = ctx.input(|i| {
-                i.events.iter().find_map(|e| match e {
-                    egui::Event::Screenshot { image, .. } => Some(image.clone()),
-                    _ => None,
-                })
-            });
-            if let Some(img) = shot {
-                let (w, h) = (img.width() as u32, img.height() as u32);
-                let mut raw = Vec::with_capacity((w * h * 4) as usize);
-                for p in &img.pixels {
-                    raw.extend_from_slice(&[p.r(), p.g(), p.b(), p.a()]);
-                }
-                if let Ok(f) = std::fs::File::create(&path) {
-                    let mut enc = png::Encoder::new(std::io::BufWriter::new(f), w, h);
-                    enc.set_color(png::ColorType::Rgba);
-                    enc.set_depth(png::BitDepth::Eight);
-                    if let Ok(mut wr) = enc.write_header() {
-                        let _ = wr.write_image_data(&raw);
-                    }
-                }
-                self.stop();
-                self.restore_route();
-                std::process::exit(0);
-            }
+            self.dev_capture(ctx, false);
         }
 
         self.undo_toast(ctx);

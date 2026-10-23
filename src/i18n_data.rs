@@ -580,4 +580,5 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Kurulu eklentiler", "Installed extensions", "Installierte Erweiterungen"),
     ("Başlama süresi", "Start after", "Starten nach"),
     ("F11 elle açar · fareyi oynatınca düğmeler çıkar · Tab sağ paneli değiştirir", "F11 opens it by hand · moving the mouse shows buttons · Tab switches the right panel", "F11 öffnet manuell · Mausbewegung zeigt Schaltflächen · Tab wechselt das rechte Panel"),
+    ("Ctrl + tıklama: ayrı pencerede aç", "Ctrl + click: open in a separate window", "Strg + Klick: in separatem Fenster öffnen"),
 ];
