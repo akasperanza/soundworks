@@ -765,7 +765,7 @@ impl UiTr for Ui {
         self.button(crate::i18n::tr(text))
     }
     fn selectable_value_tr<V: PartialEq>(&mut self, current: &mut V, selected: V, text: impl AsRef<str>) -> Response {
-        self.selectable_value_tr(current, selected, crate::i18n::tr(text))
+        self.selectable_value(current, selected, crate::i18n::tr(text))
     }
 }
 
@@ -870,5 +870,33 @@ mod wrap_tests {
         click(&ctx, &mut a, &mut b, pos2(r.left() + 20.0, y));
         assert_eq!(b, 0, "'Kapalı' geri seçilebilmeli");
         assert_eq!(a, 5, "birinci kartın 'Otomatik'i tetiklenmemeli");
+    }
+}
+
+#[cfg(test)]
+mod translation_helper_tests {
+    use super::*;
+
+    #[test]
+    fn translating_widget_helpers_terminate_and_return_widgets() {
+        crate::i18n::set(crate::i18n::Lang::En);
+        let ctx = Context::default();
+        let mut picked: Option<String> = None;
+        let mut text = String::new();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.selectable_value_tr(&mut picked, None, "Tüm türler");
+                ui.selectable_value_tr(&mut picked, Some("Rock".to_string()), "Rock");
+                ui.button_tr("Kaydet").on_hover_text_tr("Kaydet").on_disabled_hover_text_tr("Kaydet");
+                ui.add(egui::TextEdit::singleline(&mut text).hint_text_tr("Sonuç yok"));
+                egui::ComboBox::from_id_salt("t").selected_text_tr("Tüm türler").show_ui(ui, |ui| {
+                    ui.selectable_value_tr(&mut picked, None, "Tüm türler");
+                });
+                ui.label(RichText::new("Kaydet"));
+                ui.painter().text_tr(pos2(0.0, 0.0), egui::Align2::LEFT_TOP, "Kaydet", egui::FontId::default(), Color32::WHITE);
+            });
+        });
+        crate::i18n::set(crate::i18n::Lang::Tr);
+        assert!(!out.shapes.is_empty());
     }
 }

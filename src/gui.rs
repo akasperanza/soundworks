@@ -1022,6 +1022,26 @@ fn fmt_time(s: f64) -> String {
 }
 
 impl eframe::App for App {
+    #[cfg(feature = "devtools")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        static FRAME: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = FRAME.fetch_add(1, Relaxed);
+        let Ok(spec) = crate::devenv::dev_var("SW_CLICKS") else { return };
+        let ppp = ctx.pixels_per_point();
+        for item in spec.split(',') {
+            let p: Vec<f32> = item.split(':').filter_map(|x| x.trim().parse().ok()).collect();
+            if p.len() != 3 {
+                continue;
+            }
+            let (at, pos) = (p[0] as u32, egui::pos2(p[1] / ppp, p[2] / ppp));
+            if n == at {
+                raw.events.push(egui::Event::PointerMoved(pos));
+            } else if n == at + 1 || n == at + 3 {
+                raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: n == at + 1, modifiers: egui::Modifiers::NONE });
+            }
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         #[cfg(feature = "devtools")]
         let _timer = UpdateTimer(Instant::now());
