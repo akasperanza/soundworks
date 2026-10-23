@@ -83,3 +83,9 @@ Proje aktif geliştirme altında.
 
 Henüz belirtilmedi. `vendor/` altındaki üçüncü taraf kodlar kendi lisanslarına tabidir. İkonlar [Lucide](https://lucide.dev) (ISC lisansı).
 Uygulama simgesindeki harfler [Barlow](https://github.com/jpt/barlow) SemiBold'un (© The Barlow Project Authors, [SIL Open Font License 1.1](https://openfontlicense.org)) ana hatlarından çizilmiştir.
+
+## Lisans
+
+Copyright (C) 2026 akaSperanza
+
+Soundworks özgür bir yazılımdır: [GNU Genel Kamu Lisansı](LICENSE) sürüm 3 ya da (tercihinize bağlı olarak) sonraki herhangi bir sürümün koşulları altında dağıtabilir ve değiştirebilirsiniz. Program yararlı olacağı umuduyla dağıtılır, ancak hiçbir garanti vermez.
