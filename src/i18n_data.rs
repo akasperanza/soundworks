@@ -552,7 +552,7 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Ara…", "Search…", "Suchen…"),
     ("Faz korelasyonu {}", "Phase correlation {}", "Phasenkorrelation {}"),
     ("Bekleyince albüm ekranı", "Idle album screen", "Album-Bildschirm bei Inaktivität"),
-    ("Müzik çalarken fare ve klavye bir süre kullanılmazsa kapak, sıradakiler ve canlı spektrum tam ekran görünür; F11 ile elle de açılır; fareyi oynatınca düğmeler çıkar, Tab sağ paneli değiştirir", "When music is playing and the mouse and keyboard go unused for a while, the cover, up-next list and live spectrum fill the window; F11 opens it by hand too; moving the mouse shows buttons, Tab switches the right panel", "Wenn bei laufender Musik eine Weile weder Maus noch Tastatur benutzt werden, füllen Cover, Warteschlange und Live-Spektrum das Fenster; mit F11 lässt es sich auch manuell öffnen; Mausbewegung blendet Schaltflächen ein, Tab wechselt das rechte Panel"),
+    ("Müzik çalarken bir süre dokunmazsan kapak, sıradakiler ve canlı spektrum tam ekran görünür", "When music is playing and you stop interacting for a while, the cover, up-next list and live spectrum fill the window", "Wenn bei laufender Musik eine Weile nichts bedient wird, füllen Cover, Warteschlange und Live-Spektrum das Fenster"),
     ("30 sn", "30 s", "30 s"),
     ("1 dk", "1 min", "1 Min."),
     ("2 dk", "2 min", "2 Min."),
@@ -578,4 +578,6 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Şu sunucuya bağlanır: {}", "Connects to this server: {}", "Verbindet sich mit diesem Server: {}"),
     ("{} parça kütüphaneye eklendi", "{} tracks added to the library", "{} Titel zur Bibliothek hinzugefügt"),
     ("Kurulu eklentiler", "Installed extensions", "Installierte Erweiterungen"),
+    ("Başlama süresi", "Start after", "Starten nach"),
+    ("F11 elle açar · fareyi oynatınca düğmeler çıkar · Tab sağ paneli değiştirir", "F11 opens it by hand · moving the mouse shows buttons · Tab switches the right panel", "F11 öffnet manuell · Mausbewegung zeigt Schaltflächen · Tab wechselt das rechte Panel"),
 ];

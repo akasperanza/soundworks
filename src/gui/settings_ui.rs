@@ -266,28 +266,35 @@ impl App {
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Görünüm");
-            ui.add_space(4.0);
-            ui.label(RichText::new("Arayüz boyutu").font(body(14.5)).color(Color32::WHITE));
-            ui.label(RichText::new("Otomatik, Windows ekran ölçeğine göre seçer").font(body(12.0)).color(DIM));
-            ui.add_space(4.0);
+            ui.add_space(8.0);
+
+            ui.label(RichText::new("Dil").font(body(14.5)).color(Color32::WHITE));
+            ui.add_space(6.0);
             let mut lang = crate::i18n::get();
             let before = lang;
-            ui.label(RichText::new("Dil").font(body(14.5)).color(Color32::WHITE));
-            ui.add_space(4.0);
             let items: Vec<(crate::i18n::Lang, &str, Option<Icon>)> = crate::i18n::Lang::ALL.iter().map(|l| (*l, l.native_name(), None)).collect();
             segmented(ui, &mut lang, &items);
             if lang != before {
                 crate::i18n::set(lang);
                 self.cfg.lang = Some(lang.code().to_string());
             }
-            ui.add_space(10.0);
-            switch_row(ui, "Bekleyince albüm ekranı", "Müzik çalarken fare ve klavye bir süre kullanılmazsa kapak, sıradakiler ve canlı spektrum tam ekran görünür; F11 ile elle de açılır; fareyi oynatınca düğmeler çıkar, Tab sağ paneli değiştirir", &mut self.cfg.ambient);
+
+            card_divider(ui);
+            ui.label(RichText::new("Arayüz boyutu").font(body(14.5)).color(Color32::WHITE));
+            ui.label(RichText::new("Otomatik, Windows ekran ölçeğine göre seçer").font(body(12.0)).color(DIM));
+            ui.add_space(6.0);
+            segmented(ui, &mut self.cfg.ui_zoom, &[(0, "Otomatik", None), (70, "%70", None), (80, "%80", None), (90, "%90", None), (100, "%100", None), (115, "%115", None)]);
+
+            card_divider(ui);
+            switch_row(ui, "Bekleyince albüm ekranı", "Müzik çalarken bir süre dokunmazsan kapak, sıradakiler ve canlı spektrum tam ekran görünür", &mut self.cfg.ambient);
             if self.cfg.ambient {
+                ui.add_space(8.0);
+                ui.label(RichText::new("Başlama süresi").font(body(12.5)).color(DIM));
                 ui.add_space(4.0);
                 segmented(ui, &mut self.cfg.ambient_secs, &[(30, "30 sn", None), (60, "1 dk", None), (120, "2 dk", None), (300, "5 dk", None)]);
+                ui.add_space(6.0);
+                ui.label(RichText::new("F11 elle açar · fareyi oynatınca düğmeler çıkar · Tab sağ paneli değiştirir").font(body(12.0)).color(DIM));
             }
-            ui.add_space(10.0);
-            segmented(ui, &mut self.cfg.ui_zoom, &[(0, "Otomatik", None), (70, "%70", None), (80, "%80", None), (90, "%90", None), (100, "%100", None), (115, "%115", None)]);
         });
         ui.add_space(10.0);
         self.tips_settings(ui);
@@ -312,3 +319,10 @@ impl App {
         });
     }
 }
+fn card_divider(ui: &mut egui::Ui) {
+    ui.add_space(14.0);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().rect_filled(r, 0.0, alpha(Color32::WHITE, 14));
+    ui.add_space(14.0);
+}
+
