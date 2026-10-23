@@ -250,7 +250,7 @@ impl App {
     }
 
     pub(super) fn reveal_preset(&self, file: &str) {
-        let _ = std::process::Command::new("explorer").arg(format!("/select,{}", presets_dir().join(file).display())).spawn();
+        shell::shell_select(&presets_dir().join(file));
     }
 
     pub(super) fn props_body(&self, ui: &mut egui::Ui, st: &mut PropsUi, now: &Option<Playing>) -> PropsAct {
@@ -501,7 +501,7 @@ impl App {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if pill_button(ui, "Klasörü aç", Some(Icon::Folder), false).clicked() {
                         let _ = std::fs::create_dir_all(presets_dir());
-                        let _ = std::process::Command::new("explorer").arg(presets_dir()).spawn();
+                        shell::shell_open(&presets_dir().to_string_lossy());
                     }
                     if pill_button(ui, "Yeni", Some(Icon::Plus), false).clicked() {
                         create = true;

@@ -291,10 +291,27 @@ impl App {
         }
     }
 
+    pub(super) fn extensions_view(&mut self, ctx: &egui::Context, fade: f32) {
+        let inner = Margin { left: 40.0, right: 40.0, top: 20.0, bottom: 20.0 };
+        egui::CentralPanel::default()
+            .frame(panel_frame(inner, Margin { left: 12.0, right: 12.0, top: 2.0, bottom: 2.0 }))
+            .show(ctx, |ui| {
+                self.paint_glow(ui, inner);
+                ui.set_opacity(fade);
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.label(RichText::new("Eklentiler").font(bold(20.0)));
+                    ui.set_max_width(ui.available_width().min(780.0));
+                    ui.add_space(12.0);
+                    self.plugins_settings(ui);
+                    ui.add_space(12.0);
+                });
+            });
+    }
+
     pub(super) fn plugins_settings(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
             ui.set_width(ui.available_width());
-            section_label(ui, "Eklentiler");
+            section_label(ui, "Kurulu eklentiler");
             ui.add_space(2.0);
             if self.plugin_list.is_empty() {
                 ui.label(RichText::new("Eklenti yok. Bir eklenti klasörünü eklentiler klasörüne kopyala, sonra Yenile'ye bas.").font(body(12.5)).color(DIM));
@@ -365,7 +382,7 @@ impl App {
                 if pill_button(ui, "Eklentiler klasörünü aç", Some(Icon::Folder), false).clicked() {
                     let dir = plugins::plugins_dir();
                     let _ = std::fs::create_dir_all(&dir);
-                    let _ = std::process::Command::new("explorer").arg(dir).spawn();
+                    shell::shell_open(&dir.to_string_lossy());
                 }
                 if pill_button(ui, "Yenile", Some(Icon::Undo), false).clicked() {
                     self.plugins_refresh();

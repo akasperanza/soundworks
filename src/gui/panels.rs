@@ -173,7 +173,7 @@ impl App {
         let e = ease(t);
         let s = ctx.animate_bool_with_time(Id::new("upload_sub_anim"), self.upload_open && self.upload_sub, 0.18);
         let se = ease(s);
-        let (mw, mh) = (176.0f32, 100.0f32);
+        let (mw, mh) = (176.0f32, 144.0f32);
         let main_pos = pos2(btn.left() - 4.0, btn.bottom() + 6.0);
         let main = Rect::from_min_size(main_pos, vec2(mw, mh));
         let (sw, sh) = (214.0f32, 100.0f32);
@@ -183,6 +183,8 @@ impl App {
         let mut hover_sub = false;
         let mut hover_row2 = false;
         let mut open_settings = false;
+        let mut open_extensions = false;
+        let mut hover_row3 = false;
 
         egui::Area::new(Id::new("upload_main")).order(egui::Order::Foreground).fixed_pos(main_pos + vec2(0.0, (1.0 - e) * -6.0)).show(ctx, |ui| {
             ui.set_opacity(e);
@@ -204,7 +206,20 @@ impl App {
             ui.painter().text_tr(pos2(row.left() + 40.0, row.center().y), Align2::LEFT_CENTER, "Yükle", bold(14.0), Color32::WHITE);
             draw_icon(ui.painter(), Icon::ChevronRight, pos2(row.right() - 16.0, row.center().y), 12.0, lerp_color(DIM, Color32::WHITE, hv));
 
-            let row2 = Rect::from_min_size(rect.min + vec2(6.0, 50.0), vec2(mw - 12.0, 44.0));
+            let row3 = Rect::from_min_size(rect.min + vec2(6.0, 50.0), vec2(mw - 12.0, 44.0));
+            let resp3 = ui.interact(row3, Id::new("extensions_row"), Sense::click());
+            if resp3.clicked() {
+                open_extensions = true;
+            }
+            if resp3.hovered() {
+                hover_row3 = true;
+            }
+            let hv3 = ui.ctx().animate_bool_with_time(resp3.id, resp3.hovered(), 0.1);
+            ui.painter().rect_filled(row3, Rounding::same(8.0), alpha(BLUE, (70.0 * hv3) as u8));
+            draw_icon(ui.painter(), Icon::Puzzle, pos2(row3.left() + 20.0, row3.center().y), 13.0, lerp_color(TEXT, Color32::WHITE, hv3));
+            ui.painter().text_tr(pos2(row3.left() + 40.0, row3.center().y), Align2::LEFT_CENTER, "Eklentiler", bold(14.0), Color32::WHITE);
+
+            let row2 = Rect::from_min_size(rect.min + vec2(6.0, 94.0), vec2(mw - 12.0, 44.0));
             let resp2 = ui.interact(row2, Id::new("settings_row"), Sense::click());
             if resp2.clicked() {
                 open_settings = true;
@@ -257,8 +272,13 @@ impl App {
             self.upload_sub = !self.upload_sub;
         } else if hover_sub {
             self.upload_sub = true;
-        } else if hover_row2 {
+        } else if hover_row2 || hover_row3 {
             self.upload_sub = false;
+        }
+        if open_extensions {
+            self.upload_open = false;
+            self.upload_sub = false;
+            self.set_view(View::Extensions);
         }
         if open_settings {
             self.upload_open = false;

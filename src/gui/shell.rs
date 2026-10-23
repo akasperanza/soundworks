@@ -227,17 +227,87 @@ pub(super) fn show_window() {
 }
 
 pub(super) fn set_run_at_login(on: bool) {
-    use std::os::windows::process::CommandExt;
-    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-    let mut cmd = std::process::Command::new("reg");
-    if on {
-        if let Ok(exe) = std::env::current_exe() {
-            cmd.args(["add", key, "/v", "Soundworks", "/t", "REG_SZ", "/d", &format!("\"{}\" --tray", exe.display()), "/f"]);
-        } else {
+    use windows::core::{w, PCWSTR};
+    use windows::Win32::System::Registry::*;
+    unsafe {
+        let mut key = HKEY::default();
+        let opened = RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run"),
+            0,
+            PCWSTR::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        );
+        if opened.is_err() {
             return;
         }
-    } else {
-        cmd.args(["delete", key, "/v", "Soundworks", "/f"]);
+        if on {
+            if let Ok(exe) = std::env::current_exe() {
+                let value: Vec<u16> = format!("\"{}\" --tray", exe.display()).encode_utf16().chain(Some(0)).collect();
+                let bytes = std::slice::from_raw_parts(value.as_ptr() as *const u8, value.len() * 2);
+                let _ = RegSetValueExW(key, w!("Soundworks"), 0, REG_SZ, Some(bytes));
+            }
+        } else {
+            let _ = RegDeleteValueW(key, w!("Soundworks"));
+        }
+        let _ = RegCloseKey(key);
     }
-    let _ = cmd.creation_flags(0x0800_0000).output();
+}
+
+pub(crate) fn shell_open(target: &str) {
+    shell_run("open", target, None);
+}
+
+pub(crate) fn shell_select(file: &std::path::Path) {
+    shell_run("open", "explorer.exe", Some(&format!("/select,\"{}\"", file.display())));
+}
+
+fn shell_run(verb: &str, file: &str, params: Option<&str>) {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(Some(0)).collect() };
+    let (verb, file) = (wide(verb), wide(file));
+    let params = params.map(wide);
+    unsafe {
+        ShellExecuteW(
+            windows::Win32::Foundation::HWND::default(),
+            PCWSTR(verb.as_ptr()),
+            PCWSTR(file.as_ptr()),
+            params.as_ref().map_or(PCWSTR::null(), |p| PCWSTR(p.as_ptr())),
+            PCWSTR::null(),
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_value() -> String {
+        let out = std::process::Command::new("reg")
+            .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "Soundworks"])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    #[test]
+    #[ignore = "writes the real HKCU Run key"]
+    fn run_at_login_writes_and_removes_the_registry_value() {
+        if run_value().contains("Soundworks") {
+            return;
+        }
+        set_run_at_login(true);
+        let on = run_value();
+        set_run_at_login(false);
+        let off = run_value();
+        assert!(on.contains("--tray") && on.contains("REG_SZ"), "{on}");
+        assert!(!off.contains("--tray"), "{off}");
+    }
 }

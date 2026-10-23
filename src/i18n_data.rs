@@ -577,4 +577,5 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Herhangi bir internet sitesine bağlanabilir", "Can connect to any website", "Kann sich mit jeder Website verbinden"),
     ("Şu sunucuya bağlanır: {}", "Connects to this server: {}", "Verbindet sich mit diesem Server: {}"),
     ("{} parça kütüphaneye eklendi", "{} tracks added to the library", "{} Titel zur Bibliothek hinzugefügt"),
+    ("Kurulu eklentiler", "Installed extensions", "Installierte Erweiterungen"),
 ];

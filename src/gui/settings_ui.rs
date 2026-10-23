@@ -89,7 +89,7 @@ impl App {
                         None => {
                             chip(ui, "SANAL CİHAZ YOK", AMBER);
                             if pill_button(ui, "VB-Cable indir", Some(Icon::Import), true).clicked() {
-                                let _ = std::process::Command::new("explorer").arg("https://vb-audio.com/Cable/").spawn();
+                                shell::shell_open("https://vb-audio.com/Cable/");
                             }
                         }
                     });
@@ -291,8 +291,6 @@ impl App {
         });
         ui.add_space(10.0);
         self.tips_settings(ui);
-        ui.add_space(10.0);
-        self.plugins_settings(ui);
 
     }
 

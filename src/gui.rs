@@ -294,6 +294,7 @@ enum View {
     Motor,
     Library,
     Settings,
+    Extensions,
 }
 
 enum SearchItem {
@@ -708,6 +709,7 @@ impl App {
         }
         match crate::devenv::dev_var("SW_VIEW").as_deref() {
             Ok("settings") => app.view = View::Settings,
+            Ok("extensions") => app.view = View::Extensions,
             Ok("library") => app.view = View::Library,
             _ => {}
         }
@@ -937,6 +939,7 @@ impl App {
                     View::Motor => "motor",
                     View::Library => "kütüphane",
                     View::Settings => "ayarlar",
+                    View::Extensions => "eklentiler",
                 },
                 self.running.is_some(),
                 self.player.current(),
@@ -1307,6 +1310,7 @@ impl eframe::App for App {
                 }
                 View::Library => self.library_view(ctx, fade),
                 View::Settings => self.settings_view(ctx, fade),
+                View::Extensions => self.extensions_view(ctx, fade),
             }
         }
         if let Some(r) = &self.running {

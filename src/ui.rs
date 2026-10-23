@@ -371,6 +371,7 @@ pub enum Icon {
     Settings,
     Headphones,
     Maximize,
+    Puzzle,
 }
 
 fn icon_svg(i: Icon) -> &'static str {
@@ -409,6 +410,7 @@ fn icon_svg(i: Icon) -> &'static str {
         Icon::Settings => include_str!("../assets/icons/settings.svg"),
         Icon::Headphones => include_str!("../assets/icons/headphones.svg"),
         Icon::Maximize => include_str!("../assets/icons/maximize.svg"),
+        Icon::Puzzle => include_str!("../assets/icons/puzzle.svg"),
     }
 }
 
