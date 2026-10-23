@@ -779,6 +779,99 @@ impl PainterTr for Painter {
     }
 }
 
+
+pub fn row_sep(ui: &mut Ui) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().rect_filled(r, 0.0, alpha(Color32::WHITE, 12));
+}
+
+pub fn setting_row(ui: &mut Ui, title: &str, desc: &str, info: &str, control: impl FnOnce(&mut Ui)) {
+    let (title, desc, info) = (crate::i18n::tr(title), crate::i18n::tr(desc), crate::i18n::tr(info));
+    let w = ui.available_width();
+    let left_w = (w * 0.56).clamp(160.0, 440.0);
+    let info_w = if info.is_empty() { 0.0 } else { 24.0 };
+    let gt = ui.painter().layout(title.clone(), bold(14.0), Color32::WHITE, left_w - info_w);
+    let gd = (!desc.is_empty()).then(|| ui.painter().layout(desc, body(12.0), DIM, left_w));
+    let text_h = gt.size().y + gd.as_ref().map_or(0.0, |g| 3.0 + g.size().y);
+    let h = (text_h + 18.0).max(46.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    let top = rect.center().y - text_h * 0.5;
+    let title_w = gt.size().x;
+    let title_h = gt.size().y;
+    let first_row_h = gt.rows.first().map_or(18.0, |r| r.rect.height());
+    ui.painter().galley(pos2(rect.left(), top), gt, Color32::WHITE);
+    if let Some(g) = gd {
+        let y = top + title_h + 3.0;
+        ui.painter().galley(pos2(rect.left(), y), g, DIM);
+    }
+    if !info.is_empty() {
+        let c = pos2(rect.left() + title_w + 16.0, top + first_row_h * 0.5);
+        let ir = Rect::from_center_size(c, vec2(20.0, 20.0));
+        let resp = ui.interact(ir, ui.id().with(("setting_info", &title)), Sense::hover());
+        let a = if resp.hovered() { 230 } else { 120 };
+        ui.painter().circle_stroke(c, 7.5, Stroke::new(1.0, alpha(DIM, a)));
+        ui.painter().text(c, egui::Align2::CENTER_CENTER, "i", bold(10.0), alpha(DIM, a));
+        resp.on_hover_text(info);
+    }
+    let cr = Rect::from_min_max(pos2((rect.left() + left_w + 12.0).min(rect.right() - 40.0), rect.top()), rect.right_bottom());
+    let mut child = ui.child_ui(cr, egui::Layout::right_to_left(egui::Align::Center), None);
+    control(&mut child);
+}
+
+pub fn toggle_row(ui: &mut Ui, title: &str, desc: &str, info: &str, on: &mut bool) -> bool {
+    let mut changed = false;
+    setting_row(ui, title, desc, info, |ui| {
+        changed = switch(ui, on).changed();
+    });
+    changed
+}
+
+pub fn setting_block(ui: &mut Ui, title: &str, desc: &str, add: impl FnOnce(&mut Ui)) {
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new(crate::i18n::tr(title)).font(bold(14.0)).color(Color32::WHITE));
+    if !desc.is_empty() {
+        ui.add_space(2.0);
+        ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr(desc)).font(body(12.0)).color(DIM)).wrap());
+    }
+    ui.add_space(8.0);
+    add(ui);
+    ui.add_space(12.0);
+}
+
+pub fn nav_item(ui: &mut Ui, text: &str, icon: Icon, selected: bool) -> Response {
+    let g = ui.painter().layout_no_wrap(crate::i18n::tr(text), bold(14.0), TEXT);
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+    let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
+    let s = ui.ctx().animate_bool_with_time(resp.id.with("s"), selected, 0.18);
+    if s > 0.01 {
+        ui.painter().rect_filled(rect, Rounding::same(10.0), alpha(BLUE, (34.0 * s) as u8));
+    } else if h > 0.01 {
+        ui.painter().rect_filled(rect, Rounding::same(10.0), alpha(Color32::WHITE, (12.0 * h) as u8));
+    }
+    let col = lerp_color(lerp_color(DIM, TEXT, h), Color32::WHITE, s);
+    draw_icon(ui.painter(), icon, pos2(rect.left() + 22.0, rect.center().y), 14.0, lerp_color(col, SKY, s));
+    ui.painter().galley(pos2(rect.left() + 42.0, rect.center().y - g.size().y * 0.5), g, col);
+    resp
+}
+
+pub fn collapsible(ui: &mut Ui, id: &str, label: &str, add: impl FnOnce(&mut Ui)) {
+    let key = ui.id().with(("collapsible", id));
+    let open = ui.ctx().data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+    ui.add_space(4.0);
+    let g = ui.painter().layout_no_wrap(crate::i18n::tr(label), bold(13.0), DIM);
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
+    let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
+    let col = lerp_color(DIM, TEXT, h);
+    draw_icon(ui.painter(), if open { Icon::ChevronUp } else { Icon::ChevronDown }, pos2(rect.left() + 10.0, rect.center().y), 12.0, col);
+    ui.painter().galley(pos2(rect.left() + 28.0, rect.center().y - g.size().y * 0.5), g, col);
+    if resp.clicked() {
+        ui.ctx().data_mut(|d| d.insert_temp(key, !open));
+    }
+    if open {
+        add(ui);
+    }
+}
+
 #[cfg(test)]
 mod wrap_tests {
     use super::*;

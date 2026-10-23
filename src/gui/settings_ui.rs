@@ -14,26 +14,45 @@ impl App {
                 }
                 let running = self.running.is_some();
                 let cfg_before = self.cfg.clone();
-                let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
 
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Ayarlar").font(bold(20.0)));
+                    if running {
+                        ui.add_space(10.0);
+                        let msg = if self.cfg.use_loopback { "Sistem DSP çalışırken kaynak ve çıkış ayarları kilitli" } else { "Çalarken kaynak ve çıkış ayarları kilitli" };
+                        chip(ui, msg, AMBER);
+                    }
+                });
+                ui.add_space(14.0);
+
+                let full = ui.available_rect_before_wrap();
+                let wide = full.width() >= 860.0;
+                let nav_w = 190.0;
+                let content_left = if wide { full.left() + nav_w + 32.0 } else { full.left() };
+                if wide {
+                    let nav_rect = Rect::from_min_size(full.min, vec2(nav_w, full.height()));
+                    let mut nav = ui.child_ui(nav_rect, egui::Layout::top_down(egui::Align::Min), None);
+                    for (i, label, icon) in [(0u8, "Ses", Icon::Volume), (1u8, "Kütüphane", Icon::Folder), (2u8, "Ekolayzır", Icon::Spectrum), (3u8, "Uygulama", Icon::Settings)] {
+                        if nav_item(&mut nav, label, icon, self.settings_tab == i).clicked() {
+                            self.settings_tab = i;
+                        }
+                        nav.add_space(2.0);
+                    }
+                }
+                let content_rect = Rect::from_min_max(pos2(content_left, full.top()), full.right_bottom());
+                let mut content = ui.child_ui(content_rect, egui::Layout::top_down(egui::Align::Min), None);
+                content.set_max_width(content_rect.width().min(820.0));
+                if !wide {
+                    let mut tab = self.settings_tab;
+                    view_switch(&mut content, &mut tab, &[(0u8, "Ses"), (1u8, "Kütüphane"), (2u8, "Ekolayzır"), (3u8, "Uygulama")]);
+                    self.settings_tab = tab;
+                    content.add_space(14.0);
+                }
+                let mut area = egui::ScrollArea::vertical().auto_shrink([false, false]);
                 if let Some(y) = crate::devenv::dev_var("SW_SCROLL").ok().and_then(|v| v.parse::<f32>().ok()) {
                     area = area.vertical_scroll_offset(y);
                 }
-                area.show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new("Ayarlar").font(bold(20.0)));
-                        if running {
-                            ui.add_space(10.0);
-                            let msg = if self.cfg.use_loopback { "Sistem DSP çalışırken kaynak ve çıkış ayarları kilitli" } else { "Çalarken kaynak ve çıkış ayarları kilitli" };
-                            ui.label(RichText::new(msg).font(body(12.5)).color(AMBER));
-                        }
-                    });
-                    ui.set_max_width(ui.available_width().min(780.0));
-                    ui.add_space(8.0);
-                    let mut tab = self.settings_tab;
-                    view_switch(ui, &mut tab, &[(0u8, "Ses"), (1u8, "Kütüphane"), (2u8, "Ekolayzır"), (3u8, "Uygulama")]);
-                    self.settings_tab = tab;
-                    ui.add_space(14.0);
+                area.show(&mut content, |ui| {
                     match self.settings_tab {
                         0 => {
                             self.settings_left(ui, running);
@@ -45,6 +64,7 @@ impl App {
                     }
                     ui.add_space(12.0);
                 });
+                ui.allocate_rect(full, Sense::hover());
                 if self.cfg != cfg_before {
                     self.save_cfg();
                 }
@@ -56,110 +76,124 @@ impl App {
             card(ui, |ui| {
                 ui.set_width(ui.available_width());
                 section_label(ui, "Çıkış");
-                ui.add_space(2.0);
-                ui.label(RichText::new("Hedef cihaz").font(body(12.5)).color(DIM));
-                ui.horizontal(|ui| {
-                    Self::device_combo(ui, "to", &self.devices, &mut self.cfg.to, "Windows varsayılan çıkışı", 44.0);
+                setting_row(ui, "Hedef cihaz", "", "", |ui| {
                     if icon_button(ui, Icon::Undo, 28.0, false).on_hover_text_tr("Cihazları yenile").clicked() {
                         self.devices = engine::list_devices().unwrap_or_default();
                     }
+                    Self::device_combo(ui, "to", &self.devices, &mut self.cfg.to, "Windows varsayılan çıkışı", 36.0);
                 });
-                ui.add_space(2.0);
+                row_sep(ui);
                 let mut excl = !self.cfg.exclusive_off;
-                if switch_row(ui, "Exclusive mod", "Dolby Atmos ve Windows ses efektlerini atlar", &mut excl) {
+                if toggle_row(ui, "Exclusive mod", "Dolby Atmos ve Windows ses efektlerini atlar", "", &mut excl) {
                     self.cfg.exclusive_off = !excl;
                 }
             });
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             card(ui, |ui| {
                 ui.set_width(ui.available_width());
                 section_label(ui, "Kaynak");
-                ui.add_space(2.0);
                 let mut lb = self.cfg.use_loopback;
-                segmented(ui, &mut lb, &[(false, "Dahili oynatıcı", None), (true, "Sistem DSP", None)]);
+                setting_row(ui, "Çalma kaynağı", "Dahili oynatıcıda dosya ya da klasör açarsın; Sistem DSP tüm Windows sesini işler", "", |ui| {
+                    segmented(ui, &mut lb, &[(false, "Dahili oynatıcı", None), (true, "Sistem DSP", None)]);
+                });
                 self.cfg.use_loopback = lb;
                 if lb {
-                    ui.add_space(6.0);
+                    row_sep(ui);
                     let virt = engine::find_virtual();
-                    ui.horizontal(|ui| match &virt {
-                        Some(d) => {
+                    let name = virt.as_ref().map(|d| d.name.clone()).unwrap_or_default();
+                    setting_row(ui, "Sanal cihaz", &name, "", |ui| match &virt {
+                        Some(_) => {
                             chip(ui, "SANAL CİHAZ HAZIR", GREEN);
-                            ui.label(RichText::new(&d.name).font(body(12.5)));
                         }
                         None => {
-                            chip(ui, "SANAL CİHAZ YOK", AMBER);
                             if pill_button(ui, "VB-Cable indir", Some(Icon::Import), true).clicked() {
                                 shell::shell_open("https://vb-audio.com/Cable/");
                             }
+                            chip(ui, "SANAL CİHAZ YOK", AMBER);
                         }
                     });
-                    ui.add_space(2.0);
-                    ui.label(
-                        RichText::new(
-                            "Windows varsayılan çıkışı sanal cihaza yönlenir; tüm uygulamaların sesi oraya gider. \
-                             Soundworks bunu yakalar, EQ uygular ve gerçek cihaza exclusive verir.",
-                        )
-                        .font(body(12.0))
-                        .color(DIM),
+                    row_sep(ui);
+                    toggle_row(
+                        ui,
+                        "Çıkışı otomatik yönlendir",
+                        "Motor kapanınca eski cihaz geri yüklenir",
+                        "Windows varsayılan çıkışı sanal cihaza yönlenir; tüm uygulamaların sesi oraya gider. Soundworks bunu yakalar, EQ uygular ve gerçek cihaza exclusive verir.",
+                        &mut self.cfg.auto_route,
                     );
-                    ui.add_space(4.0);
-                    switch_row(ui, "Çıkışı otomatik yönlendir", "Motor kapanınca eski cihaz geri yüklenir", &mut self.cfg.auto_route);
-                    ui.add_space(2.0);
-                    ui.label(RichText::new("Yakalanacak cihaz").font(body(12.5)).color(DIM));
-                    Self::device_combo(ui, "from", &self.devices, &mut self.cfg.from, "Otomatik (sanal cihaz)", 0.0);
-                } else {
-                    ui.add_space(4.0);
-                    ui.label(RichText::new("Kendi çalarını kullanırsın: dosya ya da klasör aç.").font(body(12.0)).color(DIM));
+                    row_sep(ui);
+                    setting_row(ui, "Yakalanacak cihaz", "", "", |ui| {
+                        Self::device_combo(ui, "from", &self.devices, &mut self.cfg.from, "Otomatik (sanal cihaz)", 0.0);
+                    });
                 }
             });
-            ui.add_space(10.0);
+            ui.add_space(12.0);
             card(ui, |ui| {
                 ui.set_width(ui.available_width());
                 section_label(ui, "Ses kalitesi");
-                ui.add_space(2.0);
-                switch_row(
+                toggle_row(
                     ui,
                     "Hızı parçaya göre ayarla",
+                    "Çıkış hızı parçanın hızına çevrilir, yeniden örnekleme olmaz",
                     "Cihaz destekliyorsa çıkış hızı parçanın hızına çevrilir, yeniden örnekleme olmaz. Hızı farklı iki parça arasında kısa bir ara olur.",
                     &mut self.cfg.match_rate,
                 );
-                ui.add_space(10.0);
-                ui.label(RichText::new(if self.cfg.match_rate { "Sabit çıkış hızı (cihaz parça hızını desteklemezse)" } else { "Sabit çıkış hızı" }).font(body(12.5)).color(DIM));
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    for (r, n) in RATES {
-                        if tab(ui, n, self.cfg.player_rate == r).clicked() {
-                            self.cfg.player_rate = r;
-                        }
-                    }
+                row_sep(ui);
+                toggle_row(
+                    ui,
+                    "Dither (16 bit çıkış)",
+                    "Yalnızca sinyale dokunulduysa uygulanır",
+                    "Yalnızca sinyale dokunulduysa (EQ, ses seviyesi) uygulanır; bit-perfect yolda eklenmez",
+                    &mut self.cfg.dither,
+                );
+                row_sep(ui);
+                let rate_title = if self.cfg.match_rate { "Sabit çıkış hızı (cihaz parça hızını desteklemezse)" } else { "Sabit çıkış hızı" };
+                collapsible(ui, "rate", "Gelişmiş", |ui| {
+                    setting_block(ui, rate_title, "Dosya hızıyla eşleşirse yeniden örnekleme yapılmaz.", |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = 0.0;
+                            for (r, n) in RATES {
+                                if tab(ui, n, self.cfg.player_rate == r).clicked() {
+                                    self.cfg.player_rate = r;
+                                }
+                            }
+                        });
+                    });
                 });
-                ui.label(RichText::new("Dosya hızıyla eşleşirse yeniden örnekleme yapılmaz.").font(body(12.0)).color(DIM));
             });
-            ui.add_space(10.0);
-            switch_row(ui, "Dither (16 bit çıkış)", "Yalnızca sinyale dokunulduysa (EQ, ses seviyesi) uygulanır; bit-perfect yolda eklenmez", &mut self.cfg.dither);
         });
     }
 
     pub(super) fn settings_audio_more(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(12.0);
         self.dsd_card(ui);
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Ses dengeleme (ReplayGain)");
-            ui.add_space(2.0);
-            ui.label(RichText::new("Dosya etiketlerindeki ReplayGain/R128 değerine göre albümler arası ses farkını dengeler. Etiketsiz parçaya dokunmaz. Kapalıyken sinyal olduğu gibi geçer.").font(body(12.0)).color(DIM));
-            ui.add_space(8.0);
-            segmented(ui, &mut self.cfg.rg_mode, &[(0u32, "Kapalı", None), (1u32, "Parça", None), (2u32, "Albüm", None)]);
+            setting_row(
+                ui,
+                "Mod",
+                "Albümler arası ses farkını etiketlere göre dengeler",
+                "Dosya etiketlerindeki ReplayGain/R128 değerine göre albümler arası ses farkını dengeler. Etiketsiz parçaya dokunmaz. Kapalıyken sinyal olduğu gibi geçer.",
+                |ui| {
+                    segmented(ui, &mut self.cfg.rg_mode, &[(0u32, "Kapalı", None), (1u32, "Parça", None), (2u32, "Albüm", None)]);
+                },
+            );
             if self.cfg.rg_mode != 0 {
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Ön kazanç").font(body(13.5)).color(TEXT));
-                    ui.spacing_mut().slider_width = 200.0;
+                row_sep(ui);
+                setting_row(ui, "Ön kazanç", "", "", |ui| {
+                    ui.spacing_mut().slider_width = 190.0;
                     ui.add(egui::Slider::new(&mut self.cfg.rg_preamp, -12.0..=6.0).fixed_decimals(1).suffix(" dB"));
                 });
-                ui.add_space(6.0);
-                switch_row(ui, "Kırpılmayı önle", "Etiketteki tepe değerine bakıp kazancı, sinyal 0 dBFS'i aşmayacak kadarla sınırlar.", &mut self.cfg.rg_prevent);
-                ui.add_space(8.0);
+                row_sep(ui);
+                toggle_row(
+                    ui,
+                    "Kırpılmayı önle",
+                    "Kazancı, sinyal 0 dBFS'i aşmayacak şekilde sınırlar",
+                    "Etiketteki tepe değerine bakıp kazancı, sinyal 0 dBFS'i aşmayacak kadarla sınırlar.",
+                    &mut self.cfg.rg_prevent,
+                );
+                row_sep(ui);
                 let total: usize = self.lib.albums.iter().map(|a| a.tracks.len()).sum();
                 let running = self.loud.running.load(std::sync::atomic::Ordering::Relaxed);
                 if !running && self.loud_cached_t.elapsed() > std::time::Duration::from_secs(2) {
@@ -169,136 +203,119 @@ impl App {
                 }
                 if running {
                     let (d, t) = (self.loud.done.load(std::sync::atomic::Ordering::Relaxed), self.loud.total.load(std::sync::atomic::Ordering::Relaxed).max(1));
+                    ui.add_space(10.0);
                     ui.label(RichText::new(format!("Etiketi olmayan parçaların ses seviyesi ölçülüyor… {d}/{t}")).font(body(12.0)).color(DIM));
                     ui.add_space(4.0);
                     ui.add(egui::ProgressBar::new(d as f32 / t as f32).desired_height(6.0));
+                    ui.add_space(6.0);
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
                 } else {
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{}/{} parçanın ses seviyesi biliniyor", self.loud_cached, total)).font(body(12.0)).color(DIM));
-                        if self.loud_cached < total {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if pill_button(ui, "Şimdi ölç", Some(Icon::Wave), false).clicked() {
-                                    self.start_loudness();
-                                }
-                            });
+                    let status = format!("{}/{} parçanın ses seviyesi biliniyor", self.loud_cached, total);
+                    let missing = self.loud_cached < total;
+                    setting_row(ui, "Ses seviyesi ölçümü", &status, "", |ui| {
+                        if missing && pill_button(ui, "Şimdi ölç", Some(Icon::Wave), false).clicked() {
+                            self.start_loudness();
                         }
                     });
                 }
             }
         });
-        ui.add_space(10.0);
+        ui.add_space(12.0);
     }
 
     pub(super) fn settings_library(&mut self, ui: &mut egui::Ui) {
         self.library_folders_card(ui);
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Albüm türleri");
-            ui.add_space(2.0);
-            switch_row(
-                ui,
-                "Türleri internetten çek",
-                "MusicBrainz ve Deezer'dan; dosya etiketleri yanlışken daha doğru sonuç verir",
-                &mut self.cfg.fetch_genres,
-            );
-            ui.add_space(4.0);
-            switch_row(ui, "Kütüphaneyi türe göre grupla", "Albümler tür başlıkları altında listelenir", &mut self.cfg.group_by_genre);
+            toggle_row(ui, "Türleri internetten çek", "MusicBrainz ve Deezer'dan", "MusicBrainz ve Deezer'dan; dosya etiketleri yanlışken daha doğru sonuç verir", &mut self.cfg.fetch_genres);
+            row_sep(ui);
+            toggle_row(ui, "Kütüphaneyi türe göre grupla", "Albümler tür başlıkları altında listelenir", "", &mut self.cfg.group_by_genre);
+            row_sep(ui);
             let total = self.lib.albums.len();
             let done = self.lib.albums.iter().filter(|a| a.genre_checked).count();
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("{done}/{total} albüm işlendi")).font(body(12.5)).color(DIM));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if pill_button(ui, "Yeniden çek", Some(Icon::Undo), false).on_hover_text_tr("Tüm albümlerin türünü silip baştan alır").clicked() {
-                        for a in self.lib.albums.iter_mut() {
-                            a.genre.clear();
-                            a.genre_checked = false;
-                        }
-                        self.genre_retry.clear();
-                        self.lib.save();
+            let status = format!("{done}/{total} albüm işlendi");
+            setting_row(ui, "Türleri yeniden çek", &status, "Tüm albümlerin türünü silip baştan alır", |ui| {
+                if pill_button(ui, "Yeniden çek", Some(Icon::Undo), false).clicked() {
+                    for a in self.lib.albums.iter_mut() {
+                        a.genre.clear();
+                        a.genre_checked = false;
                     }
-                });
+                    self.genre_retry.clear();
+                    self.lib.save();
+                }
             });
             if self.cfg.fetch_genres && total > 0 && done < total {
-                ui.add_space(4.0);
                 ui.add(egui::ProgressBar::new(done as f32 / total as f32).desired_height(6.0));
+                ui.add_space(4.0);
             }
         });
-        ui.add_space(10.0);
+        ui.add_space(12.0);
     }
 
     pub(super) fn settings_eq(&mut self, ui: &mut egui::Ui) {
         self.presets_manager_card(ui);
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         self.eq_rules_card(ui);
-        ui.add_space(10.0);
+        ui.add_space(12.0);
     }
 
     pub(super) fn settings_app(&mut self, ui: &mut egui::Ui) {
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Genel");
-            ui.add_space(2.0);
             let mut lm = !self.cfg.level_match_off;
-            if switch_row(ui, "A/B'de seviye eşle", "EQ kapalı ses preamp kadar kısılır", &mut lm) {
+            if toggle_row(ui, "A/B'de seviye eşle", "EQ kapalı ses preamp kadar kısılır", "", &mut lm) {
                 self.cfg.level_match_off = !lm;
             }
-            ui.add_space(4.0);
             if self.cfg.use_loopback {
-                switch_row(ui, "Açılışta Sistem DSP'yi başlat", "", &mut self.cfg.autostart);
-                ui.add_space(4.0);
+                row_sep(ui);
+                toggle_row(ui, "Açılışta Sistem DSP'yi başlat", "", "", &mut self.cfg.autostart);
             }
-            switch_row(ui, "Başlıkta motor düğmesi", "Sağ üstteki güç simgesi; motor zaten kendiliğinden açılıp kapanır", &mut self.cfg.show_engine_btn);
-            ui.add_space(4.0);
-            switch_row(ui, "Kapatınca tepside çalışmaya devam et", "Sistem DSP için önerilir", &mut self.cfg.tray_on_close);
-            ui.add_space(4.0);
+            row_sep(ui);
+            toggle_row(ui, "Başlıkta motor düğmesi", "Sağ üstteki güç simgesi", "Sağ üstteki güç simgesi; motor zaten kendiliğinden açılıp kapanır", &mut self.cfg.show_engine_btn);
+            row_sep(ui);
+            toggle_row(ui, "Kapatınca tepside çalışmaya devam et", "Sistem DSP için önerilir", "", &mut self.cfg.tray_on_close);
+            row_sep(ui);
             let mut login = self.cfg.run_at_login;
-            if switch_row(ui, "Windows ile birlikte başlat", "Tepside, arka planda açılır", &mut login) {
+            if toggle_row(ui, "Windows ile birlikte başlat", "Tepside, arka planda açılır", "", &mut login) {
                 self.cfg.run_at_login = login;
                 set_run_at_login(login);
                 if login {
                     self.cfg.autostart = true;
                 }
             }
-        });        ui.add_space(10.0);
+        });
+        ui.add_space(12.0);
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Görünüm");
-            ui.add_space(8.0);
-
-            ui.label(RichText::new("Dil").font(body(14.5)).color(Color32::WHITE));
-            ui.add_space(6.0);
             let mut lang = crate::i18n::get();
             let before = lang;
-            let items: Vec<(crate::i18n::Lang, &str, Option<Icon>)> = crate::i18n::Lang::ALL.iter().map(|l| (*l, l.native_name(), None)).collect();
-            segmented(ui, &mut lang, &items);
+            setting_row(ui, "Dil", "", "", |ui| {
+                let items: Vec<(crate::i18n::Lang, &str, Option<Icon>)> = crate::i18n::Lang::ALL.iter().map(|l| (*l, l.native_name(), None)).collect();
+                segmented(ui, &mut lang, &items);
+            });
             if lang != before {
                 crate::i18n::set(lang);
                 self.cfg.lang = Some(lang.code().to_string());
             }
-
-            card_divider(ui);
-            ui.label(RichText::new("Arayüz boyutu").font(body(14.5)).color(Color32::WHITE));
-            ui.label(RichText::new("Otomatik, Windows ekran ölçeğine göre seçer").font(body(12.0)).color(DIM));
-            ui.add_space(6.0);
-            segmented(ui, &mut self.cfg.ui_zoom, &[(0, "Otomatik", None), (70, "%70", None), (80, "%80", None), (90, "%90", None), (100, "%100", None), (115, "%115", None)]);
-
-            card_divider(ui);
-            switch_row(ui, "Bekleyince albüm ekranı", "Müzik çalarken bir süre dokunmazsan kapak, sıradakiler ve canlı spektrum tam ekran görünür", &mut self.cfg.ambient);
+            row_sep(ui);
+            setting_block(ui, "Arayüz boyutu", "Otomatik, Windows ekran ölçeğine göre seçer", |ui| {
+                segmented(ui, &mut self.cfg.ui_zoom, &[(0, "Otomatik", None), (70, "%70", None), (80, "%80", None), (90, "%90", None), (100, "%100", None), (115, "%115", None)]);
+            });
+            row_sep(ui);
+            toggle_row(ui, "Bekleyince albüm ekranı", "Müzik çalarken bir süre dokunmazsan kapak, sıradakiler ve canlı spektrum tam ekran görünür", "", &mut self.cfg.ambient);
             if self.cfg.ambient {
-                ui.add_space(8.0);
-                ui.label(RichText::new("Başlama süresi").font(body(12.5)).color(DIM));
-                ui.add_space(4.0);
-                segmented(ui, &mut self.cfg.ambient_secs, &[(30, "30 sn", None), (60, "1 dk", None), (120, "2 dk", None), (300, "5 dk", None)]);
-                ui.add_space(6.0);
-                ui.label(RichText::new("F11 elle açar · fareyi oynatınca düğmeler çıkar · Tab sağ paneli değiştirir").font(body(12.0)).color(DIM));
+                row_sep(ui);
+                setting_row(ui, "Başlama süresi", "F11 elle açar · fareyi oynatınca düğmeler çıkar · Tab sağ paneli değiştirir", "", |ui| {
+                    segmented(ui, &mut self.cfg.ambient_secs, &[(30, "30 sn", None), (60, "1 dk", None), (120, "2 dk", None), (300, "5 dk", None)]);
+                });
             }
         });
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         self.tips_settings(ui);
-
     }
 
     pub(super) fn device_combo(ui: &mut egui::Ui, id: &str, devices: &[DeviceInfo], value: &mut Option<String>, none_label: &str, reserve: f32) {
@@ -310,7 +327,7 @@ impl App {
                 .map(|d| d.name.clone())
                 .unwrap_or_else(|| "Kayıtlı cihaz (bağlı değil)".to_string()),
         };
-        let w = (ui.available_width() - reserve - 8.0).clamp(180.0, 620.0);
+        let w = (ui.available_width() - reserve - 8.0).clamp(160.0, 620.0);
         egui::ComboBox::from_id_salt(id).width(w).selected_text_tr(shown).show_ui(ui, |ui| {
             ui.selectable_value_tr(value, None, none_label);
             for d in devices {
@@ -319,10 +336,3 @@ impl App {
         });
     }
 }
-fn card_divider(ui: &mut egui::Ui) {
-    ui.add_space(14.0);
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(r, 0.0, alpha(Color32::WHITE, 14));
-    ui.add_space(14.0);
-}
-
