@@ -1,5 +1,7 @@
 use super::*;
 
+const WORDMARK_PT: f32 = 18.0;
+
 impl App {
 
     pub(super) fn format_badge(&self) -> Option<String> {
@@ -66,10 +68,15 @@ impl App {
                     left_end = ui.min_rect().right();
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 
+                        let ppp = ctx.pixels_per_point();
+                        let want_h = (WORDMARK_PT * ppp).round().max(8.0) as u32;
+                        if self.wordmark_tex.as_ref().map_or(true, |(_, _, h)| *h != want_h) {
+                            let (px, w, h) = crate::appicon::wordmark_rgba(want_h);
+                            self.wordmark_tex = (w > 0).then(|| (ctx.load_texture("wordmark", ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px), TextureOptions::LINEAR), w, h));
+                        }
                         match &self.wordmark_tex {
-                            Some((t, aspect)) => {
-                                let h = 17.0;
-                                ui.add(egui::Image::new((t.id(), vec2(h * aspect, h))));
+                            Some((t, w, h)) => {
+                                ui.add(egui::Image::new((t.id(), vec2(*w as f32 / ppp, *h as f32 / ppp))));
                             }
                             None => {
                                 ui.label(RichText::new("Soundworks").font(bold(17.0)));

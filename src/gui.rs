@@ -337,7 +337,7 @@ pub struct App {
     cover_id: u64,
     cover_tex: Option<TextureHandle>,
 
-    wordmark_tex: Option<(TextureHandle, f32)>,
+    wordmark_tex: Option<(TextureHandle, u32, u32)>,
     cover_t0: Instant,
     ambient_on: bool,
     plugin_host: crate::plugins::PluginHost,
@@ -545,10 +545,7 @@ impl App {
             meta: TrackMeta::default(),
             cover_id: 0,
             cover_tex: None,
-            wordmark_tex: {
-                let (px, w, h) = crate::appicon::wordmark_rgba(72);
-                (w > 0).then(|| (ctx.load_texture("wordmark", ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px), TextureOptions::LINEAR), w as f32 / h as f32))
-            },
+            wordmark_tex: None,
             cover_t0: Instant::now(),
             ambient_on: false,
             plugin_host: crate::plugins::PluginHost::new(),
