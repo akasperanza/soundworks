@@ -71,6 +71,22 @@ fn radial_glow(p: &egui::Painter, c: egui::Pos2, radius: f32, color: Color32, a:
     p.add(Shape::mesh(mesh));
 }
 
+fn text_w(ui: &egui::Ui, text: &str, font: egui::FontId) -> f32 {
+    ui.painter().layout_no_wrap(crate::i18n::tr(text), font, Color32::WHITE).size().x
+}
+
+fn pill_w(ui: &egui::Ui, text: &str, icon: bool) -> f32 {
+    text_w(ui, text, body(13.5)) + if icon { 20.0 } else { 0.0 } + 28.0
+}
+
+fn link_w(ui: &egui::Ui, text: &str) -> f32 {
+    text_w(ui, text, body(13.0)) + 20.0
+}
+
+fn center_by(ui: &mut egui::Ui, col_w: f32, total: f32) {
+    ui.add_space(((col_w - total) * 0.5).max(0.0));
+}
+
 fn link_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let g = ui.painter().layout_no_wrap(crate::i18n::tr(text), body(13.0), DIM);
     let (rect, resp) = ui.allocate_exact_size(g.size() + vec2(20.0, 14.0), Sense::click());
@@ -139,6 +155,7 @@ fn notes_card(ui: &mut egui::Ui, notes: &str, max_h: f32, a: f32) {
     let lines = update::notes_to_lines(notes);
     Frame::none().fill(alpha(BG2, (210.0 * a) as u8)).rounding(Rounding::same(16.0)).inner_margin(Margin::symmetric(24.0, 18.0)).stroke(Stroke::new(1.0, alpha(Color32::WHITE, (16.0 * a) as u8))).show(ui, |ui| {
         ui.set_width(ui.available_width());
+        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("YENİLİKLER")).font(bold(11.0)).color(alpha(SKY, (220.0 * a) as u8)));
         ui.add_space(10.0);
         if lines.is_empty() {
@@ -170,6 +187,7 @@ fn notes_card(ui: &mut egui::Ui, notes: &str, max_h: f32, a: f32) {
                     }
                 }
             }
+        });
         });
     });
 }
@@ -363,7 +381,14 @@ impl App {
             let (rect, _) = ui.allocate_exact_size(screen.size(), Sense::click_and_drag());
             paint_backdrop(ui.painter(), rect, time);
             let col_w = (rect.width() - 80.0).clamp(320.0, 700.0);
-            let top = rect.top() + (rect.height() * 0.12).max(36.0) + (1.0 - ease(t)) * 24.0;
+            let note_lines = update::notes_to_lines(&match mode {
+                Mode::Updated => self.whats_new.as_ref().and_then(|w| w.notes.clone()).unwrap_or_default(),
+                Mode::Available => rel.as_ref().map(|r| r.notes.clone()).unwrap_or_default(),
+            })
+            .len() as f32;
+            let card_h = if downloading { 120.0 } else { (note_lines * 30.0 + 76.0).clamp(110.0, (rect.height() * 0.34).clamp(120.0, 300.0) + 76.0) };
+            let block_h = 30.0 + 18.0 + 56.0 + 14.0 + 36.0 + 26.0 + card_h + 26.0 + 100.0;
+            let top = rect.top() + ((rect.height() - block_h) * 0.5).max(28.0) + (1.0 - ease(t)) * 24.0;
             let col = Rect::from_min_size(pos2(rect.center().x - col_w * 0.5, top), vec2(col_w, rect.height() - (top - rect.top()) - 24.0));
             let mut cui = ui.child_ui(col, egui::Layout::top_down(egui::Align::Center), None);
             let ui = &mut cui;
@@ -393,20 +418,22 @@ impl App {
                     match mode {
                         Mode::Updated => {
                             let v = self.whats_new.as_ref().map(|w| w.version.clone()).unwrap_or_default();
-                            let total = 130.0;
-                            ui.add_space(((col_w - total) * 0.5).max(0.0));
-                            version_pill(ui, &format!("v{v}"), true);
+                            let label = format!("v{v}");
+                            center_by(ui, col_w, ui.painter().layout_no_wrap(label.clone(), bold(15.0), TEXT).size().x + 28.0);
+                            version_pill(ui, &label, true);
                         }
                         Mode::Available => {
                             let new_v = rel.as_ref().map(|r| r.version.clone()).unwrap_or_default();
                             let cur = format!("v{}", env!("CARGO_PKG_VERSION"));
-                            let total = 300.0;
-                            ui.add_space(((col_w - total) * 0.5).max(0.0));
+                            let pw = |ui: &egui::Ui, t: &str| ui.painter().layout_no_wrap(t.to_string(), bold(15.0), TEXT).size().x + 28.0;
+                            let new_label = format!("v{new_v}");
+                            let total = pw(ui, &cur) + 28.0 + pw(ui, &new_label) + 24.0;
+                            center_by(ui, col_w, total);
                             version_pill(ui, &cur, false);
                             let (ar, _) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::hover());
                             let slide = (time * 1.6).sin() * 2.5;
                             ui.painter().text(ar.center() + vec2(slide, 0.0), Align2::CENTER_CENTER, "→", bold(20.0), alpha(SKY, 230));
-                            version_pill(ui, &format!("v{new_v}"), true);
+                            version_pill(ui, &new_label, true);
                         }
                     }
                 });
@@ -463,7 +490,7 @@ impl App {
                             ui.add(egui::Label::new(egui::RichText::new(e).font(body(13.0)).color(AMBER)).wrap());
                             ui.add_space(14.0);
                             ui.horizontal(|ui| {
-                                ui.add_space(((col_w - 210.0) * 0.5).max(0.0));
+                                center_by(ui, col_w, pill_w(ui, "Tekrar dene", true) + pill_w(ui, "Kapat", false) + 8.0);
                                 if pill_button(ui, "Tekrar dene", Some(Icon::Undo), true).clicked() {
                                     act = Some("retry");
                                 }
@@ -478,8 +505,12 @@ impl App {
                             ui.add_space(14.0);
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
-                                let est = if self.upd_remind_menu { 420.0 } else { 330.0 };
-                                ui.add_space(((col_w - est) * 0.5).max(0.0));
+                                let total = if self.upd_remind_menu {
+                                    REMIND_CHOICES.iter().map(|(l, _)| pill_w(ui, l, false)).sum::<f32>() + 4.0 * (REMIND_CHOICES.len() as f32 - 1.0)
+                                } else {
+                                    link_w(ui, "Sonra hatırlat") + link_w(ui, "Bu sürümü atla") + link_w(ui, "Güncellemeleri hatırlatma") + 8.0
+                                };
+                                center_by(ui, col_w, total);
                                 if self.upd_remind_menu {
                                     for (label, secs) in REMIND_CHOICES {
                                         if pill_button(ui, label, None, false).clicked() {
