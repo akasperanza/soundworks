@@ -89,3 +89,5 @@ Uygulama simgesindeki harfler ve başlıktaki "Soundworks" yazısı [Barlow](htt
 Copyright (C) 2026 akaSperanza
 
 Soundworks özgür bir yazılımdır: [GNU Genel Kamu Lisansı](LICENSE) sürüm 3 ya da (tercihinize bağlı olarak) sonraki herhangi bir sürümün koşulları altında dağıtabilir ve değiştirebilirsiniz. Program yararlı olacağı umuduyla dağıtılır, ancak hiçbir garanti vermez.
+
+Üçüncü taraf bileşenler ve lisansları: [THIRD_PARTY.md](THIRD_PARTY.md).
