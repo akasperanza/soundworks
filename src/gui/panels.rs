@@ -673,7 +673,7 @@ impl App {
             false,
         );
         if !active_fx.is_empty() && !dop {
-            path_row(ui, "Modüller", &active_fx.join(" → "), false);
+            path_row(ui, "Modüller", &active_fx.iter().map(|n| crate::i18n::tr(n)).collect::<Vec<_>>().join(" → "), false);
         }
         if let (Some(db), false) = (self.player.rg_applied_db(), self.cfg.use_loopback) {
             path_row(ui, "ReplayGain", &format!("{db:+.1} dB · {}", if self.cfg.rg_mode == 2 { "albüm" } else { "parça" }), false);

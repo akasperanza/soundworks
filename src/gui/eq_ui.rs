@@ -154,7 +154,7 @@ impl App {
     }
 
     pub(super) fn preset_chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
-        let g = ui.painter().layout_no_wrap(text.to_string(), bold(12.5), TEXT);
+        let g = ui.painter().layout_no_wrap(crate::i18n::tr(text), bold(12.5), TEXT);
         let (rect, resp) = ui.allocate_exact_size(vec2(g.size().x + 22.0, 28.0), Sense::click());
         let h = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
         let a = ui.ctx().animate_bool_with_time(resp.id.with("a"), active, 0.18);

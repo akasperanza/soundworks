@@ -105,6 +105,7 @@ fn short_preset(p: &Option<String>) -> String {
 }
 
 pub(super) fn fit(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) -> String {
+    let s = &crate::i18n::tr(s);
     let w = |t: &str| painter.layout_no_wrap(t.to_string(), font.clone(), Color32::WHITE).size().x;
     if w(s) <= max_w {
         return s.to_string();

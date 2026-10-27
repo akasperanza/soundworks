@@ -146,10 +146,11 @@ fn summary(s: &FxSpec) -> String {
 const NODE_H: f32 = 96.0;
 
 fn text_w(p: &egui::Painter, s: &str, font: egui::FontId) -> f32 {
-    p.layout_no_wrap(s.to_string(), font, Color32::WHITE).size().x
+    p.layout_no_wrap(crate::i18n::tr(s), font, Color32::WHITE).size().x
 }
 
 fn fit(p: &egui::Painter, s: &str, font: egui::FontId, max_w: f32) -> String {
+    let s = &crate::i18n::tr(s);
     if text_w(p, s, font.clone()) <= max_w {
         return s.to_string();
     }
@@ -498,7 +499,7 @@ impl App {
 
         let desc_h = fx::CATALOG
             .iter()
-            .map(|i| ui.painter().layout(i.desc.to_string(), body(11.8), DIM, cw - 32.0).size().y)
+            .map(|i| ui.painter().layout(crate::i18n::tr(i.desc), body(11.8), DIM, cw - 32.0).size().y)
             .fold(0.0f32, f32::max);
         let ch = (72.0 + desc_h + 18.0).ceil().max(132.0);
         ui.horizontal_wrapped(|ui| {
@@ -519,7 +520,7 @@ impl App {
                 let tw = (rect.right() - 16.0 - 34.0 - 36.0) - (ir.right() + 14.0);
                 p.text_tr(pos2(ir.right() + 14.0, rect.top() + 28.0), Align2::LEFT_CENTER, fit(&p, info.name, bold(14.5), tw), bold(14.5), Color32::WHITE);
                 p.text_tr(pos2(ir.right() + 14.0, rect.top() + 47.0), Align2::LEFT_CENTER, fit(&p, info.tagline, body(12.0), tw), body(12.0), SKY);
-                let g = p.layout(info.desc.to_string(), body(11.8), DIM, rect.width() - 32.0);
+                let g = p.layout(crate::i18n::tr(info.desc), body(11.8), DIM, rect.width() - 32.0);
                 p.galley(pos2(rect.left() + 16.0, rect.top() + 72.0), g, DIM);
 
                 let br = Rect::from_center_size(pos2(rect.right() - 30.0, rect.top() + 28.0), vec2(34.0, 28.0));

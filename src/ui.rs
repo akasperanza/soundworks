@@ -33,7 +33,8 @@ pub fn line_height(p: &Painter, font: &FontId) -> f32 {
 }
 
 pub fn wrap_lines(p: &Painter, s: &str, font: &FontId, max_w: f32) -> Vec<String> {
-    let s = s.trim();
+    let translated = crate::i18n::tr(s);
+    let s = translated.trim();
     if s.is_empty() || text_width(p, s, font) <= max_w {
         return vec![s.to_string()];
     }
