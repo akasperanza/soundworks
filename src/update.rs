@@ -107,6 +107,86 @@ pub fn check(url: &str, current: &str) -> Result<Option<Release>, String> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum NoteLine {
+    Heading(String),
+    Bullet(String),
+    Text(String),
+}
+
+fn clean_markup(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(i) = rest.find('[') {
+        let after = &rest[i + 1..];
+        match (after.find("]("), after.find(')')) {
+            (Some(a), Some(b)) if a < b => {
+                out.push_str(&rest[..i]);
+                out.push_str(&after[..a]);
+                rest = &after[b + 1..];
+            }
+            _ => {
+                out.push_str(&rest[..i + 1]);
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    let mut text = out.replace("**", "").replace("__", "").replace('`', "");
+    if let Some(i) = text.find(" by @") {
+        text.truncate(i);
+    }
+    if let Some(i) = text.find(" in https://") {
+        text.truncate(i);
+    }
+    let text = text.trim().to_string();
+    if text.chars().count() > 220 {
+        text.chars().take(219).collect::<String>() + "…"
+    } else {
+        text
+    }
+}
+
+pub fn notes_to_lines(md: &str) -> Vec<NoteLine> {
+    let mut out = vec![];
+    for raw in md.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.to_lowercase().contains("full changelog") || line.starts_with("---") {
+            continue;
+        }
+        let item = if let Some(h) = line.strip_prefix('#') {
+            let text = clean_markup(h.trim_start_matches('#'));
+            (!text.is_empty()).then(|| NoteLine::Heading(text))
+        } else if let Some(b) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+            let text = clean_markup(b);
+            (!text.is_empty()).then(|| NoteLine::Bullet(text))
+        } else {
+            let text = clean_markup(line);
+            (!text.is_empty()).then(|| NoteLine::Text(text))
+        };
+        out.extend(item);
+        if out.len() >= 40 {
+            break;
+        }
+    }
+    out
+}
+
+pub fn notes_url(version: &str) -> String {
+    format!("https://api.github.com/repos/{REPO}/releases/tags/v{}", version.trim_start_matches(['v', 'V']))
+}
+
+pub fn fetch_notes(url: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct Body {
+        #[serde(default)]
+        body: Option<String>,
+    }
+    let resp = agent(Duration::from_secs(15)).get(url).set("Accept", "application/vnd.github+json").call().map_err(|e| e.to_string())?;
+    let parsed: Body = serde_json::from_str(&resp.into_string().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    Ok(parsed.body.unwrap_or_default())
+}
+
 pub fn trusted_host(url: &str) -> bool {
     let Ok(u) = url::Url::parse(url) else { return false };
     u.scheme() == "https" && u.host_str().map_or(false, |h| TRUSTED_HOSTS.contains(&h.to_lowercase().as_str()))
@@ -385,5 +465,38 @@ mod tests {
         assert_eq!(r.version, "0.6.0");
         assert_eq!(check(&format!("http://127.0.0.1:{port}/nope"), "0.5.0").unwrap(), None);
         assert_eq!(check(&format!("http://127.0.0.1:{port}/latest"), "0.6.0").unwrap(), None);
+    }
+
+    #[test]
+    fn release_notes_become_clean_lines() {
+        let md = "## What's Changed\n* Add idle screen by @someone in https://github.com/x/y/pull/1\n- **Fix** the [crash](https://example.com) in `lists`\nPlain text line\n\n**Full Changelog**: https://github.com/x/y/compare/v1...v2\n---\n";
+        let lines = notes_to_lines(md);
+        assert_eq!(
+            lines,
+            vec![
+                NoteLine::Heading("What's Changed".into()),
+                NoteLine::Bullet("Add idle screen".into()),
+                NoteLine::Bullet("Fix the crash in lists".into()),
+                NoteLine::Text("Plain text line".into()),
+            ]
+        );
+        assert!(notes_to_lines("").is_empty());
+        let long = format!("- {}", "x".repeat(400));
+        match &notes_to_lines(&long)[0] {
+            NoteLine::Bullet(t) => assert_eq!(t.chars().count(), 220),
+            other => panic!("{other:?}"),
+        }
+        let many: String = (0..100).map(|i| format!("- item {i}\n")).collect();
+        assert_eq!(notes_to_lines(&many).len(), 40);
+    }
+
+    #[test]
+    fn notes_are_fetched_for_a_tag() {
+        assert!(notes_url("v0.6.0").ends_with("/releases/tags/v0.6.0"));
+        assert!(notes_url("0.6.0").ends_with("/releases/tags/v0.6.0"));
+        let port = serve(vec![("/tag", br#"{"body":"- one\n- two"}"#.to_vec()), ("/empty", br#"{}"#.to_vec())]);
+        assert_eq!(fetch_notes(&format!("http://127.0.0.1:{port}/tag")).unwrap(), "- one\n- two");
+        assert_eq!(fetch_notes(&format!("http://127.0.0.1:{port}/empty")).unwrap(), "");
+        assert!(fetch_notes(&format!("http://127.0.0.1:{port}/missing")).is_err());
     }
 }

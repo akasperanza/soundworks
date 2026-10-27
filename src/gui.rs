@@ -154,6 +154,10 @@ struct Config {
     update_check: bool,
     update_skip: String,
     update_checked: u64,
+    update_remind_at: u64,
+    last_run_version: String,
+    update_notes: String,
+    update_notes_version: String,
     plugins: Vec<String>,
     #[serde(default)]
     lang: Option<String>,
@@ -213,6 +217,10 @@ impl Default for Config {
             update_check: true,
             update_skip: String::new(),
             update_checked: 0,
+            update_remind_at: 0,
+            last_run_version: String::new(),
+            update_notes: String::new(),
+            update_notes_version: String::new(),
             plugins: vec![],
             lang: None,
             dither: true,
@@ -350,6 +358,12 @@ pub struct App {
     upd: update_ui::UpdState,
     upd_rx: Option<std::sync::mpsc::Receiver<update_ui::UpdMsg>>,
     upd_dialog: bool,
+    whats_new: Option<update_ui::WhatsNew>,
+    notes_rx: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    upd_remind_menu: bool,
+    upd_t0: Instant,
+    upd_esc: bool,
+    upd_last_mode: Option<update_ui::Mode>,
     upd_progress: Arc<std::sync::atomic::AtomicU64>,
     upd_started: Instant,
     upd_auto_done: bool,
@@ -565,6 +579,12 @@ impl App {
             upd: update_ui::UpdState::Idle,
             upd_rx: None,
             upd_dialog: false,
+            whats_new: None,
+            notes_rx: None,
+            upd_remind_menu: false,
+            upd_t0: Instant::now(),
+            upd_esc: false,
+            upd_last_mode: None,
             upd_progress: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             upd_started: Instant::now(),
             upd_auto_done: false,
@@ -721,6 +741,7 @@ impl App {
         }
         let _ = ctx;
         app.plugins_refresh();
+        app.whats_new_init();
         if let Ok(v) = crate::devenv::dev_var("SW_PLUGPANEL") {
             if let Some((p, id)) = v.split_once('/') {
                 app.plugin_panel = Some((p.to_string(), id.to_string()));
@@ -773,13 +794,24 @@ impl App {
         if let Ok(v) = crate::devenv::dev_var("SW_UPDATE_FAKE") {
             app.upd = update_ui::UpdState::Available(crate::update::Release {
                 version: v,
-                notes: "- Yeni: bekleme ekranı\n- Yeni: eklenti sistemi\n- Düzeltme: seçim listelerinde çökme".into(),
+                notes: "- Bekleme ekranı: kapak, sıradakiler ve canlı spektrum\n- Eklenti sistemi: düğme, panel ve komutlar\n- Ayarlar yeniden tasarlandı\n- **Düzeltme:** seçim listelerinde çökme".into(),
                 page: String::new(),
                 exe_url: String::new(),
                 sum_url: String::new(),
                 size: 18_000_000,
             });
             app.upd_dialog = true;
+            if crate::devenv::dev_var("SW_UPDATE_DL").is_ok() {
+                if let update_ui::UpdState::Available(r) = std::mem::replace(&mut app.upd, update_ui::UpdState::Idle) {
+                    app.upd_progress.store(7_200_000, Relaxed);
+                    app.upd = update_ui::UpdState::Downloading(r);
+                }
+            }
+        }
+        if let Ok(v) = crate::devenv::dev_var("SW_WHATSNEW") {
+            app.cfg.update_notes = "- Bekleme ekranı: kapak, sıradakiler ve canlı spektrum\n- Eklenti sistemi: düğme, panel ve komutlar\n- Ayarlar yeniden tasarlandı\n- **Düzeltme:** seçim listelerinde çökme\n\n**Full Changelog**: https://github.com/x/y/compare/a...b".into();
+            app.cfg.update_notes_version = v.clone();
+            app.show_whats_new(v);
         }
         if crate::devenv::dev_var("SW_DETACH").is_ok() {
             app.detach_motor();
@@ -1390,7 +1422,7 @@ impl eframe::App for App {
         }
 
         let fade = self.fade(ctx);
-        if !self.ambient_on {
+        if !self.ambient_on && !self.update_overlay_active() {
             self.header(ctx);
             self.bottom_bar(ctx);
             self.lyrics_sidebar(ctx);
@@ -1435,9 +1467,9 @@ impl eframe::App for App {
             self.props_overlay(ctx);
             self.tip_banner(ctx);
             self.dsd_dialog_ui(ctx);
-            self.update_dialog(ctx);
         }
         self.ambient_overlay(ctx);
+        self.update_overlay(ctx);
 
         if crate::devenv::dev_var("SW_SHOT").is_ok() {
             self.frames += 1;
