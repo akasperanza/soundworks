@@ -46,6 +46,7 @@ windows = { version = "0.58", features = [
 regex = "1"
 rquickjs = "0.9"
 url = "2"
+sha2 = "0.10"
 
 [dependencies.log]
 version = "0.4"

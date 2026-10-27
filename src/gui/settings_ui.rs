@@ -315,6 +315,7 @@ impl App {
             }
         });
         ui.add_space(12.0);
+        self.update_settings(ui);
         self.tips_settings(ui);
     }
 

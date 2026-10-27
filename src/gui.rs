@@ -151,6 +151,9 @@ struct Config {
     ui_zoom: u32,
     ambient: bool,
     ambient_secs: u32,
+    update_check: bool,
+    update_skip: String,
+    update_checked: u64,
     plugins: Vec<String>,
     #[serde(default)]
     lang: Option<String>,
@@ -207,6 +210,9 @@ impl Default for Config {
             ui_zoom: 0,
             ambient: true,
             ambient_secs: 60,
+            update_check: true,
+            update_skip: String::new(),
+            update_checked: 0,
             plugins: vec![],
             lang: None,
             dither: true,
@@ -242,6 +248,7 @@ mod lyrics_ui;
 mod panels;
 mod proof_ui;
 mod ambient_ui;
+mod update_ui;
 mod motor_window;
 mod plugins_ui;
 mod queue_ui;
@@ -340,6 +347,12 @@ pub struct App {
 
     cover_t0: Instant,
     ambient_on: bool,
+    upd: update_ui::UpdState,
+    upd_rx: Option<std::sync::mpsc::Receiver<update_ui::UpdMsg>>,
+    upd_dialog: bool,
+    upd_progress: Arc<std::sync::atomic::AtomicU64>,
+    upd_started: Instant,
+    upd_auto_done: bool,
     motor_detached: bool,
     motor_titlebar: Option<String>,
     plugin_host: crate::plugins::PluginHost,
@@ -549,6 +562,12 @@ impl App {
             cover_tex: None,
             cover_t0: Instant::now(),
             ambient_on: false,
+            upd: update_ui::UpdState::Idle,
+            upd_rx: None,
+            upd_dialog: false,
+            upd_progress: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            upd_started: Instant::now(),
+            upd_auto_done: false,
             motor_detached: false,
             motor_titlebar: None,
             plugin_host: crate::plugins::PluginHost::new(),
@@ -750,6 +769,17 @@ impl App {
                 "scope" => VizMode::Scope,
                 _ => VizMode::Spectrum,
             };
+        }
+        if let Ok(v) = crate::devenv::dev_var("SW_UPDATE_FAKE") {
+            app.upd = update_ui::UpdState::Available(crate::update::Release {
+                version: v,
+                notes: "- Yeni: bekleme ekranı\n- Yeni: eklenti sistemi\n- Düzeltme: seçim listelerinde çökme".into(),
+                page: String::new(),
+                exe_url: String::new(),
+                sum_url: String::new(),
+                size: 18_000_000,
+            });
+            app.upd_dialog = true;
         }
         if crate::devenv::dev_var("SW_DETACH").is_ok() {
             app.detach_motor();
@@ -1256,6 +1286,7 @@ impl eframe::App for App {
             }
         }
         self.ambient_tick(ctx);
+        self.update_tick(ctx);
         self.viz.feed(ctl.as_deref(), dt);
         self.tex_budget = 4;
         self.poll_scans();
@@ -1404,6 +1435,7 @@ impl eframe::App for App {
             self.props_overlay(ctx);
             self.tip_banner(ctx);
             self.dsd_dialog_ui(ctx);
+            self.update_dialog(ctx);
         }
         self.ambient_overlay(ctx);
 

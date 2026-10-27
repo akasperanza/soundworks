@@ -23,6 +23,9 @@ pub(super) fn single_instance_ok() -> bool {
 }
 
 pub fn run(start_hidden: bool) -> anyhow::Result<()> {
+    if let Ok(exe) = std::env::current_exe() {
+        crate::update::cleanup_old(&exe);
+    }
     #[cfg(feature = "devtools")]
     if crate::devenv::dev_var("SW_LOGS").is_ok() {
         devlog::init();

@@ -13,6 +13,7 @@ mod fx;
 mod gui;
 mod i18n;
 mod plugins;
+mod update;
 mod library;
 mod loudness;
 mod lyrics;
@@ -42,8 +43,26 @@ fn usage() -> ! {
     std::process::exit(2)
 }
 
+fn wait_for_exit(pid: u32) {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
+    unsafe {
+        if let Ok(h) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+            WaitForSingleObject(h, 20_000);
+            let _ = CloseHandle(h);
+        }
+    }
+}
+
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(i) = args.iter().position(|a| a == "--wait-pid") {
+        let pid = args.get(i + 1).and_then(|v| v.parse::<u32>().ok());
+        args.drain(i..(i + 2).min(args.len()));
+        if let Some(pid) = pid {
+            wait_for_exit(pid);
+        }
+    }
     if !args.is_empty() {
 
         unsafe {
