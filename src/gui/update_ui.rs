@@ -82,6 +82,29 @@ struct Screen<'a> {
     age: f32,
 }
 
+fn waveform_progress(ui: &mut egui::Ui, frac: f32) {
+    const PITCH: f32 = 6.0;
+    const HEIGHT: f32 = 56.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEIGHT), Sense::hover());
+    let n = ((rect.width() / PITCH) as usize).max(8);
+    let time = ui.input(|i| i.time) as f32;
+    let head = frac * n as f32;
+    for i in 0..n {
+        let x = i as f32;
+        let shape = ((x * 0.37).sin() * 0.55 + (x * 0.91 + 1.3).sin() * 0.3 + (x * 2.3).sin() * 0.15).abs();
+        let mut h = 0.18 + 0.82 * shape;
+        let reach = (head - x).abs();
+        if reach < 3.0 {
+            h *= 1.0 + 0.22 * (3.0 - reach) / 3.0 * (time * 9.0).sin().abs();
+        }
+        let bar_h = (HEIGHT * h.min(1.0)).max(3.0);
+        let cx = rect.left() + (x + 0.5) * rect.width() / n as f32;
+        let col = if x + 1.0 <= head { BLUE } else { alpha(Color32::WHITE, 34) };
+        let r = Rect::from_center_size(pos2(cx, rect.center().y), vec2(2.5, bar_h));
+        ui.painter().rect_filled(r, Rounding::same(1.2), col);
+    }
+}
+
 fn draw_notes(ui: &mut egui::Ui, s: &Screen, max_h: f32) {
     ui.label(egui::RichText::new(crate::i18n::tr("YENİLİKLER")).font(bold(11.0)).color(alpha(TEXT, (140.0 * fade_in(s.age, 0.15)) as u8)));
     ui.add_space(10.0);
@@ -138,9 +161,7 @@ fn draw_actions(ui: &mut egui::Ui, s: &Screen, act: &mut Option<&'static str>, r
                 let frac = (done / total.max(1.0)).clamp(0.0, 1.0);
                 ui.label(egui::RichText::new(format!("{:.0}%", frac * 100.0)).font(hero_font(44.0)).color(Color32::WHITE));
                 ui.add_space(10.0);
-                let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 3.0), Sense::hover());
-                ui.painter().rect_filled(bar, 0.0, alpha(Color32::WHITE, 28));
-                ui.painter().rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac, bar.height())), 0.0, BLUE);
+                waveform_progress(ui, frac);
                 ui.add_space(10.0);
                 ui.label(egui::RichText::new(format!("{:.1} / {:.1} MB", done / 1_048_576.0, total / 1_048_576.0)).font(body(13.0)).color(DIM));
                 ui.add_space(14.0);
@@ -387,8 +408,7 @@ impl App {
         } else {
             self.upd_esc = false;
         }
-        let due = now_secs().saturating_sub(self.cfg.update_checked) > 12 * 3600;
-        if self.cfg.update_check && !self.upd_auto_done && matches!(self.upd, UpdState::Idle) && due && self.upd_started.elapsed().as_secs() > 25 && crate::devenv::dev_var("SW_OFFSCREEN").is_err() && crate::devenv::dev_var("SW_SHOT").is_err() {
+        if self.cfg.update_check && !self.upd_auto_done && matches!(self.upd, UpdState::Idle) && self.upd_started.elapsed().as_secs() > 8 && crate::devenv::dev_var("SW_OFFSCREEN").is_err() && crate::devenv::dev_var("SW_SHOT").is_err() {
             self.upd_auto_done = true;
             self.update_check_async(false);
         }
@@ -543,7 +563,7 @@ impl App {
                 }
             });
             row_sep(ui);
-            toggle_row(ui, "Güncellemeleri otomatik denetle", "Günde en fazla bir kez GitHub'a bakar, sormadan yüklemez", "", &mut self.cfg.update_check);
+            toggle_row(ui, "Güncellemeleri otomatik denetle", "Her açılışta GitHub'a bakar, sormadan yüklemez", "", &mut self.cfg.update_check);
             if check {
                 self.update_check_async(true);
             }

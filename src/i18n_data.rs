@@ -684,4 +684,5 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("{} dosyaya yazıldı, {} dosyaya yazılamadı", "Written to {} files, {} could not be written", "In {} Dateien geschrieben, {} nicht beschreibbar"),
     ("{} dosyadaki değişiklik geri alındı", "Reverted changes in {} files", "Änderungen in {} Dateien rückgängig gemacht"),
     ("{} dosyadaki değişiklik geri alındı, {} dosya geri alınamadı", "Reverted changes in {} files, {} could not be reverted", "Änderungen in {} Dateien rückgängig gemacht, {} nicht möglich"),
+    ("Her açılışta GitHub'a bakar, sormadan yüklemez", "Checks GitHub on every launch, never installs without asking", "Prüft bei jedem Start GitHub, installiert nie ohne Nachfrage"),
 ];
