@@ -11,6 +11,23 @@ use symphonia::core::probe::Hint;
 
 use crate::player::AUDIO_EXTS;
 
+pub const UNKNOWN_ARTIST: &str = "Bilinmeyen sanatçı";
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct OnlineMeta {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    #[serde(default)]
+    pub album_artist: String,
+    #[serde(default)]
+    pub year: u32,
+    #[serde(default)]
+    pub track_no: u32,
+    #[serde(default)]
+    pub source: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LibTrack {
     pub path: String,
@@ -48,6 +65,12 @@ pub struct Library {
 
     #[serde(default)]
     pub folders: Vec<String>,
+
+    #[serde(default)]
+    pub online: std::collections::BTreeMap<String, OnlineMeta>,
+
+    #[serde(default)]
+    pub online_tried: std::collections::BTreeMap<String, u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -69,7 +92,7 @@ pub enum ScanMsg {
     Done,
 }
 
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
     base.join("Soundworks")
 }
@@ -104,6 +127,8 @@ impl Library {
     }
 
     pub fn add(&mut self, t: &TrackInfo) -> bool {
+        let patched = self.patched(t);
+        let t = &patched;
         let idx = match self.albums.iter().position(|a| a.key == t.key) {
             Some(i) => i,
             None => {
@@ -126,6 +151,107 @@ impl Library {
             (a.disc_no, a.track_no, a.path.to_lowercase()).cmp(&(b.disc_no, b.track_no, b.path.to_lowercase()))
         });
         true
+    }
+
+    fn patched(&self, t: &TrackInfo) -> TrackInfo {
+        let Some(m) = self.online.get(&t.path) else { return t.clone() };
+        let mut out = t.clone();
+        let mut regroup = false;
+        let stem = Path::new(&t.path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        if out.title == stem && !m.title.is_empty() {
+            out.title = m.title.clone();
+        }
+        if out.artist == UNKNOWN_ARTIST && !m.artist.is_empty() {
+            out.artist = if m.album_artist.is_empty() { m.artist.clone() } else { m.album_artist.clone() };
+            regroup = true;
+        }
+        if out.key.starts_with("dir|") && !m.album.is_empty() {
+            out.album = m.album.clone();
+            regroup = true;
+        }
+        if out.track_no == 0 {
+            out.track_no = m.track_no;
+        }
+        if regroup {
+            let artist = if out.artist == UNKNOWN_ARTIST { String::new() } else { out.artist.clone() };
+            let (key, title) = make_key(&out.album, &artist, Path::new(&t.path));
+            out.key = key;
+            if !out.key.starts_with("dir|") {
+                out.album = title;
+            }
+        }
+        out
+    }
+
+    fn wants_online(&self, a: &Album, t: &LibTrack, all: bool) -> bool {
+        if self.online.contains_key(&t.path) || self.online_tried.contains_key(&t.path) {
+            return false;
+        }
+        all || a.key.starts_with("dir|")
+            || a.artist == UNKNOWN_ARTIST
+            || Path::new(&t.path).file_stem().map_or(false, |s| s.to_string_lossy() == t.title.as_str())
+    }
+
+    pub fn online_progress(&self, all: bool) -> (usize, usize) {
+        let (mut done, mut total) = (0, 0);
+        for a in &self.albums {
+            for t in &a.tracks {
+                let finished = self.online.contains_key(&t.path) || self.online_tried.contains_key(&t.path);
+                if finished {
+                    done += 1;
+                    total += 1;
+                } else if self.wants_online(a, t, all) {
+                    total += 1;
+                }
+            }
+        }
+        (done, total)
+    }
+
+    pub fn online_jobs(&self, all: bool, limit: usize, skip: impl Fn(&str) -> bool) -> Vec<(String, crate::web::TrackHint)> {
+        let mut out = vec![];
+        for a in &self.albums {
+            for t in &a.tracks {
+                if out.len() >= limit {
+                    return out;
+                }
+                if !self.wants_online(a, t, all) || skip(&t.path) {
+                    continue;
+                }
+                let folder = Path::new(&t.path).parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let hint = crate::web::TrackHint {
+                    title: t.title.clone(),
+                    artist: if a.artist == UNKNOWN_ARTIST { String::new() } else { a.artist.clone() },
+                    duration: t.duration as f64,
+                    folder,
+                };
+                out.push((t.path.clone(), hint));
+            }
+        }
+        out
+    }
+
+    pub fn apply_online(&mut self, path: &str) {
+        let Some((ai, ti)) = self.albums.iter().enumerate().find_map(|(ai, a)| a.tracks.iter().position(|t| t.path == path).map(|ti| (ai, ti))) else {
+            return;
+        };
+        let album = &mut self.albums[ai];
+        let tr = album.tracks.remove(ti);
+        let info = TrackInfo {
+            path: tr.path,
+            title: tr.title,
+            artist: album.artist.clone(),
+            album: album.title.clone(),
+            key: album.key.clone(),
+            track_no: tr.track_no,
+            disc_no: tr.disc_no,
+            duration: tr.duration,
+        };
+        if album.tracks.is_empty() {
+            self.albums.remove(ai);
+        }
+        self.add(&info);
+        self.sort();
     }
 
     pub fn sort(&mut self) {
@@ -304,7 +430,7 @@ fn scan_file(path: &Path, covered: &mut HashSet<String>) -> Option<TrackInfo> {
 
     let artist = if !raw.album_artist.is_empty() { raw.album_artist.clone() } else { raw.artist.clone() };
     let (key, album_title) = make_key(&raw.album, &artist, path);
-    let artist_disp = if artist.is_empty() { "Bilinmeyen sanatçı".to_string() } else { artist };
+    let artist_disp = if artist.is_empty() { UNKNOWN_ARTIST.to_string() } else { artist };
     let title = if raw.title.is_empty() {
         path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
     } else {
@@ -388,6 +514,37 @@ mod tests {
             disc_no: 1,
             duration: 100.0,
         }
+    }
+
+    #[test]
+    fn online_overlay_fills_missing_fields_and_regroups() {
+        let mut lib = Library::default();
+        let raw = |p: &str, stem: &str| TrackInfo {
+            path: p.into(),
+            title: stem.into(),
+            artist: UNKNOWN_ARTIST.into(),
+            album: "Klasör".into(),
+            key: "dir|c:/m/klasör".into(),
+            track_no: 0,
+            disc_no: 0,
+            duration: 100.0,
+        };
+        lib.add(&raw("C:/m/Klasör/a.mp3", "a"));
+        lib.add(&raw("C:/m/Klasör/b.mp3", "b"));
+        assert_eq!(lib.albums.len(), 1);
+        assert_eq!(lib.online_jobs(false, 10, |_| false).len(), 2);
+        let meta = OnlineMeta { title: "Gerçek Ad".into(), artist: "Sanatçı".into(), album: "Gerçek Albüm".into(), album_artist: String::new(), year: 2001, track_no: 4, source: "t".into() };
+        lib.online.insert("C:/m/Klasör/a.mp3".into(), meta);
+        lib.apply_online("C:/m/Klasör/a.mp3");
+        assert_eq!(lib.albums.len(), 2);
+        let real = lib.albums.iter().find(|a| a.title == "Gerçek Albüm").unwrap();
+        assert_eq!((real.artist.as_str(), real.tracks[0].title.as_str(), real.tracks[0].track_no), ("Sanatçı", "Gerçek Ad", 4));
+        assert_eq!(lib.albums.iter().find(|a| a.key.starts_with("dir|")).unwrap().tracks.len(), 1);
+        assert!(lib.online_jobs(true, 10, |_| false).iter().all(|(p, _)| p != "C:/m/Klasör/a.mp3"));
+        assert_eq!(lib.online_progress(false), (1, 2));
+        let mut again = Library { online: lib.online.clone(), ..Default::default() };
+        again.add(&raw("C:/m/Klasör/a.mp3", "a"));
+        assert_eq!(again.albums[0].title, "Gerçek Albüm");
     }
 
     #[test]

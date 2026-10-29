@@ -140,6 +140,9 @@ struct Config {
     tray_on_close: bool,
     run_at_login: bool,
     fetch_genres: bool,
+    meta_online: bool,
+    meta_all: bool,
+    meta_write: u8,
     group_by_genre: bool,
 
     scan_on_start: bool,
@@ -207,6 +210,9 @@ impl Default for Config {
             tray_on_close: true,
             run_at_login: false,
             fetch_genres: true,
+            meta_online: true,
+            meta_all: false,
+            meta_write: 0,
             group_by_genre: true,
             scan_on_start: true,
             dsd_prefs: BTreeMap::new(),
@@ -252,6 +258,7 @@ mod engine_ctl;
 mod eq_ui;
 mod fx_ui;
 mod library_ui;
+mod metadata_ui;
 mod lyrics_ui;
 mod panels;
 mod proof_ui;
@@ -496,6 +503,13 @@ pub struct App {
     upload_open: bool,
     upload_sub: bool,
     genre_fetcher: artist::GenreFetcher,
+    meta_fetcher: crate::onlinemeta::MetaFetcher,
+    meta_pause: Option<Instant>,
+    meta_found: Vec<String>,
+    meta_banner_n: usize,
+    meta_unsaved: u32,
+    meta_write_rx: Option<Receiver<crate::onlinemeta::WriteReport>>,
+    meta_log: Vec<crate::tagwrite::WriteLogEntry>,
     genre_retry: HashMap<String, Instant>,
     genre_unsaved: u32,
     artist_cache: HashMap<String, artist::ArtistInfo>,
@@ -697,6 +711,13 @@ impl App {
             upload_open: false,
             upload_sub: false,
             genre_fetcher: artist::GenreFetcher::new(),
+            meta_fetcher: crate::onlinemeta::MetaFetcher::new(),
+            meta_pause: None,
+            meta_found: Vec::new(),
+            meta_banner_n: 0,
+            meta_unsaved: 0,
+            meta_write_rx: None,
+            meta_log: crate::onlinemeta::load_log(),
             genre_retry: HashMap::new(),
             genre_unsaved: 0,
             artist_cache: HashMap::new(),
@@ -1082,6 +1103,7 @@ impl eframe::App for App {
             self.wave_cache.insert(path, Arc::new(w.unwrap_or_default()));
         }
         self.drive_genres();
+        self.drive_online_meta(ctx);
         if !self.lib_scans.is_empty() {
             ctx.request_repaint();
         }

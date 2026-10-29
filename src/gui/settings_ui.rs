@@ -226,6 +226,7 @@ impl App {
     pub(super) fn settings_library(&mut self, ui: &mut egui::Ui) {
         self.library_folders_card(ui);
         ui.add_space(12.0);
+        self.metadata_settings(ui);
         card(ui, |ui| {
             ui.set_width(ui.available_width());
             section_label(ui, "Albüm türleri");

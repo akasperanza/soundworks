@@ -13,6 +13,8 @@ mod fx;
 mod gui;
 mod i18n;
 mod plugins;
+mod onlinemeta;
+mod tagwrite;
 mod update;
 mod library;
 mod loudness;

@@ -945,9 +945,342 @@ pub fn genre_lookup(artist: &str, album: &str) -> Result<String, String> {
     Ok(cat)
 }
 
+
+#[derive(Clone, Debug, Default)]
+pub struct TrackHint {
+    pub title: String,
+    pub artist: String,
+    pub duration: f64,
+    pub folder: String,
+}
+
+const DURATION_SLACK: f64 = 3.0;
+
+fn strip_numbering(stem: &str) -> String {
+    static A: OnceLock<Regex> = OnceLock::new();
+    static B: OnceLock<Regex> = OnceLock::new();
+    let t = stem.replace('_', " ");
+    let t = re(&A, r"^\s*\d{1,3}\s*[-._)\]]+\s*").replace(&t, "").to_string();
+    let t = re(&B, r"^\s*\d{1,3}\s+").replace(&t, "").to_string();
+    t.trim().to_string()
+}
+
+pub fn derive_guesses(h: &TrackHint) -> Vec<(String, String)> {
+    let title = strip_numbering(&h.title);
+    let artist = h.artist.trim().to_string();
+    let mut out: Vec<(String, String)> = vec![];
+    let mut push = |a: &str, t: &str| {
+        let (a, t) = (a.trim().to_string(), t.trim().to_string());
+        if !t.is_empty() && !out.iter().any(|(x, y)| x.to_lowercase() == a.to_lowercase() && y.to_lowercase() == t.to_lowercase()) {
+            out.push((a, t));
+        }
+    };
+    let parts = split_dash(&title);
+    if parts.len() == 2 {
+        let (left, right) = (parts[0].trim().to_string(), parts[1].trim().to_string());
+        if artist.is_empty() {
+            push(&left, &right);
+            push(&right, &left);
+        } else if norm_txt(&left) == norm_txt(&artist) {
+            push(&artist, &right);
+        }
+    }
+    if !artist.is_empty() {
+        push(&artist, &title);
+    }
+    let folder_parts = split_dash(&h.folder);
+    if artist.is_empty() && folder_parts.len() == 2 && !title.is_empty() {
+        push(folder_parts[0].trim(), &title);
+    }
+    push("", &title);
+    out
+}
+
+struct DzTrack {
+    id: i64,
+    title: String,
+    artist: String,
+    album_id: i64,
+    album_title: String,
+    duration: f64,
+}
+
+fn dz_search(base: &str, artist: &str, title: &str, plain: bool) -> Result<Vec<DzTrack>, String> {
+    let q = match (plain, artist.is_empty()) {
+        (true, true) => title.to_string(),
+        (true, false) => format!("{artist} {title}"),
+        (false, true) => format!("track:\"{}\"", lq(title)),
+        (false, false) => format!("artist:\"{}\" track:\"{}\"", lq(artist), lq(title)),
+    };
+    let body = http_get_ua(&format!("{base}/search?q={}&limit=10", enc(&q)), "Soundworks/0.1", 20)?;
+    let v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    Ok(v["data"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|d| {
+            Some(DzTrack {
+                id: d["id"].as_i64()?,
+                title: d["title"].as_str()?.to_string(),
+                artist: d["artist"]["name"].as_str().unwrap_or("").to_string(),
+                album_id: d["album"]["id"].as_i64().unwrap_or(0),
+                album_title: d["album"]["title"].as_str().unwrap_or("").to_string(),
+                duration: d["duration"].as_f64().unwrap_or(0.0),
+            })
+        })
+        .collect())
+}
+
+fn accepted(guess_artist: &str, guess_title: &str, h: &TrackHint, cand_title: &str, cand_artist: &str, cand_dur: f64) -> bool {
+    if !title_ok(guess_title, cand_title) || !artist_ok(guess_artist, cand_artist) {
+        return false;
+    }
+    if h.duration > 0.0 && cand_dur > 0.0 {
+        return (h.duration - cand_dur).abs() <= DURATION_SLACK;
+    }
+    !guess_artist.is_empty() && norm_txt(&clean_title(guess_title, "")) == norm_txt(&clean_title(cand_title, ""))
+}
+
+fn album_rank(record_type: &str) -> u8 {
+    match record_type {
+        "album" => 0,
+        "ep" => 1,
+        "single" => 2,
+        _ => 3,
+    }
+}
+
+fn year_of(date: &str) -> u32 {
+    date.get(..4).and_then(|y| y.parse().ok()).unwrap_or(0)
+}
+
+fn deezer_lookup(base: &str, h: &TrackHint, guesses: &[(String, String)]) -> Result<Option<crate::library::OnlineMeta>, String> {
+    for (artist, title) in guesses {
+        if artist.is_empty() && h.duration <= 0.0 {
+            continue;
+        }
+        let mut cands = dz_search(base, artist, title, false)?;
+        let mut ok: Vec<&DzTrack> = cands.iter().filter(|c| accepted(artist, title, h, &c.title, &c.artist, c.duration)).take(3).collect();
+        if ok.is_empty() {
+            cands = dz_search(base, artist, title, true)?;
+            ok = cands.iter().filter(|c| accepted(artist, title, h, &c.title, &c.artist, c.duration)).take(3).collect();
+        }
+        if ok.is_empty() {
+            continue;
+        }
+        let mut best: Option<(&DzTrack, Value)> = None;
+        ok.sort_by_key(|c| c.album_id);
+        for c in ok {
+            let alb: Value = http_get_ua(&format!("{base}/album/{}", c.album_id), "Soundworks/0.1", 20).ok().and_then(|b| serde_json::from_str(&b).ok()).unwrap_or(Value::Null);
+            let key = |a: &Value| (album_rank(a["record_type"].as_str().unwrap_or("")), year_of(a["release_date"].as_str().unwrap_or("")).max(1));
+            let better = match &best {
+                None => true,
+                Some((_, b)) => key(&alb) < key(b),
+            };
+            if better {
+                best = Some((c, alb));
+            }
+        }
+        let Some((c, alb)) = best else { continue };
+        let tr: Value = http_get_ua(&format!("{base}/track/{}", c.id), "Soundworks/0.1", 20).ok().and_then(|b| serde_json::from_str(&b).ok()).unwrap_or(Value::Null);
+        let album_artist = alb["artist"]["name"].as_str().unwrap_or("").to_string();
+        return Ok(Some(crate::library::OnlineMeta {
+            title: c.title.clone(),
+            artist: c.artist.clone(),
+            album: alb["title"].as_str().map(String::from).filter(|s| !s.is_empty()).unwrap_or_else(|| c.album_title.clone()),
+            album_artist: if album_artist.to_lowercase() == c.artist.to_lowercase() { String::new() } else { album_artist },
+            year: year_of(alb["release_date"].as_str().unwrap_or("")),
+            track_no: tr["track_position"].as_u64().unwrap_or(0) as u32,
+            source: "deezer".into(),
+        }));
+    }
+    Ok(None)
+}
+
+fn mb_lookup(base: &str, h: &TrackHint, guesses: &[(String, String)]) -> Result<Option<crate::library::OnlineMeta>, String> {
+    for (artist, title) in guesses {
+        if artist.is_empty() && h.duration <= 0.0 {
+            continue;
+        }
+        let q = if artist.is_empty() { format!("recording:\"{}\"", lq(title)) } else { format!("recording:\"{}\" AND artist:\"{}\"", lq(title), lq(artist)) };
+        let data = mb_get(&format!("{base}/ws/2/recording/?query={}&fmt=json&limit=5", enc(&q)))?;
+        for rec in data["recordings"].as_array().into_iter().flatten() {
+            let credit: String = rec["artist-credit"].as_array().map(|a| a.iter().filter_map(|x| x["name"].as_str()).collect::<Vec<_>>().join(" ")).unwrap_or_default();
+            let len = rec["length"].as_f64().map(|ms| ms / 1000.0).unwrap_or(0.0);
+            let name = rec["title"].as_str().unwrap_or("");
+            if rec["score"].as_i64().unwrap_or(100) < 85 || !accepted(artist, title, h, name, &credit, len) {
+                continue;
+            }
+            let mut releases: Vec<&Value> = rec["releases"].as_array().into_iter().flatten().collect();
+            releases.sort_by_key(|r| {
+                let official = r["status"].as_str() == Some("Official");
+                let kind = r["release-group"]["primary-type"].as_str().map(|k| k.to_lowercase()).unwrap_or_default();
+                let extras = r["release-group"]["secondary-types"].as_array().map_or(false, |a| !a.is_empty());
+                (!official, extras, album_rank(&kind), year_of(r["date"].as_str().unwrap_or("")).max(1))
+            });
+            let Some(rel) = releases.first() else { continue };
+            return Ok(Some(crate::library::OnlineMeta {
+                title: name.to_string(),
+                artist: rec["artist-credit"][0]["name"].as_str().unwrap_or(&credit).to_string(),
+                album: rel["title"].as_str().unwrap_or("").to_string(),
+                album_artist: String::new(),
+                year: year_of(rel["date"].as_str().unwrap_or("")),
+                track_no: 0,
+                source: "musicbrainz".into(),
+            }));
+        }
+    }
+    Ok(None)
+}
+
+pub fn track_lookup(h: &TrackHint) -> Result<Option<crate::library::OnlineMeta>, String> {
+    track_lookup_at(h, "https://api.deezer.com", "https://musicbrainz.org")
+}
+
+pub fn track_lookup_at(h: &TrackHint, deezer: &str, musicbrainz: &str) -> Result<Option<crate::library::OnlineMeta>, String> {
+    let guesses = derive_guesses(h);
+    if guesses.is_empty() {
+        return Ok(None);
+    }
+    match deezer_lookup(deezer, h, &guesses) {
+        Ok(Some(m)) => return Ok(Some(m)),
+        Ok(None) => {}
+        Err(e) => {
+            if let Ok(Some(m)) = mb_lookup(musicbrainz, h, &guesses) {
+                return Ok(Some(m));
+            }
+            return Err(e);
+        }
+    }
+    mb_lookup(musicbrainz, h, &guesses)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn serve_json(routes: Vec<(&'static str, String)>) -> u16 {
+        use std::io::{BufRead, BufReader, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let routes = routes.clone();
+                std::thread::spawn(move || {
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut stream = stream;
+                    let mut line = String::new();
+                    let _ = reader.read_line(&mut line);
+                    let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+                    loop {
+                        let mut h = String::new();
+                        if reader.read_line(&mut h).is_err() || h.trim().is_empty() {
+                            break;
+                        }
+                    }
+                    let found = routes.iter().find(|(p, _)| path.starts_with(p)).map(|(_, b)| b.clone());
+                    let (status, body) = match found {
+                        Some(b) => ("200 OK", b),
+                        None => ("404 Not Found", String::new()),
+                    };
+                    let head = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                    let _ = stream.write_all(head.as_bytes());
+                    let _ = stream.write_all(body.as_bytes());
+                });
+            }
+        });
+        port
+    }
+
+    fn deezer_routes() -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "/search",
+                r#"{"data":[
+                {"id":1,"title":"Vukuat","duration":165,"artist":{"name":"90BPM"},"album":{"id":11,"title":"Vukuat Single"}},
+                {"id":2,"title":"Vukuat","duration":165,"artist":{"name":"90BPM"},"album":{"id":10,"title":"Kötülük Bizim İşimiz"}},
+                {"id":3,"title":"Vukuat (Live)","duration":240,"artist":{"name":"90BPM"},"album":{"id":12,"title":"Canlı"}}]}"#
+                    .to_string(),
+            ),
+            ("/album/10", r#"{"title":"Kötülük Bizim İşimiz","record_type":"album","release_date":"2015-03-02","artist":{"name":"90BPM"}}"#.to_string()),
+            ("/album/11", r#"{"title":"Vukuat Single","record_type":"single","release_date":"2014-12-01","artist":{"name":"90BPM"}}"#.to_string()),
+            ("/track/2", r#"{"track_position":1,"disk_number":1}"#.to_string()),
+            ("/track/1", r#"{"track_position":1,"disk_number":1}"#.to_string()),
+        ]
+    }
+
+    fn hint(title: &str, artist: &str, folder: &str, duration: f64) -> TrackHint {
+        TrackHint { title: title.into(), artist: artist.into(), duration, folder: folder.into() }
+    }
+
+    #[test]
+    #[ignore]
+    fn live_track_lookup() {
+        let m = track_lookup(&hint("03 - Daft Punk - Giorgio by Moroder", "", "Random Access Memories", 544.0)).unwrap();
+        println!("{m:?}");
+        assert_eq!(m.unwrap().album, "Random Access Memories");
+        let m = track_lookup(&hint("Karma Police", "Radiohead", "", 0.0)).unwrap();
+        println!("{m:?}");
+        assert!(m.is_some());
+    }
+
+    #[test]
+    fn guesses_come_from_file_names_and_folders() {
+        let g = derive_guesses(&hint("01 - 90BPM - Vukuat", "", "", 0.0));
+        assert!(g.contains(&("90BPM".to_string(), "Vukuat".to_string())), "{g:?}");
+        assert!(g.contains(&("Vukuat".to_string(), "90BPM".to_string())));
+        let g = derive_guesses(&hint("07_Dünya_Dar", "", "Sanatçı - Albüm", 0.0));
+        assert_eq!(g[0], ("Sanatçı".to_string(), "Dünya Dar".to_string()));
+        assert!(g.contains(&(String::new(), "Dünya Dar".to_string())));
+        let g = derive_guesses(&hint("Vukuat", "90BPM", "", 0.0));
+        assert_eq!(g[0], ("90BPM".to_string(), "Vukuat".to_string()));
+        assert!(derive_guesses(&hint("", "", "", 0.0)).is_empty());
+    }
+
+    #[test]
+    fn deezer_match_prefers_the_real_album_and_checks_the_duration() {
+        let port = serve_json(deezer_routes());
+        let base = format!("http://127.0.0.1:{port}");
+        let m = track_lookup_at(&hint("01 Vukuat", "90BPM", "", 164.7), &base, &base).unwrap().unwrap();
+        assert_eq!(m.source, "deezer");
+        assert_eq!(m.album, "Kötülük Bizim İşimiz");
+        assert_eq!((m.year, m.track_no), (2015, 1));
+        assert_eq!(m.artist, "90BPM");
+        assert!(m.album_artist.is_empty());
+    }
+
+    #[test]
+    fn wrong_duration_or_artist_is_rejected() {
+        let port = serve_json(deezer_routes());
+        let base = format!("http://127.0.0.1:{port}");
+        assert_eq!(track_lookup_at(&hint("Vukuat", "90BPM", "", 400.0), &base, &format!("{base}/none")).unwrap_or(None), None);
+        assert_eq!(track_lookup_at(&hint("Vukuat", "Başka Biri", "", 0.0), &base, &format!("{base}/none")).unwrap_or(None), None);
+    }
+
+    #[test]
+    fn title_only_searches_need_a_known_duration() {
+        let port = serve_json(deezer_routes());
+        let base = format!("http://127.0.0.1:{port}");
+        let found = track_lookup_at(&hint("Vukuat", "", "", 165.0), &base, &base).unwrap().unwrap();
+        assert_eq!(found.album, "Kötülük Bizim İşimiz");
+        assert_eq!(track_lookup_at(&hint("Vukuat", "", "", 0.0), &base, &format!("{base}/none")).unwrap_or(None), None);
+    }
+
+    #[test]
+    fn musicbrainz_is_the_fallback() {
+        let dz = serve_json(vec![("/search", r#"{"data":[]}"#.to_string())]);
+        let mb = serve_json(vec![(
+            "/ws/2/recording",
+            r#"{"recordings":[{"score":100,"title":"Gece","length":201000,"artist-credit":[{"name":"Sanatçı"}],
+               "releases":[{"title":"Derleme","date":"2020-01-01","status":"Official","release-group":{"primary-type":"Compilation"}},
+                           {"title":"İlk Albüm","date":"2012-05-05","status":"Official","release-group":{"primary-type":"Album"}}]}]}"#
+                .to_string(),
+        )]);
+        let m = track_lookup_at(&hint("Gece", "Sanatçı", "", 200.0), &format!("http://127.0.0.1:{dz}"), &format!("http://127.0.0.1:{mb}")).unwrap().unwrap();
+        assert_eq!((m.source.as_str(), m.album.as_str(), m.year), ("musicbrainz", "İlk Albüm", 2012));
+    }
+
 
     #[test]
     fn ratio_matches_difflib() {

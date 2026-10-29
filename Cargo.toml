@@ -47,6 +47,7 @@ regex = "1"
 rquickjs = "0.9"
 url = "2"
 sha2 = "0.10"
+lofty = "0.22"
 
 [dependencies.log]
 version = "0.4"

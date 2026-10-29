@@ -198,6 +198,7 @@ impl App {
             self.autoeq_overlay(ctx);
             self.props_overlay(ctx);
             self.tip_banner(ctx);
+            self.meta_banner(ctx);
             self.dsd_dialog_ui(ctx);
         }
     }
