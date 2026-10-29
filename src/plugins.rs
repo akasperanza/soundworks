@@ -689,6 +689,274 @@ fn put<'js>(o: &Object<'js>, name: &str, f: Function<'js>) -> Result<(), String>
     o.set(name, f).map_err(|e| e.to_string())
 }
 
+struct HostEnv {
+    shared: Arc<Shared>,
+    permissions: Vec<String>,
+    config: String,
+    tx: Sender<Msg>,
+    downloads_dir: PathBuf,
+    pipes: Arc<Mutex<HashMap<i32, File>>>,
+    next_pipe: Arc<Mutex<i32>>,
+    body_store: BodyStore,
+    store: Arc<Mutex<Store>>,
+}
+
+fn install_core<'js>(ctx: &Ctx<'js>, native: &Object<'js>, env: &HostEnv) -> Result<(), String> {
+    let sh = env.shared.clone();
+    put(native, "log", Function::new(ctx.clone(), move |level: String, msg: String| sh.log(&level, &msg)).map_err(|e| e.to_string())?)?;
+
+    let sh = env.shared.clone();
+    put(native, 
+        "toast",
+        Function::new(ctx.clone(), move |msg: String| {
+            let mut t = sh.toasts.lock().unwrap();
+            if t.len() < MAX_PENDING_TOASTS {
+                t.push(msg.chars().take(200).collect());
+            }
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+
+    put(native, "now", Function::new(ctx.clone(), epoch_ms).map_err(|e| e.to_string())?)?;
+    put(native, "pid", Function::new(ctx.clone(), || std::process::id() as f64).map_err(|e| e.to_string())?)?;
+    put(native, "version", Function::new(ctx.clone(), || env!("CARGO_PKG_VERSION").to_string()).map_err(|e| e.to_string())?)?;
+    let cfg = env.config.clone();
+    put(native, "config", Function::new(ctx.clone(), move || cfg.clone()).map_err(|e| e.to_string())?)?;
+    Ok(())
+}
+
+fn install_storage<'js>(ctx: &Ctx<'js>, native: &Object<'js>, env: &HostEnv) -> Result<(), String> {
+    let st = env.store.clone();
+    put(native, "storage_get", Function::new(ctx.clone(), move |k: String| st.lock().unwrap().map.get(&k).cloned()).map_err(|e| e.to_string())?)?;
+    let st = env.store.clone();
+    put(native, "storage_set", Function::new(ctx.clone(), move |k: String, v: String| st.lock().unwrap().set(k, v)).map_err(|e| e.to_string())?)?;
+    Ok(())
+}
+
+fn install_pipes<'js>(ctx: &Ctx<'js>, native: &Object<'js>, env: &HostEnv) -> Result<(), String> {
+    let (perms, tbl, counter, sh) = (env.permissions.clone(), env.pipes.clone(), env.next_pipe.clone(), env.shared.clone());
+    put(native, 
+        "pipe_open",
+        Function::new(ctx.clone(), move |name: String| -> i32 {
+            if !allows_pipe(&perms, &name) {
+                sh.log("error", &format!("pipe '{name}' is not allowed by the manifest permissions"));
+                return -1;
+            }
+            match OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\{name}")) {
+                Ok(f) => {
+                    let mut c = counter.lock().unwrap();
+                    let id = *c;
+                    *c += 1;
+                    tbl.lock().unwrap().insert(id, f);
+                    id
+                }
+                Err(_) => -1,
+            }
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+
+    let tbl = env.pipes.clone();
+    put(native, 
+        "pipe_write",
+        Function::new(ctx.clone(), move |id: i32, bytes: Vec<u8>| -> bool {
+            let mut t = tbl.lock().unwrap();
+            match t.get_mut(&id) {
+                Some(f) => {
+                    let ok = f.write_all(&bytes).and_then(|_| f.flush()).is_ok();
+                    if !ok {
+                        t.remove(&id);
+                    }
+                    ok
+                }
+                None => false,
+            }
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+
+    let tbl = env.pipes.clone();
+    put(native, 
+        "pipe_read",
+        Function::new(ctx.clone(), move |id: i32| -> Option<Vec<u8>> {
+            let mut t = tbl.lock().unwrap();
+            let f = t.get_mut(&id)?;
+            let avail = match pipe_available(f) {
+                Some(a) => a as usize,
+                None => {
+                    t.remove(&id);
+                    return None;
+                }
+            };
+            let mut buf = vec![0u8; avail.min(1 << 16)];
+            if buf.is_empty() {
+                return Some(buf);
+            }
+            match f.read(&mut buf) {
+                Ok(n) => {
+                    buf.truncate(n);
+                    Some(buf)
+                }
+                Err(_) => {
+                    t.remove(&id);
+                    None
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+
+    let tbl = env.pipes.clone();
+    put(native, "pipe_close", Function::new(ctx.clone(), move |id: i32| { tbl.lock().unwrap().remove(&id); }).map_err(|e| e.to_string())?)?;
+    Ok(())
+}
+
+fn install_interface<'js>(ctx: &Ctx<'js>, native: &Object<'js>, env: &HostEnv) -> Result<(), String> {
+    let (perms, sh) = (env.permissions.clone(), env.shared.clone());
+    put(
+        native,
+        "ui_publish",
+        Function::new(ctx.clone(), move |json: String| -> bool {
+            if !perms.iter().any(|p| p == "ui") {
+                sh.log("error", "sw.ui and sw.commands need the 'ui' permission");
+                return false;
+            }
+            if json.len() > MAX_UI_JSON {
+                sh.log("error", "interface description is too large");
+                return false;
+            }
+            match serde_json::from_str::<UiSnapshot>(&json) {
+                Ok(mut ui) => {
+                    sanitize(&mut ui);
+                    *sh.ui.lock().unwrap() = ui;
+                    true
+                }
+                Err(e) => {
+                    sh.log("error", &format!("invalid interface description: {e}"));
+                    false
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+
+    let (perms, sh) = (env.permissions.clone(), env.shared.clone());
+    put(
+        native,
+        "player_cmd",
+        Function::new(ctx.clone(), move |name: String, arg: f64| -> bool {
+            if !perms.iter().any(|p| p == "playback") {
+                sh.log("error", "controlling playback needs the 'playback' permission");
+                return false;
+            }
+            if !CONTROL_COMMANDS.contains(&name.as_str()) {
+                return false;
+            }
+            let mut q = sh.control.lock().unwrap();
+            if q.len() < MAX_PENDING_TOASTS {
+                q.push((name, arg));
+            }
+            true
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+    Ok(())
+}
+
+fn install_network<'js>(ctx: &Ctx<'js>, native: &Object<'js>, env: &HostEnv) -> Result<(), String> {
+    let (perms, sh, tx, inflight) = (env.permissions.clone(), env.shared.clone(), env.tx.clone(), Arc::new(AtomicUsize::new(0)));
+    let downloads = env.downloads_dir.clone();
+    put(
+        native,
+        "net_start",
+        Function::new(ctx.clone(), move |id: i32, kind: String, url: String, opts_json: String, body: Vec<u8>| -> bool {
+            let opts: serde_json::Value = serde_json::from_str(&opts_json).unwrap_or_default();
+            let method = opts["method"].as_str().unwrap_or("GET").to_string();
+            let timeout_ms = opts["timeout"].as_f64().unwrap_or(0.0);
+            let filename = opts["filename"].as_str().unwrap_or("").to_string();
+            let headers_json = opts["headers"].to_string();
+            let need = if kind == "download" { "download" } else { "" };
+            if !need.is_empty() && !perms.iter().any(|p| p == need) {
+                sh.log("error", "sw.download needs the 'download' permission");
+                return false;
+            }
+            if !perms.iter().any(|p| p.starts_with("network:")) {
+                sh.log("error", "network access needs a 'network:<host>' permission");
+                return false;
+            }
+            if inflight.load(Ordering::Relaxed) >= MAX_INFLIGHT {
+                sh.log("error", "too many requests in flight");
+                return false;
+            }
+            let headers: Vec<(String, String)> = serde_json::from_str::<HashMap<String, String>>(&headers_json).unwrap_or_default().into_iter().collect();
+            let default_timeout = if kind == "download" { 600.0 } else { 30.0 };
+            let secs = if timeout_ms > 0.0 { timeout_ms / 1000.0 } else { default_timeout };
+            let req = NetRequest {
+                perms: perms.clone(),
+                url,
+                method: if method.is_empty() { "GET".into() } else { method },
+                headers,
+                body,
+                timeout: Duration::from_secs_f64(secs.clamp(1.0, 900.0)),
+                download: (kind == "download").then(|| (downloads.clone(), filename)),
+            };
+            inflight.fetch_add(1, Ordering::Relaxed);
+            let (tx, counter) = (tx.clone(), inflight.clone());
+            std::thread::spawn(move || {
+                let r = run_request(req);
+                counter.fetch_sub(1, Ordering::Relaxed);
+                let _ = tx.send(Msg::Net(id, r));
+            });
+            true
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+
+    let bodies = env.body_store.clone();
+    put(
+        native,
+        "net_text",
+        Function::new(ctx.clone(), move |id: i32| -> String {
+            bodies.lock().unwrap().iter().find(|(i, _)| *i == id).map(|(_, b)| String::from_utf8_lossy(b).to_string()).unwrap_or_default()
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+    let bodies = env.body_store.clone();
+    put(
+        native,
+        "net_bytes",
+        Function::new(ctx.clone(), move |id: i32| -> Vec<u8> { bodies.lock().unwrap().iter().find(|(i, _)| *i == id).map(|(_, b)| b.clone()).unwrap_or_default() }).map_err(|e| e.to_string())?,
+    )?;
+
+    let (perms, sh, dl) = (env.permissions.clone(), env.shared.clone(), env.downloads_dir.clone());
+    put(
+        native,
+        "library_add",
+        Function::new(ctx.clone(), move |json: String| -> bool {
+            if !perms.iter().any(|p| p == "library") {
+                sh.log("error", "sw.library.add needs the 'library' permission");
+                return false;
+            }
+            let Ok(paths) = serde_json::from_str::<Vec<String>>(&json) else { return false };
+            let root = std::fs::canonicalize(&dl).unwrap_or(dl.clone());
+            let mut ok = false;
+            for p in paths.into_iter().take(500) {
+                let Ok(full) = std::fs::canonicalize(&p) else { continue };
+                let audio = full.extension().and_then(|e| e.to_str()).is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()));
+                if full.starts_with(&root) && full.is_file() && audio {
+                    sh.library.lock().unwrap().push(full);
+                    ok = true;
+                } else {
+                    sh.log("error", &format!("library.add only accepts audio files inside the downloads folder: {p}"));
+                }
+            }
+            ok
+        })
+        .map_err(|e| e.to_string())?,
+    )?;
+    Ok(())
+}
+
 fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
     let shared = job.shared.clone();
     let fail = |msg: String| {
@@ -710,250 +978,24 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
     let body_store: BodyStore = Arc::new(Mutex::new(VecDeque::new()));
     let store = Arc::new(Mutex::new(Store::load(job.data_dir.join(format!("{}.json", job.id)))));
 
+    let env = HostEnv {
+        shared: shared.clone(),
+        permissions: job.permissions.clone(),
+        config: job.config.clone(),
+        tx: job.tx.clone(),
+        downloads_dir: job.downloads_dir.clone(),
+        pipes: pipes.clone(),
+        next_pipe: next_pipe.clone(),
+        body_store: body_store.clone(),
+        store: store.clone(),
+    };
     let setup = ctx.with(|ctx| -> Result<(), String> {
         let native = Object::new(ctx.clone()).map_err(|e| e.to_string())?;
-
-        let sh = shared.clone();
-        put(&native, "log", Function::new(ctx.clone(), move |level: String, msg: String| sh.log(&level, &msg)).map_err(|e| e.to_string())?)?;
-
-        let sh = shared.clone();
-        put(&native, 
-            "toast",
-            Function::new(ctx.clone(), move |msg: String| {
-                let mut t = sh.toasts.lock().unwrap();
-                if t.len() < MAX_PENDING_TOASTS {
-                    t.push(msg.chars().take(200).collect());
-                }
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        put(&native, "now", Function::new(ctx.clone(), epoch_ms).map_err(|e| e.to_string())?)?;
-        put(&native, "pid", Function::new(ctx.clone(), || std::process::id() as f64).map_err(|e| e.to_string())?)?;
-        put(&native, "version", Function::new(ctx.clone(), || env!("CARGO_PKG_VERSION").to_string()).map_err(|e| e.to_string())?)?;
-        let cfg = job.config.clone();
-        put(&native, "config", Function::new(ctx.clone(), move || cfg.clone()).map_err(|e| e.to_string())?)?;
-
-        let st = store.clone();
-        put(&native, "storage_get", Function::new(ctx.clone(), move |k: String| st.lock().unwrap().map.get(&k).cloned()).map_err(|e| e.to_string())?)?;
-        let st = store.clone();
-        put(&native, "storage_set", Function::new(ctx.clone(), move |k: String, v: String| st.lock().unwrap().set(k, v)).map_err(|e| e.to_string())?)?;
-
-        let (perms, tbl, counter, sh) = (job.permissions.clone(), pipes.clone(), next_pipe.clone(), shared.clone());
-        put(&native, 
-            "pipe_open",
-            Function::new(ctx.clone(), move |name: String| -> i32 {
-                if !allows_pipe(&perms, &name) {
-                    sh.log("error", &format!("pipe '{name}' is not allowed by the manifest permissions"));
-                    return -1;
-                }
-                match OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\{name}")) {
-                    Ok(f) => {
-                        let mut c = counter.lock().unwrap();
-                        let id = *c;
-                        *c += 1;
-                        tbl.lock().unwrap().insert(id, f);
-                        id
-                    }
-                    Err(_) => -1,
-                }
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let tbl = pipes.clone();
-        put(&native, 
-            "pipe_write",
-            Function::new(ctx.clone(), move |id: i32, bytes: Vec<u8>| -> bool {
-                let mut t = tbl.lock().unwrap();
-                match t.get_mut(&id) {
-                    Some(f) => {
-                        let ok = f.write_all(&bytes).and_then(|_| f.flush()).is_ok();
-                        if !ok {
-                            t.remove(&id);
-                        }
-                        ok
-                    }
-                    None => false,
-                }
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let tbl = pipes.clone();
-        put(&native, 
-            "pipe_read",
-            Function::new(ctx.clone(), move |id: i32| -> Option<Vec<u8>> {
-                let mut t = tbl.lock().unwrap();
-                let f = t.get_mut(&id)?;
-                let avail = match pipe_available(f) {
-                    Some(a) => a as usize,
-                    None => {
-                        t.remove(&id);
-                        return None;
-                    }
-                };
-                let mut buf = vec![0u8; avail.min(1 << 16)];
-                if buf.is_empty() {
-                    return Some(buf);
-                }
-                match f.read(&mut buf) {
-                    Ok(n) => {
-                        buf.truncate(n);
-                        Some(buf)
-                    }
-                    Err(_) => {
-                        t.remove(&id);
-                        None
-                    }
-                }
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let (perms, sh) = (job.permissions.clone(), shared.clone());
-        put(
-            &native,
-            "ui_publish",
-            Function::new(ctx.clone(), move |json: String| -> bool {
-                if !perms.iter().any(|p| p == "ui") {
-                    sh.log("error", "sw.ui and sw.commands need the 'ui' permission");
-                    return false;
-                }
-                if json.len() > MAX_UI_JSON {
-                    sh.log("error", "interface description is too large");
-                    return false;
-                }
-                match serde_json::from_str::<UiSnapshot>(&json) {
-                    Ok(mut ui) => {
-                        sanitize(&mut ui);
-                        *sh.ui.lock().unwrap() = ui;
-                        true
-                    }
-                    Err(e) => {
-                        sh.log("error", &format!("invalid interface description: {e}"));
-                        false
-                    }
-                }
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let (perms, sh) = (job.permissions.clone(), shared.clone());
-        put(
-            &native,
-            "player_cmd",
-            Function::new(ctx.clone(), move |name: String, arg: f64| -> bool {
-                if !perms.iter().any(|p| p == "playback") {
-                    sh.log("error", "controlling playback needs the 'playback' permission");
-                    return false;
-                }
-                if !CONTROL_COMMANDS.contains(&name.as_str()) {
-                    return false;
-                }
-                let mut q = sh.control.lock().unwrap();
-                if q.len() < MAX_PENDING_TOASTS {
-                    q.push((name, arg));
-                }
-                true
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let (perms, sh, tx, inflight) = (job.permissions.clone(), shared.clone(), job.tx.clone(), Arc::new(AtomicUsize::new(0)));
-        let downloads = job.downloads_dir.clone();
-        put(
-            &native,
-            "net_start",
-            Function::new(ctx.clone(), move |id: i32, kind: String, url: String, opts_json: String, body: Vec<u8>| -> bool {
-                let opts: serde_json::Value = serde_json::from_str(&opts_json).unwrap_or_default();
-                let method = opts["method"].as_str().unwrap_or("GET").to_string();
-                let timeout_ms = opts["timeout"].as_f64().unwrap_or(0.0);
-                let filename = opts["filename"].as_str().unwrap_or("").to_string();
-                let headers_json = opts["headers"].to_string();
-                let need = if kind == "download" { "download" } else { "" };
-                if !need.is_empty() && !perms.iter().any(|p| p == need) {
-                    sh.log("error", "sw.download needs the 'download' permission");
-                    return false;
-                }
-                if !perms.iter().any(|p| p.starts_with("network:")) {
-                    sh.log("error", "network access needs a 'network:<host>' permission");
-                    return false;
-                }
-                if inflight.load(Ordering::Relaxed) >= MAX_INFLIGHT {
-                    sh.log("error", "too many requests in flight");
-                    return false;
-                }
-                let headers: Vec<(String, String)> = serde_json::from_str::<HashMap<String, String>>(&headers_json).unwrap_or_default().into_iter().collect();
-                let default_timeout = if kind == "download" { 600.0 } else { 30.0 };
-                let secs = if timeout_ms > 0.0 { timeout_ms / 1000.0 } else { default_timeout };
-                let req = NetRequest {
-                    perms: perms.clone(),
-                    url,
-                    method: if method.is_empty() { "GET".into() } else { method },
-                    headers,
-                    body,
-                    timeout: Duration::from_secs_f64(secs.clamp(1.0, 900.0)),
-                    download: (kind == "download").then(|| (downloads.clone(), filename)),
-                };
-                inflight.fetch_add(1, Ordering::Relaxed);
-                let (tx, counter) = (tx.clone(), inflight.clone());
-                std::thread::spawn(move || {
-                    let r = run_request(req);
-                    counter.fetch_sub(1, Ordering::Relaxed);
-                    let _ = tx.send(Msg::Net(id, r));
-                });
-                true
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let bodies = body_store.clone();
-        put(
-            &native,
-            "net_text",
-            Function::new(ctx.clone(), move |id: i32| -> String {
-                bodies.lock().unwrap().iter().find(|(i, _)| *i == id).map(|(_, b)| String::from_utf8_lossy(b).to_string()).unwrap_or_default()
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-        let bodies = body_store.clone();
-        put(
-            &native,
-            "net_bytes",
-            Function::new(ctx.clone(), move |id: i32| -> Vec<u8> { bodies.lock().unwrap().iter().find(|(i, _)| *i == id).map(|(_, b)| b.clone()).unwrap_or_default() }).map_err(|e| e.to_string())?,
-        )?;
-
-        let (perms, sh, dl) = (job.permissions.clone(), shared.clone(), job.downloads_dir.clone());
-        put(
-            &native,
-            "library_add",
-            Function::new(ctx.clone(), move |json: String| -> bool {
-                if !perms.iter().any(|p| p == "library") {
-                    sh.log("error", "sw.library.add needs the 'library' permission");
-                    return false;
-                }
-                let Ok(paths) = serde_json::from_str::<Vec<String>>(&json) else { return false };
-                let root = std::fs::canonicalize(&dl).unwrap_or(dl.clone());
-                let mut ok = false;
-                for p in paths.into_iter().take(500) {
-                    let Ok(full) = std::fs::canonicalize(&p) else { continue };
-                    let audio = full.extension().and_then(|e| e.to_str()).is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()));
-                    if full.starts_with(&root) && full.is_file() && audio {
-                        sh.library.lock().unwrap().push(full);
-                        ok = true;
-                    } else {
-                        sh.log("error", &format!("library.add only accepts audio files inside the downloads folder: {p}"));
-                    }
-                }
-                ok
-            })
-            .map_err(|e| e.to_string())?,
-        )?;
-
-        let tbl = pipes.clone();
-        put(&native, "pipe_close", Function::new(ctx.clone(), move |id: i32| { tbl.lock().unwrap().remove(&id); }).map_err(|e| e.to_string())?)?;
-
+        install_core(&ctx, &native, &env)?;
+        install_storage(&ctx, &native, &env)?;
+        install_pipes(&ctx, &native, &env)?;
+        install_interface(&ctx, &native, &env)?;
+        install_network(&ctx, &native, &env)?;
         ctx.globals().set("__native", native).map_err(|e| e.to_string())?;
         ctx.eval::<(), _>(PRELUDE).map_err(|e| error_text(&ctx, e))?;
         Ok(())
