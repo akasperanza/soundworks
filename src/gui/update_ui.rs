@@ -296,6 +296,9 @@ impl App {
                             self.upd_dialog = true;
                             self.upd_t0 = Instant::now();
                         }
+                        if crate::devenv::dev_var("SW_UPDATE_AUTOINSTALL").is_ok() {
+                            self.update_install_async(rel.clone());
+                        }
                         UpdState::Available(rel)
                     }
                     Ok(None) => UpdState::UpToDate,

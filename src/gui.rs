@@ -808,6 +808,9 @@ impl App {
                 }
             }
         }
+        if crate::devenv::dev_var("SW_UPDATE_NOW").is_ok() {
+            app.update_check_async(true);
+        }
         if let Ok(v) = crate::devenv::dev_var("SW_WHATSNEW") {
             app.cfg.update_notes = "- Bekleme ekranı: kapak, sıradakiler ve canlı spektrum\n- Eklenti sistemi: düğme, panel ve komutlar\n- Ayarlar yeniden tasarlandı\n- **Düzeltme:** seçim listelerinde çökme\n\n**Full Changelog**: https://github.com/x/y/compare/a...b".into();
             app.cfg.update_notes_version = v.clone();
@@ -1009,7 +1012,7 @@ impl App {
     }
 
     fn save_cfg(&self) {
-        if crate::devenv::dev_var("SW_OFFSCREEN").is_ok() || crate::devenv::dev_var("SW_SHOT").is_ok() {
+        if (crate::devenv::dev_var("SW_OFFSCREEN").is_ok() || crate::devenv::dev_var("SW_SHOT").is_ok()) && crate::devenv::dev_var("SW_SAVECFG").is_err() {
             return;
         }
         if let Ok(j) = serde_json::to_vec_pretty(&self.cfg) {
