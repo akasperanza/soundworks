@@ -256,6 +256,9 @@ mod lyrics_ui;
 mod panels;
 mod proof_ui;
 mod ambient_ui;
+mod frame;
+#[cfg(feature = "devtools")]
+mod devhooks;
 mod update_ui;
 mod motor_window;
 mod plugins_ui;
@@ -732,17 +735,6 @@ impl App {
         let _ = ctx;
         app.plugins_refresh();
         app.whats_new_init();
-        if let Ok(v) = crate::devenv::dev_var("SW_PLUGPANEL") {
-            if let Some((p, id)) = v.split_once('/') {
-                app.plugin_panel = Some((p.to_string(), id.to_string()));
-            }
-        }
-        match crate::devenv::dev_var("SW_VIEW").as_deref() {
-            Ok("settings") => app.view = View::Settings,
-            Ok("extensions") => app.view = View::Extensions,
-            Ok("library") => app.view = View::Library,
-            _ => {}
-        }
         let queue: Vec<String> = if app.cfg.playlist.is_empty() {
             crate::fsutil::read_json(&queue_path()).unwrap_or_default()
         } else {
@@ -774,171 +766,8 @@ impl App {
         if app.cfg.autostart {
             app.start();
         }
-        if let Ok(m) = crate::devenv::dev_var("SW_MODE") {
-            app.viz_mode = match m.as_str() {
-                "gram" => VizMode::Spectrogram,
-                "scope" => VizMode::Scope,
-                _ => VizMode::Spectrum,
-            };
-        }
-        if let Ok(v) = crate::devenv::dev_var("SW_UPDATE_FAKE") {
-            app.upd = update_ui::UpdState::Available(crate::update::Release {
-                version: v,
-                notes: "- Bekleme ekranı: kapak, sıradakiler ve canlı spektrum\n- Eklenti sistemi: düğme, panel ve komutlar\n- Ayarlar yeniden tasarlandı\n- **Düzeltme:** seçim listelerinde çökme".into(),
-                page: String::new(),
-                exe_url: String::new(),
-                sum_url: String::new(),
-                size: 18_000_000,
-            });
-            app.upd_dialog = true;
-            if crate::devenv::dev_var("SW_UPDATE_DL").is_ok() {
-                if let update_ui::UpdState::Available(r) = std::mem::replace(&mut app.upd, update_ui::UpdState::Idle) {
-                    app.upd_progress.store(7_200_000, Relaxed);
-                    app.upd = update_ui::UpdState::Downloading(r);
-                }
-            }
-        }
-        if crate::devenv::dev_var("SW_UPDATE_NOW").is_ok() {
-            app.update_check_async(true);
-        }
-        if let Ok(v) = crate::devenv::dev_var("SW_WHATSNEW") {
-            app.cfg.update_notes = "- Bekleme ekranı: kapak, sıradakiler ve canlı spektrum\n- Eklenti sistemi: düğme, panel ve komutlar\n- Ayarlar yeniden tasarlandı\n- **Düzeltme:** seçim listelerinde çökme\n\n**Full Changelog**: https://github.com/x/y/compare/a...b".into();
-            app.cfg.update_notes_version = v.clone();
-            app.show_whats_new(v);
-        }
-        if crate::devenv::dev_var("SW_DETACH").is_ok() {
-            app.detach_motor();
-        }
-        if crate::devenv::dev_var("SW_AMBIENT").is_ok() {
-            app.ambient_on = true;
-            app.ambient_side = crate::devenv::dev_var("SW_AMBSIDE").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
-            let extra: Vec<PathBuf> = app.lib.albums.iter().flat_map(|a| a.tracks.iter().map(|t| PathBuf::from(&t.path))).take(7).collect();
-            app.player.add(extra);
-        }
-        if crate::devenv::dev_var("SW_QUEUE").is_ok() {
-            app.queue_open = true;
-        }
-
-        if let Ok(v) = crate::devenv::dev_var("SW_SOLO") {
-            app.solo_latch = true;
-            app.sel_band = Some(v.parse().unwrap_or(4));
-        }
-        if let Some(m) = crate::devenv::dev_var("SW_RG").ok().and_then(|v| v.parse::<u32>().ok()) {
-            app.cfg.rg_mode = m;
-        }
-        if crate::devenv::dev_var("SW_FXTAB").is_ok() {
-            app.motor_tab = 1;
-        }
-        if let Ok(list) = crate::devenv::dev_var("SW_FX") {
-            use crate::fx::{FxKind, FxSpec};
-            for (i, n) in list.split(',').enumerate() {
-                let k = match n.trim() {
-                    "limiter" => FxKind::Limiter,
-                    "comp" => FxKind::Compressor,
-                    "width" => FxKind::Width,
-                    "filter" => FxKind::Filter,
-                    "tone" => FxKind::Tone,
-                    "loud" => FxKind::Loudness,
-                    "cross" => FxKind::Crossfeed,
-                    _ => FxKind::Gain,
-                };
-                app.cfg.chain.push(FxSpec::new(i as u32 + 1, k));
-            }
-            app.fx_sel = app.cfg.chain.first().map(|s| s.id);
-        }
-        if let Some(w) = crate::devenv::dev_var("SW_FXW").ok().and_then(|v| v.parse::<f32>().ok()) {
-            for s in app.cfg.chain.iter_mut().filter(|s| s.kind == crate::fx::FxKind::Width) {
-                s.params = vec![w];
-            }
-        }
-        if let Some(l) = crate::devenv::dev_var("SW_LANG").ok().and_then(|v| crate::i18n::Lang::from_code(&v)) {
-            crate::i18n::set(l);
-        }
-        if let Some(z) = crate::devenv::dev_var("SW_ZOOM").ok().and_then(|v| v.parse::<u32>().ok()) {
-            app.cfg.ui_zoom = z;
-        }
-        if let Ok(n) = crate::devenv::dev_var("SW_ALBUM") {
-            app.view = View::Library;
-            let idx: usize = n.parse().unwrap_or(0);
-            app.lib_open = app.lib.albums.get(idx).map(|a| a.key.clone());
-        }
-        if let Ok(n) = crate::devenv::dev_var("SW_ARTIST") {
-            app.view = View::Library;
-            app.open_artist(&n);
-        }
-        if crate::devenv::dev_var("SW_DSD_DIALOG").is_ok() {
-
-            app.dsd_dialog = Some(DsdDialog {
-                files: vec![],
-                start: 0,
-                dev_id: "test".into(),
-                dev_name: "FiiO K5 Pro (USB DAC)".into(),
-                dop_rate: 176_400,
-                t0: Instant::now(),
-                probe: DsdProbe::Idle,
-            });
-        }
-        if crate::devenv::dev_var("SW_LYRICS").is_ok() {
-            app.lyrics_open = true;
-        }
-
-        if let Ok(path) = crate::devenv::dev_var("SW_RULE_TRACK") {
-            app.cfg.eq_rules.push(eqrules_ui::EqRule { scope: eqrules_ui::RuleScope::Track, key: path, label: "Test".into(), sub: String::new(), preset: Some("test.txt".into()) });
-        }
-
-        if let Some(t) = crate::devenv::dev_var("SW_SETTAB").ok().and_then(|v| v.parse::<u8>().ok()) {
-            app.settings_tab = t;
-        }
-
-        if let Ok(v) = crate::devenv::dev_var("SW_PROPS") {
-            app.props_open(if v == "yeni" { None } else { Some(v.as_str()) });
-            if let (Some(p), Ok(t)) = (app.props.as_mut(), crate::devenv::dev_var("SW_PROPSTAB")) {
-                p.dev_set_tab(&t);
-            }
-        }
-        if let Ok(q) = crate::devenv::dev_var("SW_AUTOEQ") {
-            app.ae_open(false);
-            app.ae.query = q;
-        }
-        if let Ok(q) = crate::devenv::dev_var("SW_SEARCH") {
-            app.open_search();
-            app.search_query = q;
-        }
-        if crate::devenv::dev_var("SW_ARTISTS").is_ok() {
-            app.lib_tab = 1;
-        }
-        if let Ok(i) = crate::devenv::dev_var("SW_OPEN") {
-            app.lib_open = i.parse::<usize>().ok().and_then(|i| app.lib.albums.get(i)).map(|a| a.key.clone());
-        }
-        if let Ok(p) = crate::devenv::dev_var("SW_ADD") {
-            let mut files = vec![];
-            library::collect_audio(std::path::Path::new(&p), &mut files, 0);
-            app.lib_add_paths(files);
-        }
-        if crate::devenv::dev_var("SW_UPLOAD").is_ok() {
-            app.upload_open = true;
-            app.upload_sub = crate::devenv::dev_var("SW_UPLOAD").map(|v| v == "sub").unwrap_or(false);
-        }
-        if crate::devenv::dev_var("SW_VOLPOP").is_ok() {
-            app.vol_open = true;
-        }
-        if crate::devenv::dev_var("SW_LOOP").is_ok() {
-            app.cfg.use_loopback = true;
-        }
-        if crate::devenv::dev_var("SW_PLAYER").is_ok() {
-            app.cfg.use_loopback = false;
-        }
-        if let Ok(t) = crate::devenv::dev_var("SW_TO") {
-            app.cfg.to = Some(t);
-        }
-        if let Ok(p) = crate::devenv::dev_var("SW_PLAYFILE") {
-            app.player.clear();
-            app.player.add(vec![PathBuf::from(p)]);
-            app.play_pressed();
-        }
-        if crate::devenv::dev_var("SW_PLAY").is_ok() {
-            app.play_pressed();
-        }
+        #[cfg(feature = "devtools")]
+        devhooks::apply(&mut app);
         app
     }
 
@@ -1147,74 +976,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         #[cfg(feature = "devtools")]
         let _timer = UpdateTimer(Instant::now());
-        let native = ctx.native_pixels_per_point().unwrap_or(1.0);
-        let zoom = if self.cfg.ui_zoom == 0 {
-
-            if native >= 1.45 {
-                0.85
-            } else if native >= 1.2 {
-                0.92
-            } else {
-                1.0
-            }
-        } else {
-            self.cfg.ui_zoom.clamp(60, 140) as f32 / 100.0
-        };
-        if (ctx.zoom_factor() - zoom).abs() > 0.001 {
-            ctx.set_zoom_factor(zoom);
-        }
-        if QUIT_REQ.load(Relaxed) && !QUIT_ACK.swap(true, Relaxed) {
-            dev_trace("quit_ack (arayüz kapanış isteğini gördü)");
-            self.quitting = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        }
-        self.player.set_replaygain(self.cfg.rg_mode, self.cfg.rg_preamp, self.cfg.rg_prevent);
-        if self.cfg.rg_mode != 0 && !self.loud_started && !self.lib.albums.is_empty() && crate::devenv::dev_var("SW_OFFSCREEN").is_err() {
-            self.start_loudness();
-        }
-        if let Some(r) = self.player.take_rate_req() {
-            self.on_rate_request(r);
-        }
-        if !self.cfg.use_loopback && !self.rate_checked {
-            if let Some(run) = &self.running {
-                let o = run.ctl.out_info.lock().unwrap().clone();
-                if o.rate > 0 {
-                    self.rate_checked = true;
-                    if o.rate != self.player.rate() {
-
-                        self.rate_notice = Some((self.player.rate(), o.rate));
-                        self.player.force_rate(o.rate);
-                    }
-                }
-            }
-        }
-        if !self.titlebar_done && self.frames_run > 2 {
-            self.titlebar_done = style_titlebar();
-        }
-        self.frames_run = self.frames_run.saturating_add(1);
-
-        if crate::devenv::dev_var("SW_OFFSCREEN").is_err() && !WINDOW_HIDDEN.load(Relaxed) {
-            let ppp = ctx.pixels_per_point();
-            ctx.input(|i| {
-                let v = i.viewport();
-                let maxed = v.maximized.unwrap_or(false);
-                if v.minimized.unwrap_or(false) {
-                    return;
-                }
-                let k = ppp / native.max(0.1);
-                if maxed {
-                    if let Some(mut w) = self.cfg.win {
-                        w[5] = 1.0;
-                        self.cfg.win = Some(w);
-                    }
-                } else if let (Some(inner), Some(outer)) = (v.inner_rect, v.outer_rect) {
-                    let (sz, p) = (inner.size() * k, outer.min.to_vec2() * k);
-                    if sz.x >= 400.0 && sz.y >= 300.0 {
-                        self.cfg.win = Some([p.x, p.y, sz.x, sz.y, native, 0.0]);
-                    }
-                }
-            });
-        }
+        self.sync_window(ctx);
 
         let hidden = WINDOW_HIDDEN.load(Relaxed) || ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         let busy = self.player.playing.load(Relaxed) || ((self.view == View::Motor || self.motor_detached) && self.running.is_some());
@@ -1338,129 +1100,18 @@ impl eframe::App for App {
         self.sync_cover(ctx, dt);
         self.plugins_tick();
 
-        let kb = ctx.wants_keyboard_input();
-        let mut ab_held = false;
-        if !kb {
-            ab_held = ctx.input(|i| i.key_down(egui::Key::B));
-            let (space, left, right, up, down) = ctx.input(|i| {
-                (
-                    i.key_pressed(egui::Key::Space),
-                    i.key_pressed(egui::Key::ArrowLeft),
-                    i.key_pressed(egui::Key::ArrowRight),
-                    i.key_pressed(egui::Key::ArrowUp),
-                    i.key_pressed(egui::Key::ArrowDown),
-                )
-            });
-
-            if self.view != View::Settings && !self.search_open && !self.cfg.use_loopback {
-                if space {
-                    self.play_pressed();
-                }
-                if left {
-                    self.player.seek((self.player.position() - 5.0).max(0.0));
-                }
-                if right {
-                    self.player.seek(self.player.position() + 5.0);
-                }
-                if up || down {
-                    let v = (self.player.volume() + if up { 0.05 } else { -0.05 }).clamp(0.0, 1.0);
-                    self.player.set_volume(v);
-                    self.cfg.volume = Some(v);
-                }
-            }
-        }
-
-        self.solo_target = None;
-        let f8 = ctx.input(|i| i.key_pressed(egui::Key::F8));
-        let shift_k = !kb && ctx.input(|i| i.modifiers.shift && i.key_pressed(egui::Key::K));
-        if f8 {
-            if self.search_open {
-                self.search_open = false;
-            } else {
-                self.open_search();
-            }
-        } else if shift_k && !self.search_open {
-            self.open_search();
-        }
-
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Comma)) {
-            self.search_open = false;
-            self.upload_open = false;
-            self.set_view(View::Settings);
-        }
+        let mut ab_held = self.handle_keys(ctx);
 
         ctx.layer_painter(egui::LayerId::background()).rect_filled(ctx.screen_rect(), 0.0, BG0);
 
-        {
-            let album_tint = match (&self.view, &self.lib_artist, self.lib_open.clone()) {
-                (View::Library, None, Some(k)) if self.lib.albums.iter().any(|a| a.key == k) => Some(self.album_tint(&k)),
-                _ => None,
-            };
-            let (tc, ta) = match album_tint {
-                Some(c) => (c, 105.0),
-                None if !self.meta.title.is_empty() => {
-                    let c = self.tint;
-                    let k = (130.0 / (c.r().max(c.g()).max(c.b()) as f32).max(1.0)).min(1.0);
-                    (Color32::from_rgb((c.r() as f32 * k) as u8, (c.g() as f32 * k) as u8, (c.b() as f32 * k) as u8), 78.0)
-                }
-                None => (BLUE, 26.0),
-            };
-            let dt = ctx.input(|i| i.unstable_dt).clamp(0.001, 0.1);
-            let s = (dt * 4.0).min(1.0);
-            self.backdrop = lerp_color(self.backdrop, tc, s);
-            self.backdrop_a += (ta - self.backdrop_a) * s;
-            if (self.backdrop_a - ta).abs() > 0.5 {
-                ctx.request_repaint();
-            }
-        }
+        self.update_backdrop(ctx);
 
         let fade = self.fade(ctx);
-        if !self.ambient_on && !self.update_overlay_active() {
-            self.header(ctx);
-            self.bottom_bar(ctx);
-            self.lyrics_sidebar(ctx);
-            self.queue_sidebar(ctx);
-            self.plugin_sidebar(ctx);
-            match self.view {
-                View::Motor => {
-                    self.side_panel(ctx, fade);
-                    self.motor_view(ctx, fade, &mut ab_held);
-                }
-                View::Library => self.library_view(ctx, fade),
-                View::Settings => self.settings_view(ctx, fade),
-                View::Extensions => self.extensions_view(ctx, fade),
-            }
-        }
+        self.show_main_views(ctx, fade, &mut ab_held);
         self.motor_window(ctx, &mut ab_held);
-        if let Some(r) = &self.running {
-            let c = &r.ctl;
-            c.bypass.store(ab_held, Relaxed);
-            c.level_match.store(!self.cfg.level_match_off, Relaxed);
-            c.crossfeed.store(self.cfg.crossfeed.to_bits(), Relaxed);
-            c.balance.store(self.cfg.balance.to_bits(), Relaxed);
-            c.mono.store(self.cfg.mono, Relaxed);
-            c.dither.store(self.cfg.dither, Relaxed);
-            match self.solo_target {
-                Some((f, q)) => {
-                    c.solo_freq.store((f as f32).to_bits(), Relaxed);
-                    c.solo_q.store((q as f32).to_bits(), Relaxed);
-                    c.solo.store(true, Relaxed);
-                }
-                None => c.solo.store(false, Relaxed),
-            }
-            if self.cfg.chain != self.chain_sent {
-                c.set_chain(self.cfg.chain.clone());
-                self.chain_sent = self.cfg.chain.clone();
-            }
-        }
+        self.push_engine_controls(ab_held);
 
-        if !self.ambient_on {
-            self.search_overlay(ctx);
-            self.autoeq_overlay(ctx);
-            self.props_overlay(ctx);
-            self.tip_banner(ctx);
-            self.dsd_dialog_ui(ctx);
-        }
+        self.show_overlays(ctx);
         self.ambient_overlay(ctx);
         self.update_overlay(ctx);
 

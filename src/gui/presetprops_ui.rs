@@ -51,6 +51,7 @@ pub(super) struct PropsUi {
 
 impl PropsUi {
 
+    #[cfg(feature = "devtools")]
     pub fn dev_set_tab(&mut self, t: &str) {
         self.tab = match t {
             "otomatik" => PropsTab::Auto,
