@@ -4,6 +4,23 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.2
+
+<!-- tr -->
+- Eksik metadata internetten tamamlanıyor: albüm, sanatçı, yıl ve parça numarası Deezer ve MusicBrainz'dan alınır (Ayarlar > Kütüphane > Metadata)
+- İstersen bulunan bilgi dosya etiketlerine de yazılır: önce sorar, yalnızca boş alanları doldurur, yazılanlar geri alınabilir
+- Güncelleme ekranı yeniden tasarlandı: sade, iki sütunlu, hareketli süsler yok
+
+<!-- en -->
+- Missing metadata is now filled in from the internet: album, artist, year and track number come from Deezer and MusicBrainz (Settings > Library > Metadata)
+- Optionally, found info can also be written into the file tags: it asks first, fills only empty fields, and can be undone
+- The update screen was redesigned: plain, two columns, no animated decorations
+
+<!-- de -->
+- Fehlende Metadaten werden jetzt aus dem Internet ergänzt: Album, Künstler, Jahr und Tracknummer von Deezer und MusicBrainz (Einstellungen > Bibliothek > Metadaten)
+- Optional werden gefundene Infos auch in die Datei-Tags geschrieben: fragt vorher, füllt nur leere Felder und lässt sich rückgängig machen
+- Der Update-Bildschirm wurde neu gestaltet: schlicht, zwei Spalten, keine animierten Verzierungen
+
 ## 0.5.1
 
 <!-- tr -->
