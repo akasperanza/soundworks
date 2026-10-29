@@ -4,6 +4,23 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.1
+
+<!-- tr -->
+- Uyarılar ve ipuçları artık varsayılan olarak kapalı (Ayarlar > Uygulama'dan açılabilir)
+- Düzeltme: zincirde tek modül varken onu sürüklemek uygulamayı çökertiyordu
+- Kod temizliği ve iç iyileştirmeler
+
+<!-- en -->
+- Tips and warnings are now off by default (turn them on in Settings > App)
+- Fix: dragging the only module in the chain crashed the app
+- Code cleanup and internal improvements
+
+<!-- de -->
+- Hinweise und Warnungen sind jetzt standardmäßig aus (in Einstellungen > App einschaltbar)
+- Korrektur: Das Ziehen des einzigen Moduls in der Kette brachte die App zum Absturz
+- Code-Bereinigung und interne Verbesserungen
+
 ## 0.5.0
 
 <!-- tr -->

@@ -195,7 +195,7 @@ impl Default for Config {
             rg_mode: 0,
             rg_preamp: 0.0,
             rg_prevent: true,
-            tips_on: true,
+            tips_on: false,
             tips_dismissed: Vec::new(),
             crossfeed: 0.0,
             balance: 0.0,
