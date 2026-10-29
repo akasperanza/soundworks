@@ -4,6 +4,20 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.3
+
+<!-- tr -->
+- Güncelleme artık her açılışta denetleniyor
+- Güncelleme ekranında indirme ilerlemesi dalga formu şeklinde gösteriliyor
+
+<!-- en -->
+- Updates are now checked on every launch
+- Download progress on the update screen is shown as a waveform
+
+<!-- de -->
+- Updates werden jetzt bei jedem Start geprüft
+- Der Download-Fortschritt im Update-Bildschirm wird als Wellenform angezeigt
+
 ## 0.5.2
 
 <!-- tr -->
