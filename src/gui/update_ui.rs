@@ -152,7 +152,7 @@ fn version_pill(ui: &mut egui::Ui, text: &str, filled: bool) {
 }
 
 fn notes_card(ui: &mut egui::Ui, notes: &str, max_h: f32, a: f32) {
-    let lines = update::notes_to_lines(notes);
+    let lines = update::notes_to_lines(&update::pick_language(notes, crate::i18n::get().code()));
     Frame::none().fill(alpha(BG2, (210.0 * a) as u8)).rounding(Rounding::same(16.0)).inner_margin(Margin::symmetric(24.0, 18.0)).stroke(Stroke::new(1.0, alpha(Color32::WHITE, (16.0 * a) as u8))).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
@@ -333,18 +333,6 @@ impl App {
         if self.cfg.update_check && !self.upd_auto_done && matches!(self.upd, UpdState::Idle) && due && self.upd_started.elapsed().as_secs() > 25 && crate::devenv::dev_var("SW_OFFSCREEN").is_err() && crate::devenv::dev_var("SW_SHOT").is_err() {
             self.upd_auto_done = true;
             self.update_check_async(false);
-        }
-    }
-
-    pub(super) fn update_pill(&mut self, ui: &mut egui::Ui) {
-        let Some(rel) = self.update_available() else { return };
-        if self.cfg.update_check && (rel.version == self.cfg.update_skip || now_secs() < self.cfg.update_remind_at) && !self.upd_dialog {
-            return;
-        }
-        let label = format!("Yeni sürüm {}", rel.version);
-        if pill_button(ui, &label, Some(Icon::Import), true).on_hover_text_tr("Yeni sürümün ayrıntılarını gör").clicked() {
-            self.upd_dialog = true;
-            self.upd_t0 = Instant::now();
         }
     }
 

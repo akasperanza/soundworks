@@ -34,8 +34,18 @@ jobs:
           cd dist
           sha256sum Soundworks-windows-x64.exe > Soundworks-windows-x64.exe.sha256
 
+      - name: Extract release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{p = ($2 == v); next} p' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md has no notes for version $version"
+            exit 1
+          fi
+
       - name: Publish release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Soundworks $GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Soundworks $GITHUB_REF_NAME" --notes-file notes.md

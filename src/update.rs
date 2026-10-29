@@ -147,6 +147,34 @@ fn clean_markup(line: &str) -> String {
     }
 }
 
+pub fn pick_language(md: &str, lang: &str) -> String {
+    let marker = |line: &str| -> Option<String> {
+        let t = line.trim();
+        let inner = t.strip_prefix("<!--")?.strip_suffix("-->")?.trim();
+        let code = inner.strip_prefix("lang:").unwrap_or(inner).trim().to_lowercase();
+        matches!(code.as_str(), "tr" | "en" | "de").then_some(code)
+    };
+    let mut blocks: Vec<(String, String)> = vec![];
+    let mut intro = String::new();
+    for line in md.lines() {
+        if let Some(code) = marker(line) {
+            blocks.push((code, String::new()));
+        } else if let Some((_, text)) = blocks.last_mut() {
+            text.push_str(line);
+            text.push('\n');
+        } else {
+            intro.push_str(line);
+            intro.push('\n');
+        }
+    }
+    if blocks.is_empty() {
+        return md.to_string();
+    }
+    let pick = |code: &str| blocks.iter().find(|(c, _)| c == code).map(|(_, t)| t.clone());
+    let body = pick(lang).or_else(|| pick("en")).or_else(|| pick("tr")).unwrap_or_else(|| blocks[0].1.clone());
+    format!("{intro}{body}")
+}
+
 pub fn notes_to_lines(md: &str) -> Vec<NoteLine> {
     let mut out = vec![];
     for raw in md.lines() {
@@ -488,6 +516,21 @@ mod tests {
         }
         let many: String = (0..100).map(|i| format!("- item {i}\n")).collect();
         assert_eq!(notes_to_lines(&many).len(), 40);
+    }
+
+    #[test]
+    fn release_notes_pick_the_matching_language_block() {
+        let md = "intro line\n<!-- tr -->\n- Türkçe madde\n<!-- en -->\n- English item\n<!-- de -->\n- Deutscher Punkt\n";
+        assert!(pick_language(md, "en").contains("English item") && !pick_language(md, "en").contains("Türkçe"));
+        assert!(pick_language(md, "de").contains("Deutscher Punkt"));
+        assert!(pick_language(md, "tr").contains("Türkçe madde"));
+        assert!(pick_language(md, "en").starts_with("intro line"));
+        let only_tr = "<!-- tr -->\n- sadece türkçe\n";
+        assert!(pick_language(only_tr, "de").contains("sadece türkçe"));
+        let no_markers = "- plain\n";
+        assert_eq!(pick_language(no_markers, "de"), no_markers);
+        let lang_prefix = "<!-- lang:en -->\n- hello\n";
+        assert!(pick_language(lang_prefix, "en").contains("hello"));
     }
 
     #[test]

@@ -94,7 +94,6 @@ impl App {
                                 }
                             }
                         }
-                        self.update_pill(ui);
                         if self.cfg.use_loopback {
                             let (r, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::hover());
                             draw_icon(ui.painter(), Icon::Wave, r.center(), 15.0, if on { BLUE } else { DIM });
