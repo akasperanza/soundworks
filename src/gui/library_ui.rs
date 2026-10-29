@@ -317,7 +317,7 @@ impl App {
             .filter(|&i| {
                 let a = &self.lib.albums[i];
                 (q.is_empty() || a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q))
-                    && self.lib_genre.as_ref().map_or(true, |g| &a.genre == g)
+                    && self.lib_genre.as_ref().is_none_or(|g| &a.genre == g)
             })
             .collect();
         let al = &self.lib.albums;
@@ -338,7 +338,7 @@ impl App {
             .into_iter()
             .filter(|(name, _, _)| {
                 (q.is_empty() || name.to_lowercase().contains(&q))
-                    && self.lib_genre.as_ref().map_or(true, |g| {
+                    && self.lib_genre.as_ref().is_none_or(|g| {
                         self.lib.albums.iter().any(|a| a.artist.trim().eq_ignore_ascii_case(name.trim()) && &a.genre == g)
                     })
             })
@@ -412,7 +412,7 @@ impl App {
             }
         }
         if is_cur {
-            painter.rect_stroke(cover, Rounding::same(12.0), Stroke::new(2.0, BLUE));
+            painter.rect_stroke(cover, Rounding::same(12.0), Stroke::new(2.0_f32, BLUE));
         }
         if miss == n {
             painter.rect_filled(cover, Rounding::same(12.0), Color32::from_black_alpha(150));
@@ -494,7 +494,7 @@ impl App {
         let msg = msg.clone();
         let mut clicked = false;
         egui::Area::new(Id::new("undo_toast")).anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -76.0)).order(egui::Order::Foreground).show(ctx, |ui| {
-            Frame::none().fill(BG3).stroke(Stroke::new(1.0, STROKE)).rounding(Rounding::same(8.0)).inner_margin(Margin::symmetric(14.0, 8.0)).show(ui, |ui| {
+            Frame::none().fill(BG3).stroke(Stroke::new(1.0_f32, STROKE)).rounding(Rounding::same(8.0)).inner_margin(Margin::symmetric(14.0, 8.0)).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(msg).font(bold(13.0)));
                     ui.add_space(8.0);
@@ -666,7 +666,7 @@ impl App {
                     let artist = ui.add(egui::Label::new(RichText::new(&album.artist).font(bold(16.0 * sc)).color(alpha(Color32::WHITE, 225))).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand);
                     if artist.hovered() {
                         let y = artist.rect.bottom() + 1.0;
-                        ui.painter().line_segment([pos2(artist.rect.left(), y), pos2(artist.rect.right(), y)], Stroke::new(1.0, alpha(Color32::WHITE, 160)));
+                        ui.painter().line_segment([pos2(artist.rect.left(), y), pos2(artist.rect.right(), y)], Stroke::new(1.0_f32, alpha(Color32::WHITE, 160)));
                     }
                     if artist.clicked() {
                         goto_artist = true;
@@ -732,13 +732,13 @@ impl App {
                     p.rect_filled(rect.shrink2(vec2(0.0, 1.0)), Rounding::same(8.0), alpha(Color32::WHITE, (14.0 * h) as u8));
                 }
                 if !is_cur && h < 0.5 && i + 1 < album.tracks.len() {
-                    p.hline(rect.x_range().shrink(14.0), rect.bottom(), Stroke::new(1.0, alpha(STROKE, 150)));
+                    p.hline(rect.x_range().shrink(14.0), rect.bottom(), Stroke::new(1.0_f32, alpha(STROKE, 150)));
                 }
                 let num = if t.track_no > 0 { t.track_no.to_string() } else { (i + 1).to_string() };
                 let nc = pos2(rect.left() + 28.0 * sc, rect.center().y);
                 if is_cur {
                     let r = Rect::from_center_size(nc, vec2(14.0, 16.0));
-                    let mut child = ui.child_ui(r, egui::Layout::left_to_right(egui::Align::Center), None);
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
                     playing_bars(&mut child, playing, vec2(14.0, 16.0));
                 } else if h > 0.0 {
                     draw_icon(ui.painter(), Icon::Play, nc, 13.0, alpha(Color32::WHITE, (255.0 * h) as u8));

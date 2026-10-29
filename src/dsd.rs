@@ -41,12 +41,12 @@ impl DsdInfo {
     }
 
     pub fn name(&self) -> String {
-        let base = if self.fs % 44100 == 0 { 44100 } else { 48000 };
+        let base = if self.fs.is_multiple_of(44100) { 44100 } else { 48000 };
         format!("DSD{}", self.fs / base)
     }
 
     pub fn pcm_rate(&self) -> u32 {
-        if self.fs % 44100 == 0 { 352_800 } else { 384_000 }
+        if self.fs.is_multiple_of(44100) { 352_800 } else { 384_000 }
     }
 
     pub fn adv(&self) -> usize {
@@ -150,11 +150,10 @@ fn probe_dff(f: &mut File) -> Result<DsdInfo> {
                         match &sid {
                             b"FS  " => fs = be32(rd::<4>(f)?),
                             b"CHNL" => channels = u16::from_be_bytes(rd::<2>(f)?) as usize,
-                            b"CMPR" => {
-                                if &rd::<4>(f)? != b"DSD " {
+                            b"CMPR"
+                                if &rd::<4>(f)? != b"DSD " => {
                                     bail!("DFF: DST sıkıştırmalı dosyalar desteklenmiyor");
                                 }
-                            }
                             _ => {}
                         }
                         f.seek(SeekFrom::Start(sbody + ssize + (ssize & 1)))?;
@@ -203,10 +202,6 @@ impl DsdSource {
     pub fn seek_secs(&mut self, secs: f64) {
         let b = (secs.max(0.0) * self.info.fs as f64 / 8.0) as u64;
         self.pos = (b & !1).min(self.info.bytes_per_ch());
-    }
-
-    pub fn pos_secs(&self) -> f64 {
-        self.pos as f64 * 8.0 / self.info.fs as f64
     }
 
     pub fn read(&mut self, want: usize) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
@@ -389,7 +384,7 @@ fn decode_text(enc: u8, b: &[u8]) -> String {
                     data = &data[2..];
                 }
             }
-            let u: Vec<u16> = data.chunks_exact(2).map(|c| if be { u16::from_be_bytes([c[0], c[1]]) } else { u16::from_le_bytes([c[0], c[1]]) }).collect();
+            let u: Vec<u16> = data.as_chunks::<2>().0.iter().map(|c| if be { u16::from_be_bytes([c[0], c[1]]) } else { u16::from_le_bytes([c[0], c[1]]) }).collect();
             String::from_utf16_lossy(&u)
         }
         _ => String::from_utf8_lossy(b).to_string(),

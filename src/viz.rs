@@ -252,10 +252,10 @@ impl VizState {
             painter.add(Shape::mesh(mesh));
             let top: Vec<Pos2> =
                 (0..cols).map(|c| pos2(rect.left() + (c as f32 + 0.5) * w, sy(self.spec[c]))).collect();
-            painter.add(Shape::line(top, Stroke::new(1.3, alpha(tip, 220))));
+            painter.add(Shape::line(top, Stroke::new(1.3_f32, alpha(tip, 220))));
             let pk: Vec<Pos2> =
                 (0..cols).map(|c| pos2(rect.left() + (c as f32 + 0.5) * w, sy(self.peaks[c]))).collect();
-            painter.add(Shape::line(pk, Stroke::new(1.0, alpha(Color32::WHITE, 70))));
+            painter.add(Shape::line(pk, Stroke::new(1.0_f32, alpha(Color32::WHITE, 70))));
         }
     }
 
@@ -282,10 +282,10 @@ impl VizState {
         let c = pos2(rect.center().x, rect.center().y - 10.0);
         let r = (rect.width().min(rect.height() - 30.0)) * 0.5 * 0.92;
         for k in [0.33f32, 0.66, 1.0] {
-            painter.circle_stroke(c, r * k, Stroke::new(1.0, alpha(STROKE, if k == 1.0 { 255 } else { 150 })));
+            painter.circle_stroke(c, r * k, Stroke::new(1.0_f32, alpha(STROKE, if k == 1.0 { 255 } else { 150 })));
         }
-        let d = r * 0.7071;
-        let guide = Stroke::new(1.0, alpha(STROKE, 200));
+        let d = r * std::f32::consts::FRAC_1_SQRT_2;
+        let guide = Stroke::new(1.0_f32, alpha(STROKE, 200));
         painter.line_segment([c + vec2(-d, d), c + vec2(d, -d)], guide);
         painter.line_segment([c + vec2(-d, -d), c + vec2(d, d)], guide);
         painter.line_segment([c + vec2(0.0, -r), c + vec2(0.0, r)], guide);
@@ -298,8 +298,8 @@ impl VizState {
         let n = self.scope.len();
         let mut mesh = Mesh::default();
         for (i, (l, rr)) in self.scope.iter().enumerate() {
-            let x = (rr - l) * 0.7071 * g;
-            let y = (l + rr) * 0.7071 * g;
+            let x = (rr - l) * std::f32::consts::FRAC_1_SQRT_2 * g;
+            let y = (l + rr) * std::f32::consts::FRAC_1_SQRT_2 * g;
             let p = c + vec2(x, -y) * r;
             let a = 30.0 + 150.0 * (i as f32 / n.max(1) as f32);
             let col = alpha(lerp_color(BLUE, CYAN, i as f32 / n.max(1) as f32), a as u8);
@@ -315,7 +315,7 @@ impl VizState {
 
         let bar = Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 14.0), vec2(r * 1.6, 8.0));
         painter.rect_filled(bar, Rounding::same(4.0), BG2);
-        painter.line_segment([pos2(bar.center().x, bar.top() - 2.0), pos2(bar.center().x, bar.bottom() + 2.0)], Stroke::new(1.0, DIM));
+        painter.line_segment([pos2(bar.center().x, bar.top() - 2.0), pos2(bar.center().x, bar.bottom() + 2.0)], Stroke::new(1.0_f32, DIM));
         let x = bar.center().x + self.corr.clamp(-1.0, 1.0) * bar.width() * 0.5;
         let col = if self.corr > 0.3 { GREEN } else if self.corr > -0.1 { AMBER } else { RED };
         painter.circle_filled(pos2(x, bar.center().y), 6.0, col);
@@ -389,7 +389,7 @@ pub fn heat(t: f32) -> Color32 {
 pub fn draw_freq_grid(painter: &Painter, rect: Rect) {
     let fx = |f: f32| rect.left() + ((f / 20.0).log10() / 3.0) * rect.width();
     for f in [30.0, 50.0, 100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 3000.0, 5000.0, 10000.0, 20000.0] {
-        painter.line_segment([pos2(fx(f), rect.top()), pos2(fx(f), rect.bottom())], Stroke::new(1.0, alpha(STROKE, 120)));
+        painter.line_segment([pos2(fx(f), rect.top()), pos2(fx(f), rect.bottom())], Stroke::new(1.0_f32, alpha(STROKE, 120)));
         if [50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 20000.0].contains(&f) {
             let l = if f >= 1000.0 { format!("{}k", f / 1000.0) } else { format!("{f}") };
             painter.text_tr(pos2(fx(f) + 4.0, rect.bottom() - 10.0), egui::Align2::LEFT_CENTER, l, body(10.5), DIM);

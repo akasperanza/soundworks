@@ -140,7 +140,7 @@ impl App {
                 );
                 ui.add_space(10.0);
 
-                Frame::none().fill(alpha(RED, 45)).stroke(Stroke::new(1.0, alpha(RED, 160))).rounding(Rounding::same(8.0)).inner_margin(Margin::same(12.0)).show(ui, |ui| {
+                Frame::none().fill(alpha(RED, 45)).stroke(Stroke::new(1.0_f32, alpha(RED, 160))).rounding(Rounding::same(8.0)).inner_margin(Margin::same(12.0)).show(ui, |ui| {
                     ui.add(egui::Label::new(RichText::new("DoP'U NEDEN HER ZAMAN KULLANMAMALISIN?").font(bold(13.5)).color(Color32::WHITE)).wrap());
                     ui.add_space(4.0);
                     ui.add(

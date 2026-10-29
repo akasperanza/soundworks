@@ -29,7 +29,7 @@ pub struct Rg {
 }
 
 pub fn parse_gain_db(s: &str) -> Option<f32> {
-    let t = s.trim().trim_end_matches(|c: char| c == 'B' || c == 'b' || c == 'd' || c == 'D' || c == ' ');
+    let t = s.trim().trim_end_matches(['B', 'b', 'd', 'D', ' ']);
     let v: f32 = t.trim().replace(',', ".").parse().ok()?;
     v.is_finite().then_some(v)
 }
@@ -64,7 +64,7 @@ pub fn apply_gain(buf: &mut [f32], from: f32, to: f32) {
         }
         return;
     }
-    for (i, f) in buf.chunks_exact_mut(2).enumerate() {
+    for (i, f) in buf.as_chunks_mut::<2>().0.iter_mut().enumerate() {
         let g = from + (to - from) * (i as f32 + 1.0) / n;
         f[0] *= g;
         f[1] *= g;
@@ -224,6 +224,8 @@ impl Player {
     pub fn want_dop(&self) -> bool {
         self.want_dop.load(Ordering::SeqCst)
     }
+
+    #[cfg(test)]
     pub fn engine_dop(&self) -> bool {
         self.engine_dop.load(Ordering::SeqCst)
     }
@@ -648,7 +650,6 @@ struct Track {
     decoder: Option<Box<dyn Decoder>>,
     dsd: Option<DsdPlay>,
     track_id: u32,
-    channels: usize,
     rate: u32,
     out_rate: u32,
     meta: TrackMeta,
@@ -671,7 +672,7 @@ struct Track {
 
 fn downmix_map(ch: symphonia::core::audio::Channels) -> Vec<(f32, f32)> {
     use symphonia::core::audio::Channels as C;
-    const K: f32 = 0.707_106_8;
+    const K: f32 = std::f32::consts::FRAC_1_SQRT_2;
     let mut m: Vec<(f32, f32)> = ch
         .iter()
         .map(|c| match c {
@@ -738,7 +739,6 @@ impl Track {
             .ok_or_else(|| anyhow!("ses kanalı yok"))?;
         let track_id = t.id;
         let rate = t.codec_params.sample_rate.ok_or_else(|| anyhow!("örnekleme hızı yok"))?;
-        let channels = t.codec_params.channels.map(|c| c.count()).unwrap_or(2).max(1);
         let duration = t.codec_params.n_frames.map(|n| n as f64 / rate as f64).unwrap_or(0.0);
         let decoder = symphonia::default::get_codecs()
             .make(&t.codec_params, &DecoderOptions::default())
@@ -762,7 +762,6 @@ impl Track {
             decoder: Some(decoder),
             dsd: None,
             track_id,
-            channels,
             rate,
             out_rate,
             meta,
@@ -918,7 +917,7 @@ impl Track {
 
     fn dsd_next(&mut self) -> Got {
         let Some(d) = self.dsd.as_mut() else { return Got::End };
-        let (mut l, mut r) = match d.src.read(if d.dop { 8192 } else { 8192 }) {
+        let (mut l, mut r) = match d.src.read(8192) {
             Ok(Some(x)) => x,
             _ => return Got::End,
         };
@@ -950,14 +949,11 @@ impl Track {
             let frames = st.len() / 2;
             let out: Vec<f32> = if self.resampler.is_some() {
                 self.in_total += frames as u64;
-                for f in st.chunks_exact(2) {
+                for f in st.as_chunks::<2>().0 {
                     self.inbuf[0].push(f[0]);
                     self.inbuf[1].push(f[1]);
                 }
-                match self.drain_resampler() {
-                    Some(o) => o,
-                    None => return None,
-                }
+                self.drain_resampler()?
             } else {
                 st
             };
@@ -999,7 +995,6 @@ impl Track {
             decoder: None,
             dsd: Some(DsdPlay { src, conv, dop }),
             track_id: 0,
-            channels: info.channels.max(1),
             rate,
             out_rate: if dop { rate } else { out_rate },
             meta,
@@ -1658,7 +1653,7 @@ fn parse_year(v: &str) -> Option<String> {
     digits
         .windows(4)
         .map(|w| w.iter().collect::<String>())
-        .find(|w| w.chars().all(|c| c.is_ascii_digit()) && w.parse::<u32>().map_or(false, |n| (1900..=2099).contains(&n)))
+        .find(|w| w.chars().all(|c| c.is_ascii_digit()) && w.parse::<u32>().is_ok_and(|n| (1900..=2099).contains(&n)))
 }
 
 fn apply_cover(data: &[u8], m: &mut TrackMeta) {

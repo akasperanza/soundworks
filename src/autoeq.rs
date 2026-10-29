@@ -226,7 +226,7 @@ impl Client {
             if !e.is_empty() {
                 self.entries = e;
                 self.state = IndexState::Ready { cached: true };
-                if self.cache_age_days().map_or(true, |d| d >= INDEX_MAX_AGE_DAYS) {
+                if self.cache_age_days().is_none_or(|d| d >= INDEX_MAX_AGE_DAYS) {
                     self.refreshing = true;
                     self.spawn_index();
                 }

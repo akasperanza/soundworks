@@ -31,7 +31,7 @@ impl App {
                 let content_left = if wide { full.left() + nav_w + 32.0 } else { full.left() };
                 if wide {
                     let nav_rect = Rect::from_min_size(full.min, vec2(nav_w, full.height()));
-                    let mut nav = ui.child_ui(nav_rect, egui::Layout::top_down(egui::Align::Min), None);
+                    let mut nav = ui.new_child(egui::UiBuilder::new().max_rect(nav_rect).layout(egui::Layout::top_down(egui::Align::Min)));
                     for (i, label, icon) in [(0u8, "Ses", Icon::Volume), (1u8, "Kütüphane", Icon::Folder), (2u8, "Ekolayzır", Icon::Spectrum), (3u8, "Uygulama", Icon::Settings)] {
                         if nav_item(&mut nav, label, icon, self.settings_tab == i).clicked() {
                             self.settings_tab = i;
@@ -40,7 +40,7 @@ impl App {
                     }
                 }
                 let content_rect = Rect::from_min_max(pos2(content_left, full.top()), full.right_bottom());
-                let mut content = ui.child_ui(content_rect, egui::Layout::top_down(egui::Align::Min), None);
+                let mut content = ui.new_child(egui::UiBuilder::new().max_rect(content_rect).layout(egui::Layout::top_down(egui::Align::Min)));
                 content.set_max_width(content_rect.width().min(820.0));
                 if !wide {
                     let mut tab = self.settings_tab;

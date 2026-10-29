@@ -89,7 +89,7 @@ fn tables() -> &'static Tables {
                 exact.insert(tr, (en, de));
             }
         }
-        templates.sort_by(|a, b| b.weight.cmp(&a.weight));
+        templates.sort_by_key(|t| std::cmp::Reverse(t.weight));
         Tables { exact, templates }
     })
 }

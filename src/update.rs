@@ -184,13 +184,13 @@ pub fn notes_to_lines(md: &str) -> Vec<NoteLine> {
         }
         let item = if let Some(h) = line.strip_prefix('#') {
             let text = clean_markup(h.trim_start_matches('#'));
-            (!text.is_empty()).then(|| NoteLine::Heading(text))
+            (!text.is_empty()).then_some(NoteLine::Heading(text))
         } else if let Some(b) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
             let text = clean_markup(b);
-            (!text.is_empty()).then(|| NoteLine::Bullet(text))
+            (!text.is_empty()).then_some(NoteLine::Bullet(text))
         } else {
             let text = clean_markup(line);
-            (!text.is_empty()).then(|| NoteLine::Text(text))
+            (!text.is_empty()).then_some(NoteLine::Text(text))
         };
         out.extend(item);
         if out.len() >= 40 {
@@ -217,7 +217,7 @@ pub fn fetch_notes(url: &str) -> Result<String, String> {
 
 pub fn trusted_host(url: &str) -> bool {
     let Ok(u) = url::Url::parse(url) else { return false };
-    u.scheme() == "https" && u.host_str().map_or(false, |h| TRUSTED_HOSTS.contains(&h.to_lowercase().as_str()))
+    u.scheme() == "https" && u.host_str().is_some_and(|h| TRUSTED_HOSTS.contains(&h.to_lowercase().as_str()))
 }
 
 pub fn parse_checksum(text: &str) -> Option<String> {

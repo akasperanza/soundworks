@@ -31,7 +31,7 @@ impl App {
             self.motor_view(ctx, 1.0, ab_held);
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
             closed = ctx.input(|i| i.viewport().close_requested());
-            if crate::devenv::dev_var("SW_CHILDCLOSE").ok().and_then(|v| v.parse::<u32>().ok()) == Some(self.frames as u32) {
+            if crate::devenv::dev_var("SW_CHILDCLOSE").ok().and_then(|v| v.parse::<u32>().ok()) == Some(self.frames) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             self.dev_capture(ctx, true);

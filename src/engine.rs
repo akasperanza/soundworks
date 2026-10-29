@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use crate::apo::Preset;
 use crate::biquad::Equalizer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -642,7 +643,7 @@ pub fn choose_rate(src: u32, supported: &[u32], fallback: u32) -> u32 {
         return src;
     }
     let family = |r: u32| -> u32 {
-        if r % 44100 == 0 { 44100 } else if r % 48000 == 0 { 48000 } else { 0 }
+        if r.is_multiple_of(44100) { 44100 } else if r.is_multiple_of(48000) { 48000 } else { 0 }
     };
     let mut sorted: Vec<u32> = supported.to_vec();
     sorted.sort_unstable();
@@ -730,11 +731,10 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
     };
 
     if let Ok(v) = dev.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None) {
-        if v.GetMute().map(|m| m.as_bool()).unwrap_or(false) {
-            if v.SetMute(false, std::ptr::null()).is_ok() {
+        if v.GetMute().map(|m| m.as_bool()).unwrap_or(false)
+            && v.SetMute(false, std::ptr::null()).is_ok() {
                 *ctl.notice.lock().unwrap() = Some("Hedef cihaz sessizdeydi, sesi açıldı".to_string());
             }
-        }
         if let Ok(sc) = v.GetMasterVolumeLevelScalar() {
             if sc < 0.03 {
                 *ctl.notice.lock().unwrap() = Some("Hedef cihazın Windows sesi çok düşük".to_string());

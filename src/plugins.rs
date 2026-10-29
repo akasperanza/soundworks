@@ -71,7 +71,7 @@ pub struct Discovered {
 
 pub fn validate(m: &Manifest, dir: &Path) -> Result<(), String> {
     let id_ok = !m.id.is_empty()
-        && m.id.chars().next().map_or(false, |c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && m.id.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         && m.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '.' || c == '_');
     if !id_ok {
         return Err("id must use lowercase letters, digits, '-', '.' or '_'".into());
@@ -95,8 +95,8 @@ pub fn validate(m: &Manifest, dir: &Path) -> Result<(), String> {
             || perm == "playback"
             || perm == "download"
             || perm == "library"
-            || perm.strip_prefix("network:").map_or(false, |h| !h.is_empty() && !h.contains(['/', ':', ' ', '\\']))
-            || perm.strip_prefix("pipe:").map_or(false, |n| !n.is_empty() && !n.contains(['\\', '/']) && !n.contains(".."));
+            || perm.strip_prefix("network:").is_some_and(|h| !h.is_empty() && !h.contains(['/', ':', ' ', '\\']))
+            || perm.strip_prefix("pipe:").is_some_and(|n| !n.is_empty() && !n.contains(['\\', '/']) && !n.contains(".."));
         if !known {
             return Err(format!("unknown permission '{perm}'"));
         }
@@ -453,7 +453,7 @@ fn append_log(path: &Path, level: &str, msg: &str) {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    if std::fs::metadata(path).map_or(false, |m| m.len() > LOG_FILE_LIMIT) {
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_FILE_LIMIT) {
         let _ = std::fs::rename(path, path.with_extension("log.old"));
     }
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
@@ -499,11 +499,13 @@ impl PluginHost {
         PluginHost { data_dir, downloads_dir, running: HashMap::new() }
     }
 
+    #[cfg(test)]
     pub fn with_data_dir(data_dir: PathBuf) -> PluginHost {
         let downloads = data_dir.join("downloads");
         PluginHost::with_dirs(data_dir, downloads)
     }
 
+    #[cfg(test)]
     pub fn downloads_dir(&self) -> &Path {
         &self.downloads_dir
     }
@@ -607,6 +609,7 @@ impl PluginHost {
         self.running.get(id).and_then(|r| r.shared.error.lock().unwrap().clone())
     }
 
+    #[cfg(test)]
     pub fn logs(&self, id: &str) -> Vec<String> {
         self.running.get(id).map(|r| r.shared.logs.lock().unwrap().iter().cloned().collect()).unwrap_or_default()
     }
@@ -652,6 +655,8 @@ fn error_text(ctx: &Ctx, e: JsError) -> String {
     e.to_string()
 }
 
+type BodyStore = Arc<Mutex<VecDeque<(i32, Vec<u8>)>>>;
+
 struct Store {
     path: PathBuf,
     map: HashMap<String, String>,
@@ -676,7 +681,7 @@ impl Store {
         if let Some(dir) = self.path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        serde_json::to_vec(&self.map).ok().map_or(false, |j| std::fs::write(&self.path, j).is_ok())
+        serde_json::to_vec(&self.map).ok().is_some_and(|j| std::fs::write(&self.path, j).is_ok())
     }
 }
 
@@ -702,7 +707,7 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
 
     let pipes: Arc<Mutex<HashMap<i32, File>>> = Arc::new(Mutex::new(HashMap::new()));
     let next_pipe = Arc::new(Mutex::new(1i32));
-    let body_store: Arc<Mutex<VecDeque<(i32, Vec<u8>)>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let body_store: BodyStore = Arc::new(Mutex::new(VecDeque::new()));
     let store = Arc::new(Mutex::new(Store::load(job.data_dir.join(format!("{}.json", job.id)))));
 
     let setup = ctx.with(|ctx| -> Result<(), String> {
@@ -723,7 +728,7 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
             .map_err(|e| e.to_string())?,
         )?;
 
-        put(&native, "now", Function::new(ctx.clone(), || epoch_ms()).map_err(|e| e.to_string())?)?;
+        put(&native, "now", Function::new(ctx.clone(), epoch_ms).map_err(|e| e.to_string())?)?;
         put(&native, "pid", Function::new(ctx.clone(), || std::process::id() as f64).map_err(|e| e.to_string())?)?;
         put(&native, "version", Function::new(ctx.clone(), || env!("CARGO_PKG_VERSION").to_string()).map_err(|e| e.to_string())?)?;
         let cfg = job.config.clone();
@@ -933,7 +938,7 @@ fn run(job: Job, rx: std::sync::mpsc::Receiver<Msg>) {
                 let mut ok = false;
                 for p in paths.into_iter().take(500) {
                     let Ok(full) = std::fs::canonicalize(&p) else { continue };
-                    let audio = full.extension().and_then(|e| e.to_str()).map_or(false, |e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()));
+                    let audio = full.extension().and_then(|e| e.to_str()).is_some_and(|e| AUDIO_EXTENSIONS.contains(&e.to_lowercase().as_str()));
                     if full.starts_with(&root) && full.is_file() && audio {
                         sh.library.lock().unwrap().push(full);
                         ok = true;

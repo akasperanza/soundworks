@@ -91,20 +91,18 @@ pub struct LyricsFetcher {
     queue: Arc<(Mutex<VecDeque<Job>>, Condvar)>,
     pending: Arc<Mutex<HashSet<String>>>,
     rx: Receiver<(String, Option<Lyrics>)>,
-    pub last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl LyricsFetcher {
     pub fn new() -> LyricsFetcher {
         let queue: Arc<(Mutex<VecDeque<Job>>, Condvar)> = Arc::new((Mutex::new(VecDeque::new()), Condvar::new()));
         let pending = Arc::new(Mutex::new(HashSet::new()));
-        let last_error = Arc::new(Mutex::new(None));
         let (tx, rx) = channel();
         {
-            let (q, p, e) = (queue.clone(), pending.clone(), last_error.clone());
-            std::thread::spawn(move || worker(q, p, e, tx));
+            let (q, p) = (queue.clone(), pending.clone());
+            std::thread::spawn(move || worker(q, p, tx));
         }
-        LyricsFetcher { queue, pending, rx, last_error }
+        LyricsFetcher { queue, pending, rx }
     }
 
     pub fn is_pending(&self, k: &str) -> bool {
@@ -133,7 +131,6 @@ impl LyricsFetcher {
 fn worker(
     queue: Arc<(Mutex<VecDeque<Job>>, Condvar)>,
     pending: Arc<Mutex<HashSet<String>>>,
-    last_error: Arc<Mutex<Option<String>>>,
     tx: Sender<(String, Option<Lyrics>)>,
 ) {
     loop {
@@ -154,7 +151,6 @@ fn worker(
         if l.found() {
             save_cached(&k, &l);
         }
-        *last_error.lock().unwrap() = None;
         finish(Some(l));
     }
 }

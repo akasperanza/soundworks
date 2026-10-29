@@ -145,29 +145,29 @@ pub fn setup(ctx: &Context) {
     v.faint_bg_color = BG1;
     v.window_rounding = Rounding::same(10.0);
     v.menu_rounding = Rounding::same(10.0);
-    v.window_stroke = Stroke::new(1.0, STROKE);
+    v.window_stroke = Stroke::new(1.0_f32, STROKE);
     v.popup_shadow = Shadow { offset: vec2(0.0, 8.0), blur: 24.0, spread: 0.0, color: Color32::from_black_alpha(140) };
     v.selection.bg_fill = BLUE;
-    v.selection.stroke = Stroke::new(1.0, SKY);
+    v.selection.stroke = Stroke::new(1.0_f32, SKY);
     v.slider_trailing_fill = true;
     v.widgets.noninteractive.bg_fill = BG1;
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, STROKE);
-    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, DIM);
+    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, STROKE);
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, DIM);
     v.widgets.noninteractive.rounding = Rounding::same(8.0);
     v.widgets.inactive.bg_fill = BG3;
     v.widgets.inactive.weak_bg_fill = BG2;
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, STROKE);
-    v.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, STROKE);
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, TEXT);
     v.widgets.inactive.rounding = Rounding::same(8.0);
     v.widgets.hovered.bg_fill = BG3;
     v.widgets.hovered.weak_bg_fill = BG3;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, BLUE);
-    v.widgets.hovered.fg_stroke = Stroke::new(1.5, Color32::WHITE);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, BLUE);
+    v.widgets.hovered.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
     v.widgets.hovered.rounding = Rounding::same(8.0);
     v.widgets.active.bg_fill = BLUE;
     v.widgets.active.weak_bg_fill = BLUE;
-    v.widgets.active.bg_stroke = Stroke::new(1.0, SKY);
-    v.widgets.active.fg_stroke = Stroke::new(1.5, Color32::WHITE);
+    v.widgets.active.bg_stroke = Stroke::new(1.0_f32, SKY);
+    v.widgets.active.fg_stroke = Stroke::new(1.5_f32, Color32::WHITE);
     v.widgets.active.rounding = Rounding::same(8.0);
     v.widgets.open.bg_fill = BG2;
     v.widgets.open.weak_bg_fill = BG2;
@@ -488,7 +488,7 @@ pub fn pill_button(ui: &mut Ui, text: &str, icon: Option<Icon>, primary: bool) -
     let (bg, fg) = if en { (bg, fg) } else { (alpha(bg, 110), alpha(fg, 100)) };
     ui.painter().rect_filled(rect, Rounding::same(16.0), bg);
     if stroke != Color32::TRANSPARENT {
-        ui.painter().rect_stroke(rect, Rounding::same(16.0), Stroke::new(1.0, stroke));
+        ui.painter().rect_stroke(rect, Rounding::same(16.0), Stroke::new(1.0_f32, stroke));
     }
     let mut x = rect.left() + 14.0;
     if let Some(ic) = icon {
@@ -593,7 +593,7 @@ pub fn view_switch<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, items: &[(T,
     let iw = ui.ctx().animate_value_with_time(id.with("w"), tw, 0.2);
     let ind = Rect::from_min_size(pos2(ix, rect.top() + 3.0), vec2(iw, rect.height() - 6.0));
     ui.painter().rect_filled(ind, Rounding::same(7.0), BG3);
-    ui.painter().rect_stroke(ind, Rounding::same(7.0), Stroke::new(1.0, alpha(Color32::WHITE, 20)));
+    ui.painter().rect_stroke(ind, Rounding::same(7.0), Stroke::new(1.0_f32, alpha(Color32::WHITE, 20)));
     for (i, g) in gs.into_iter().enumerate() {
         let r = Rect::from_min_size(pos2(x, rect.top() + 3.0), vec2(ws[i], rect.height() - 6.0));
         let resp = ui.interact(r, id.with(("t", i)), Sense::click());
@@ -675,32 +675,13 @@ pub fn toast(ctx: &Context, text: &str, age: f32) {
         ui.set_opacity(a);
         Frame::none()
             .fill(BG3)
-            .stroke(Stroke::new(1.0, STROKE))
+            .stroke(Stroke::new(1.0_f32, STROKE))
             .rounding(Rounding::same(8.0))
             .inner_margin(Margin::symmetric(14.0, 8.0))
             .show(ui, |ui| {
                 ui.label(egui::RichText::new(text).font(bold(13.0)));
             });
     });
-}
-
-pub fn tab_icon(ui: &mut Ui, text: &str, icon: Icon, selected: bool) -> Response {
-    let text = &crate::i18n::tr(text);
-    let g = ui.painter().layout_no_wrap(text.to_string(), bold(14.0), TEXT);
-    let size = vec2(g.size().x + 24.0 + 22.0, 32.0);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
-    let t = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.12);
-    let s = ui.ctx().animate_bool_with_time(resp.id.with("s"), selected, 0.2);
-    let col = lerp_color(lerp_color(DIM, TEXT, t), Color32::WHITE, s);
-    draw_icon(ui.painter(), icon, pos2(rect.left() + 20.0, rect.center().y), 12.5, col);
-    ui.painter().galley(pos2(rect.left() + 34.0, rect.center().y - g.size().y * 0.5), g, col);
-    let w = (rect.width() - 24.0) * ease(s);
-    ui.painter().rect_filled(
-        Rect::from_center_size(pos2(rect.center().x, rect.bottom() - 1.0), vec2(w, 2.0)),
-        Rounding::same(1.0),
-        BLUE,
-    );
-    resp
 }
 
 pub fn appear(ctx: &Context, id: Id, delay: f32) -> f32 {
@@ -716,6 +697,7 @@ pub fn appear(ctx: &Context, id: Id, delay: f32) -> f32 {
 
 pub struct RichText;
 
+#[allow(clippy::new_ret_no_self)]
 impl RichText {
     pub fn new(text: impl Into<String>) -> egui::RichText {
         egui::RichText::new(crate::i18n::tr(text.into()))
@@ -810,12 +792,12 @@ pub fn setting_row(ui: &mut Ui, title: &str, desc: &str, info: &str, control: im
         let ir = Rect::from_center_size(c, vec2(20.0, 20.0));
         let resp = ui.interact(ir, ui.id().with(("setting_info", &title)), Sense::hover());
         let a = if resp.hovered() { 230 } else { 120 };
-        ui.painter().circle_stroke(c, 7.5, Stroke::new(1.0, alpha(DIM, a)));
+        ui.painter().circle_stroke(c, 7.5, Stroke::new(1.0_f32, alpha(DIM, a)));
         ui.painter().text(c, egui::Align2::CENTER_CENTER, "i", bold(10.0), alpha(DIM, a));
         resp.on_hover_text(info);
     }
     let cr = Rect::from_min_max(pos2((rect.left() + left_w + 12.0).min(rect.right() - 40.0), rect.top()), rect.right_bottom());
-    let mut child = ui.child_ui(cr, egui::Layout::right_to_left(egui::Align::Center), None);
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(cr).layout(egui::Layout::right_to_left(egui::Align::Center)));
     control(&mut child);
 }
 

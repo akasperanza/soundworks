@@ -139,7 +139,7 @@ impl App {
                     let a = ui.ctx().animate_bool_with_time(resp.id.with("a"), self.search_open, 0.15);
                     let p = ui.painter();
                     p.rect_filled(r, Rounding::same(16.0), lerp_color(BG2, BG3, h));
-                    p.rect_stroke(r, Rounding::same(16.0), Stroke::new(1.0, lerp_color(STROKE, BLUE, a.max(h * 0.5))));
+                    p.rect_stroke(r, Rounding::same(16.0), Stroke::new(1.0_f32, lerp_color(STROKE, BLUE, a.max(h * 0.5))));
                     draw_icon(p, Icon::Search, pos2(r.left() + 20.0, r.center().y), 12.5, lerp_color(DIM, TEXT, h));
                     p.text_tr(pos2(r.left() + 38.0, r.center().y), Align2::LEFT_CENTER, if w >= 300.0 { "Sanatçı, albüm ya da parça ara" } else { "Ara…" }, body(13.0), lerp_color(DIM, TEXT, h * 0.6));
                     if w > 280.0 {
@@ -196,7 +196,7 @@ impl App {
             let (rect, _) = ui.allocate_exact_size(vec2(mw, mh), Sense::hover());
             let painter = ui.painter();
             painter.rect_filled(rect, Rounding::same(10.0), BG2);
-            painter.rect_stroke(rect, Rounding::same(10.0), Stroke::new(1.0, STROKE));
+            painter.rect_stroke(rect, Rounding::same(10.0), Stroke::new(1.0_f32, STROKE));
             let row = Rect::from_min_size(rect.min + vec2(6.0, 6.0), vec2(mw - 12.0, 44.0));
             let resp = ui.interact(row, Id::new("upload_row"), Sense::click());
             if resp.clicked() {
@@ -249,7 +249,7 @@ impl App {
                     let a = (255.0 * se) as u8;
                     let full = Rect::from_min_size(rect.min, vec2(sw, sh));
                     painter.rect_filled(full, Rounding::same(10.0), alpha(BG2, a));
-                    painter.rect_stroke(full, Rounding::same(10.0), Stroke::new(1.0, alpha(STROKE, a)));
+                    painter.rect_stroke(full, Rounding::same(10.0), Stroke::new(1.0_f32, alpha(STROKE, a)));
                     let items = [
                         ("Klasör", "Albüm olarak yükler", Icon::Folder, 0u8),
                         ("Parça", "Varsa albümüne ekler", Icon::Track, 1u8),
@@ -474,7 +474,7 @@ impl App {
                 ui.set_opacity(t);
                 Frame::none()
                     .fill(BG2)
-                    .stroke(Stroke::new(1.0, STROKE))
+                    .stroke(Stroke::new(1.0_f32, STROKE))
                     .rounding(Rounding::same(10.0))
                     .inner_margin(Margin::symmetric(10.0, 10.0))
                     .show(ui, |ui| {
@@ -672,7 +672,7 @@ impl App {
             false,
         );
         if !active_fx.is_empty() && !dop {
-            path_row(ui, "Modüller", &active_fx.iter().map(|n| crate::i18n::tr(n)).collect::<Vec<_>>().join(" → "), false);
+            path_row(ui, "Modüller", &active_fx.iter().map(crate::i18n::tr).collect::<Vec<_>>().join(" → "), false);
         }
         if let (Some(db), false) = (self.player.rg_applied_db(), self.cfg.use_loopback) {
             path_row(ui, "ReplayGain", &format!("{db:+.1} dB · {}", if self.cfg.rg_mode == 2 { "albüm" } else { "parça" }), false);

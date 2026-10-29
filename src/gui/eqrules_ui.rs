@@ -78,8 +78,8 @@ pub(super) fn resolve_rule<'a>(rules: &'a [EqRule], now: Option<&Playing>, devic
     rules
         .iter()
         .filter(|r| match r.scope {
-            RuleScope::Track => now.map_or(false, |n| r.key == n.path),
-            RuleScope::Album => now.map_or(false, |n| n.album_key.as_deref() == Some(r.key.as_str())),
+            RuleScope::Track => now.is_some_and(|n| r.key == n.path),
+            RuleScope::Album => now.is_some_and(|n| n.album_key.as_deref() == Some(r.key.as_str())),
             RuleScope::Artist => !ak.is_empty() && r.key == ak,
             RuleScope::Device => device == Some(r.key.as_str()),
         })
@@ -113,7 +113,7 @@ pub(super) fn fit(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) ->
     let chars: Vec<char> = s.chars().collect();
     let (mut lo, mut hi) = (0usize, chars.len());
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         let t: String = chars[..mid].iter().collect::<String>() + "…";
         if w(&t) <= max_w {
             lo = mid;

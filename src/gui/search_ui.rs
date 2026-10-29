@@ -124,11 +124,11 @@ impl App {
                 ui.set_opacity(e);
                 let bd = ui.allocate_rect(screen, Sense::click());
                 ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_unmultiplied(78, 82, 92, 214));
-                let mut child = ui.child_ui(panel_rect, egui::Layout::top_down(egui::Align::Min), None);
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect).layout(egui::Layout::top_down(egui::Align::Min)));
                 let ui = &mut child;
                 let inner = Frame::none()
                     .fill(BG1)
-                    .stroke(Stroke::new(1.0, STROKE))
+                    .stroke(Stroke::new(1.0_f32, STROKE))
                     .rounding(Rounding::same(12.0))
                     .inner_margin(Margin::same(14.0))
                     .shadow(egui::epaint::Shadow { offset: vec2(0.0, 12.0), blur: 30.0, spread: 0.0, color: Color32::from_black_alpha(120) })

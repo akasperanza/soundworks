@@ -320,12 +320,6 @@ enum SearchItem {
     Command(String, String, String),
 }
 
-#[derive(PartialEq, Clone, Copy)]
-enum RTab {
-    Playing,
-    List,
-}
-
 pub struct App {
     cfg: Config,
     devices: Vec<DeviceInfo>,
@@ -338,7 +332,6 @@ pub struct App {
     player: Arc<Player>,
     view: View,
     view_t0: Instant,
-    rtab: RTab,
     sel_band: Option<usize>,
 
     solo_target: Option<(f64, f64)>,
@@ -401,7 +394,6 @@ pub struct App {
     missing_rx: Option<Receiver<HashSet<String>>>,
     lib_added: usize,
     lib_open: Option<String>,
-    lib_query: String,
     lib_tex: HashMap<String, Option<TextureHandle>>,
     lib_tint: HashMap<String, Color32>,
     titlebar_done: bool,
@@ -564,7 +556,6 @@ impl App {
             player: Player::new(),
             view: View::Motor,
             view_t0: Instant::now(),
-            rtab: RTab::Playing,
             sel_band: None,
             solo_target: None,
             solo_latch: false,
@@ -620,7 +611,6 @@ impl App {
             missing_rx: None,
             lib_added: 0,
             lib_open: None,
-            lib_query: String::new(),
             lib_tex: HashMap::new(),
             lib_tint: HashMap::new(),
             titlebar_done: false,
@@ -969,7 +959,7 @@ impl App {
 
     fn dev_capture(&mut self, ctx: &egui::Context, in_child: bool) {
         let Ok(path) = crate::devenv::dev_var("SW_SHOT") else { return };
-        let want_child = self.motor_detached && crate::devenv::dev_var("SW_SHOTWIN").map_or(false, |v| v == "motor");
+        let want_child = self.motor_detached && crate::devenv::dev_var("SW_SHOTWIN").is_ok_and(|v| v == "motor");
         if in_child != want_child {
             return;
         }
@@ -1121,7 +1111,7 @@ fn path_row(ui: &mut egui::Ui, title: &str, detail: &str, last: bool) {
     let p = ui.painter();
     let x = rect.left() + 5.0;
     if !last {
-        p.line_segment([pos2(x, rect.top() + 14.0), pos2(x, rect.bottom() + 4.0)], Stroke::new(1.0, STROKE));
+        p.line_segment([pos2(x, rect.top() + 14.0), pos2(x, rect.bottom() + 4.0)], Stroke::new(1.0_f32, STROKE));
     }
     p.circle_filled(pos2(x, rect.top() + 9.0), 3.0, SKY);
     p.text_tr(pos2(x + 14.0, rect.top() + 9.0), Align2::LEFT_CENTER, title, bold(12.0), TEXT);
@@ -1509,8 +1499,6 @@ impl Drop for App {
 }
 
 struct LyrTok {
-    sp: bool,
-
     bg: bool,
     x: f32,
     y: f32,
@@ -1619,11 +1607,7 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
                 preview = Some(frac_of(p));
             }
         }
-        if resp.drag_stopped() {
-            if let Some(p) = resp.interact_pointer_pos() {
-                commit = Some(frac_of(p));
-            }
-        } else if resp.clicked() {
+        if resp.drag_stopped() || resp.clicked() {
             if let Some(p) = resp.interact_pointer_pos() {
                 commit = Some(frac_of(p));
             }

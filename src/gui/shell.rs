@@ -9,14 +9,7 @@ pub(super) fn single_instance_ok() -> bool {
     }
     unsafe {
         match CreateMutexW(None, true, w!("Local\\Soundworks.SingleInstance")) {
-            Ok(h) => {
-                let exists = GetLastError() == ERROR_ALREADY_EXISTS;
-                if !exists {
-
-                    std::mem::forget(h);
-                }
-                !exists
-            }
+            Ok(_) => GetLastError() != ERROR_ALREADY_EXISTS,
             Err(_) => true,
         }
     }

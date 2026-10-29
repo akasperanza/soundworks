@@ -185,7 +185,7 @@ impl App {
                         }
                     }
                     if h > 0.0 {
-                        ui.painter().circle_stroke(c, r, Stroke::new(2.0, alpha(BLUE, (200.0 * h) as u8)));
+                        ui.painter().circle_stroke(c, r, Stroke::new(2.0_f32, alpha(BLUE, (200.0 * h) as u8)));
                     }
                     let used = draw_lines(ui.painter(), pos2(rect.center().x, rect.top() + text_top), Align2::CENTER_TOP, &nm_l, &nm_f, Color32::WHITE);
                     draw_lines(ui.painter(), pos2(rect.center().x, rect.top() + text_top + used + 4.0), Align2::CENTER_TOP, &sb_l, &sb_f, DIM);
@@ -322,7 +322,7 @@ impl App {
                 let (tf_cur, row_w) = (bold(13.5), w - 6.0);
                 let (alb_l, ttl_l, lh_t, lh_a) = {
                     let p = ui.painter().clone();
-                    let alb_l = wrap_lines(&p, &album_title, &af, (row_w * 0.30).max(120.0));
+                    let alb_l = wrap_lines(&p, album_title, &af, (row_w * 0.30).max(120.0));
                     let aw = alb_l.iter().map(|l| text_width(&p, l, &af)).fold(0.0, f32::max);
                     let title_w = (row_w - 40.0 - 90.0 - aw - 16.0).max(100.0);
                     let tfont = if cur.as_ref() == Some(&t.path) { &tf_cur } else { &tf };
@@ -344,7 +344,7 @@ impl App {
                 }
                 if is_cur {
                     let r = Rect::from_min_size(pos2(rect.left() + 10.0, rect.center().y - 8.0), vec2(14.0, 16.0));
-                    let mut child = ui.child_ui(r, egui::Layout::left_to_right(egui::Align::Center), None);
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
                     playing_bars(&mut child, playing, vec2(14.0, 16.0));
                 } else {
                     ui.painter().text_tr(pos2(rect.left() + 16.0, rect.center().y), Align2::CENTER_CENTER, (i + 1).to_string(), body(12.5), DIM);

@@ -195,6 +195,7 @@ impl Limiter {
         }
     }
 
+    #[cfg(test)]
     pub fn latency(&self) -> usize {
         self.n - 1 + TP_DELAY
     }
@@ -335,9 +336,9 @@ use crate::biquad::Equalizer;
 
 fn butterworth_qs(slope_db: f32) -> &'static [f64] {
     match (slope_db / 12.0).round() as i32 {
-        i32::MIN..=1 => &[0.7071067811865476],
+        i32::MIN..=1 => &[std::f64::consts::FRAC_1_SQRT_2],
         2 => &[0.5411961001461969, 1.3065629648763766],
-        3 => &[0.5176380902050415, 0.7071067811865476, 1.9318516525781366],
+        3 => &[0.5176380902050415, std::f64::consts::FRAC_1_SQRT_2, 1.9318516525781366],
         _ => &[0.5097955791041592, 0.6013448869350453, 0.8999762231364156, 2.5629154477415055],
     }
 }
@@ -413,8 +414,8 @@ impl Tone {
         self.blk.set(&Preset {
             preamp_db: pre,
             bands: vec![
-                Band { kind: FilterKind::LowShelf, freq: bass_hz as f64, gain_db: bass_db as f64, q: 0.7071 },
-                Band { kind: FilterKind::HighShelf, freq: treble_hz as f64, gain_db: treble_db as f64, q: 0.7071 },
+                Band { kind: FilterKind::LowShelf, freq: bass_hz as f64, gain_db: bass_db as f64, q: std::f64::consts::FRAC_1_SQRT_2 },
+                Band { kind: FilterKind::HighShelf, freq: treble_hz as f64, gain_db: treble_db as f64, q: std::f64::consts::FRAC_1_SQRT_2 },
             ],
         });
     }

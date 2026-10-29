@@ -85,7 +85,7 @@ impl Meter {
     }
 
     pub fn feed(&mut self, interleaved: &[f32]) {
-        for fr in interleaved.chunks_exact(2) {
+        for fr in interleaved.as_chunks::<2>().0 {
             let mut p = 0.0;
             for ch in 0..2 {
                 let x = fr[ch];

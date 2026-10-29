@@ -257,10 +257,10 @@ impl App {
             let mut auto: Vec<&String> = vec![];
             for (n, _) in &self.library {
                 let meta = self.cfg.preset_meta.get(n);
-                if !ql.is_empty() && !n.to_lowercase().contains(&ql) && !meta.map_or(false, |m| m.label.to_lowercase().contains(&ql)) {
+                if !ql.is_empty() && !n.to_lowercase().contains(&ql) && !meta.is_some_and(|m| m.label.to_lowercase().contains(&ql)) {
                     continue;
                 }
-                if meta.map_or(false, |m| m.source.starts_with("AutoEQ")) {
+                if meta.is_some_and(|m| m.source.starts_with("AutoEQ")) {
                     auto.push(n);
                 } else {
                     own.push(n);
@@ -387,7 +387,7 @@ impl App {
         for d in (-3..=3).map(|i| i as f64 * 6.0) {
             painter.line_segment(
                 [pos2(rect.left(), gy(d)), pos2(rect.right(), gy(d))],
-                Stroke::new(1.0, if d == 0.0 { alpha(DIM, 90) } else { alpha(STROKE, 120) }),
+                Stroke::new(1.0_f32, if d == 0.0 { alpha(DIM, 90) } else { alpha(STROKE, 120) }),
             );
             painter.text_tr(pos2(rect.right() - 6.0, gy(d) - 8.0), Align2::RIGHT_CENTER, format!("{d:+.0}"), body(10.5), DIM);
         }
@@ -403,7 +403,7 @@ impl App {
                 pos2(fx(f), gy(db.clamp(-GAIN_RANGE, GAIN_RANGE)))
             })
             .collect();
-        painter.add(Shape::line(pts, Stroke::new(2.0, Color32::WHITE)));
+        painter.add(Shape::line(pts, Stroke::new(2.0_f32, Color32::WHITE)));
 
         let node_pos = |b: &Band| {
             let g = if b.kind.has_gain() { b.gain_db } else { 0.0 };
@@ -484,7 +484,7 @@ impl App {
                 let (lo, hi) = ((f0 - bw * 0.5).max(20.0), (f0 + bw * 0.5).min(20000.0));
                 let band = Rect::from_min_max(pos2(fx(lo), rect.top()), pos2(fx(hi).max(fx(lo) + 3.0), rect.bottom()));
                 painter.rect_filled(band, Rounding::ZERO, alpha(BLUE, 46));
-                painter.line_segment([pos2(fx(f0), rect.top()), pos2(fx(f0), rect.bottom())], Stroke::new(1.5, SKY));
+                painter.line_segment([pos2(fx(f0), rect.top()), pos2(fx(f0), rect.bottom())], Stroke::new(1.5_f32, SKY));
                 let (note, cents) = crate::biquad::note_name(f0);
                 let freq_txt = if f0 >= 1000.0 { format!("{:.2} kHz", f0 / 1000.0) } else { format!("{:.0} Hz", f0) };
                 let lbl = format!("SOLO · {freq_txt} · {note}{}", if cents == 0 { String::new() } else { format!(" {cents:+}c") });
@@ -503,11 +503,11 @@ impl App {
             let hot = hot_band == Some(i);
             let k = ui.ctx().animate_value_with_time(Id::new(("node", i)), if sel || hot { 1.0 } else { 0.0 }, 0.1);
             if sel {
-                painter.line_segment([pos2(p.x, rect.top()), pos2(p.x, rect.bottom())], Stroke::new(1.0, alpha(BLUE, 70)));
+                painter.line_segment([pos2(p.x, rect.top()), pos2(p.x, rect.bottom())], Stroke::new(1.0_f32, alpha(BLUE, 70)));
             }
             let r = 5.0 + 2.0 * k;
             painter.circle_filled(p, r, if sel { BLUE } else { BG0 });
-            painter.circle_stroke(p, r, Stroke::new(1.5, if sel { Color32::WHITE } else { SKY }));
+            painter.circle_stroke(p, r, Stroke::new(1.5_f32, if sel { Color32::WHITE } else { SKY }));
         }
         if let Some(i) = hot_band.or(self.drag_band).or(self.sel_band) {
             if let Some(b) = self.preset.bands.get(i) {

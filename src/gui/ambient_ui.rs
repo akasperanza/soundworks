@@ -29,7 +29,7 @@ impl App {
             for e in &i.events {
                 match e {
                     egui::Event::PointerMoved(pos) => {
-                        if last_ptr.map_or(true, |l| l.distance(*pos) >= 2.0) {
+                        if last_ptr.is_none_or(|l| l.distance(*pos) >= 2.0) {
                             moved = true;
                         }
                         *last_ptr = Some(*pos);
@@ -38,7 +38,7 @@ impl App {
                     _ => {}
                 }
             }
-            let any = |f: &dyn Fn(&egui::Event) -> bool| i.events.iter().any(|e| f(e));
+            let any = |f: &dyn Fn(&egui::Event) -> bool| i.events.iter().any(f);
             let button = any(&|e| matches!(e, egui::Event::PointerButton { .. }));
             let wheel = any(&|e| matches!(e, egui::Event::MouseWheel { .. }));
             let keyed = any(&|e| matches!(e, egui::Event::Text(_) | egui::Event::Touch { .. } | egui::Event::Key { pressed: true, .. }));
@@ -199,7 +199,7 @@ impl App {
             total_h += 12.0 + 18.0;
         }
         let mut y = (cover.center().y - total_h * 0.5).max(content.top());
-        let mut put = |g: &Arc<egui::Galley>, y: &mut f32, gap: f32| {
+        let put = |g: &Arc<egui::Galley>, y: &mut f32, gap: f32| {
             p.galley(pos2(x0, *y), g.clone(), Color32::WHITE);
             *y += g.size().y + gap;
         };
@@ -225,7 +225,7 @@ impl App {
         if let Some(b) = &badge {
             let (bx, by) = if inline_badge { (end_x + 16.0, cy) } else { (x0, cy + row_h * 0.5 + 12.0 + 9.0) };
             let br = Rect::from_min_size(pos2(bx, by - 11.0), vec2(b.size().x + 18.0, 22.0));
-            p.rect_stroke(br, Rounding::same(11.0), Stroke::new(1.0, alpha(Color32::WHITE, 46)));
+            p.rect_stroke(br, Rounding::same(11.0), Stroke::new(1.0_f32, alpha(Color32::WHITE, 46)));
             p.galley(pos2(br.left() + 9.0, by - b.size().y * 0.5), b.clone(), DIM);
         }
 
@@ -263,7 +263,7 @@ impl App {
             let head = galley(&p, crate::i18n::tr("SIRADA"), bold(12.0), DIM, qw, 1);
             let top = cover.top() + 4.0;
             p.galley(pos2(qx, top), head, DIM);
-            p.line_segment([pos2(qx, top + 26.0), pos2(qx + qw, top + 26.0)], Stroke::new(1.0, alpha(Color32::WHITE, 28)));
+            p.line_segment([pos2(qx, top + 26.0), pos2(qx + qw, top + 26.0)], Stroke::new(1.0_f32, alpha(Color32::WHITE, 28)));
             if upcoming.is_empty() {
                 let msg = if shuffled { "Karıştırma açık: sıradaki parça belli değil" } else { "Kuyruk boş" };
                 p.text_tr(pos2(qx, top + 44.0), Align2::LEFT_TOP, msg, body(14.0), DIM);
@@ -288,7 +288,7 @@ impl App {
             }
         }
 
-        p.line_segment([pos2(spec_rect.left(), spec_rect.bottom() + 1.0), pos2(spec_rect.right(), spec_rect.bottom() + 1.0)], Stroke::new(1.0, alpha(Color32::WHITE, 30)));
+        p.line_segment([pos2(spec_rect.left(), spec_rect.bottom() + 1.0), pos2(spec_rect.right(), spec_rect.bottom() + 1.0)], Stroke::new(1.0_f32, alpha(Color32::WHITE, 30)));
         self.viz.draw_spectrum_with(&p, spec_rect, false, alpha(accent, 150), lerp_color(accent, Color32::WHITE, 0.35));
         let hint_a = (1.0 - (self.ambient_since.elapsed().as_secs_f32() - 4.0) / 1.5).clamp(0.0, 1.0);
         if hint_a > 0.0 && self.ambient_on {
@@ -307,7 +307,7 @@ impl App {
             for (i, icon) in icons.iter().enumerate().rev() {
                 let r = Rect::from_min_max(pos2(x - h, y0), pos2(x, y0 + h));
                 x = r.left() - 4.0;
-                let hov = ptr.map_or(false, |q| r.contains(q));
+                let hov = ptr.is_some_and(|q| r.contains(q));
                 let on = (i == 0 && side == 1) || (i == 1 && side == 2);
                 if hov {
                     ps.rect_filled(r, Rounding::same(8.0), alpha(Color32::WHITE, 20));

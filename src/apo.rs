@@ -124,12 +124,12 @@ fn parse_filter(line: &str) -> Option<Option<Band>> {
             (FilterKind::LowShelf, gain)
         }
         ("hs", Some("6db")) => {
-            freq = freq * SQRT_2;
+            freq *= SQRT_2;
             q = SQRT_2 / 3.0;
             (FilterKind::HighShelf, gain)
         }
         ("hs", Some("12db")) => {
-            freq = freq / SQRT_2;
+            freq /= SQRT_2;
             (FilterKind::HighShelf, gain)
         }
         ("no", _) => {

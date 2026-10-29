@@ -110,7 +110,7 @@ impl App {
                             let nc = pos2(rect.left() + 22.0, rect.center().y);
                             if is_cur {
                                 let r = Rect::from_center_size(nc, vec2(14.0, 16.0));
-                                let mut child = ui.child_ui(r, egui::Layout::left_to_right(egui::Align::Center), None);
+                                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
                                 playing_bars(&mut child, playing, vec2(14.0, 16.0));
                             } else if hov > 0.3 {
                                 draw_icon(ui.painter(), Icon::Play, nc, 12.0, alpha(Color32::WHITE, (255.0 * hov) as u8));

@@ -67,8 +67,6 @@ impl PropsUi {
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum PropsAct {
     None,
-    Save,
-    Cancel,
     Delete,
     Duplicate,
     Export,
@@ -317,7 +315,7 @@ impl App {
                     if let Some(n) = now {
                         for (scope, text) in [(RuleScope::Track, "Çalan şarkı"), (RuleScope::Album, "Çalan albüm"), (RuleScope::Artist, "Çalan sanatçı")] {
                             let target = playing_target(n, scope);
-                            let already = target.as_ref().map_or(false, |(k, _, _)| st.data.rules.iter().any(|r| r.scope == scope && &r.key == k));
+                            let already = target.as_ref().is_some_and(|(k, _, _)| st.data.rules.iter().any(|r| r.scope == scope && &r.key == k));
                             ui.add_enabled_ui(target.is_some() && !already, |ui| {
                                 if pill_button(ui, text, Some(Icon::Plus), false).clicked() {
                                     add = target.clone().map(|(k, l, s)| (scope, k, l, s));
@@ -456,11 +454,10 @@ impl App {
         if st.t0.elapsed().as_millis() < 200 {
             ctx.request_repaint();
         }
-        if matches!(file_act, PropsAct::Delete | PropsAct::Duplicate | PropsAct::Export | PropsAct::Reveal) {
-            if self.props_file_act(file_act, &st) {
+        if matches!(file_act, PropsAct::Delete | PropsAct::Duplicate | PropsAct::Export | PropsAct::Reveal)
+            && self.props_file_act(file_act, &st) {
                 return;
             }
-        }
         if cancel {
             return;
         }
@@ -482,7 +479,7 @@ impl App {
     pub(super) fn presets_manager_card(&mut self, ui: &mut egui::Ui) {
         let names: Vec<String> = self.library.iter().map(|(n, _)| n.clone()).collect();
 
-        let valid = self.props_inline.as_ref().map_or(false, |s| s.orig.as_ref().map_or(false, |o| names.contains(o)));
+        let valid = self.props_inline.as_ref().is_some_and(|s| s.orig.as_ref().is_some_and(|o| names.contains(o)));
         if !valid {
             let pick = self.preset_name.clone().filter(|n| names.contains(n)).or_else(|| names.first().cloned());
             self.props_inline = pick.and_then(|f| self.props_load(&f));

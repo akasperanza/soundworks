@@ -15,8 +15,8 @@ fn tip_glyph(p: &egui::Painter, icon: TipIcon, c: Pos2, r: f32) {
 
     let c = pos2(c.x.round(), c.y.round());
     p.circle_filled(c, r, alpha(col, 34));
-    p.circle_stroke(c, r - 0.6, Stroke::new(1.2, alpha(col, 130)));
-    let st = Stroke::new(1.8, col);
+    p.circle_stroke(c, r - 0.6, Stroke::new(1.2_f32, alpha(col, 130)));
+    let st = Stroke::new(1.8_f32, col);
     let bar = |top: f32, bottom: f32| {
         let w = (r * 0.17).max(2.2);
         p.rect_filled(Rect::from_min_max(pos2(c.x - w * 0.5, c.y + top), pos2(c.x + w * 0.5, c.y + bottom)), Rounding::same(w * 0.5), col);
@@ -83,7 +83,7 @@ impl App {
             dev_kind: kind,
             dev_name: name,
             supported: self.rate_cache.get(&id).cloned().unwrap_or_default(),
-            src_bits: self.meta.bits as u32,
+            src_bits: self.meta.bits,
             resampled: self.meta.resampled,
             volume: self.player.volume(),
             clips: self.viz.clips_total,
@@ -141,12 +141,12 @@ impl App {
         let (mut understood, mut hide_forever) = (false, false);
         egui::Area::new(Id::new("tip_banner"))
             .order(egui::Order::Foreground)
-            .anchor(Align2::CENTER_BOTTOM, vec2((avail.center().x - screen.center().x), -(screen.bottom() - avail.bottom()) - 14.0 + (1.0 - e) * 18.0))
+            .anchor(Align2::CENTER_BOTTOM, vec2(avail.center().x - screen.center().x, -(screen.bottom() - avail.bottom()) - 14.0 + (1.0 - e) * 18.0))
             .show(ctx, |ui| {
                 ui.set_opacity(e);
                 Frame::none()
                     .fill(BG3)
-                    .stroke(Stroke::new(1.0, alpha(tip_color(tip.icon), 90)))
+                    .stroke(Stroke::new(1.0_f32, alpha(tip_color(tip.icon), 90)))
                     .rounding(Rounding::same(16.0))
                     .inner_margin(Margin::same(18.0))
                     .shadow(egui::epaint::Shadow { offset: vec2(0.0, 10.0), blur: 28.0, spread: 0.0, color: Color32::from_black_alpha(110) })

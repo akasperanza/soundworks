@@ -77,12 +77,12 @@ fn draw_curve(ui: &mut egui::Ui, size: Vec2, curve: &[f64]) {
         let db = k * range;
         let y = y_of(db);
         let strong = k == 0.0;
-        p.line_segment([pos2(inner.left(), y), pos2(inner.right(), y)], Stroke::new(1.0, alpha(Color32::WHITE, if strong { 36 } else { 12 })));
+        p.line_segment([pos2(inner.left(), y), pos2(inner.right(), y)], Stroke::new(1.0_f32, alpha(Color32::WHITE, if strong { 36 } else { 12 })));
         p.text_tr(pos2(rect.left() + 6.0, y), Align2::LEFT_CENTER, format!("{db:+.0}"), body(10.0), alpha(DIM, 200));
     }
     for (f, label) in [(100.0f32, "100"), (1000.0, "1k"), (10000.0, "10k")] {
         let x = inner.left() + (f / 20.0).log10() / 3.0 * inner.width();
-        p.line_segment([pos2(x, inner.top()), pos2(x, inner.bottom())], Stroke::new(1.0, alpha(Color32::WHITE, 12)));
+        p.line_segment([pos2(x, inner.top()), pos2(x, inner.bottom())], Stroke::new(1.0_f32, alpha(Color32::WHITE, 12)));
         p.text_tr(pos2(x, rect.bottom() - 2.0), Align2::CENTER_BOTTOM, label, body(10.0), alpha(DIM, 200));
     }
     if curve.len() > 1 {
@@ -92,8 +92,8 @@ fn draw_curve(ui: &mut egui::Ui, size: Vec2, curve: &[f64]) {
             .enumerate()
             .map(|(i, db)| pos2(inner.left() + i as f32 / (n - 1) as f32 * inner.width(), y_of((*db as f32).clamp(-range, range))))
             .collect();
-        p.add(Shape::line(pts.clone(), Stroke::new(6.0, alpha(BLUE, 40))));
-        p.add(Shape::line(pts, Stroke::new(2.0, SKY)));
+        p.add(Shape::line(pts.clone(), Stroke::new(6.0_f32, alpha(BLUE, 40))));
+        p.add(Shape::line(pts, Stroke::new(2.0_f32, SKY)));
     }
 }
 
@@ -184,7 +184,7 @@ impl App {
             self.ae.shown_q = self.ae.query.clone();
             self.ae.shown_n = self.autoeq.entries.len();
             self.ae.q_at = Instant::now();
-            if !self.ae.sel.map_or(false, |s| self.ae.results.contains(&s)) {
+            if !self.ae.sel.is_some_and(|s| self.ae.results.contains(&s)) {
                 self.ae.sel = None;
             }
         }
@@ -238,14 +238,14 @@ impl App {
             ui.set_opacity(e);
             let bd = ui.allocate_rect(screen, Sense::click());
             ui.painter().rect_filled(screen, 0.0, Color32::from_rgba_unmultiplied(78, 82, 92, 214));
-            if bd.clicked() && ctx.pointer_interact_pos().map_or(true, |p| !panel_rect.contains(p)) {
+            if bd.clicked() && ctx.pointer_interact_pos().is_none_or(|p| !panel_rect.contains(p)) {
                 act = Some(Act::Close);
             }
-            let mut child = ui.child_ui(panel_rect, egui::Layout::top_down(egui::Align::Min), None);
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(panel_rect).layout(egui::Layout::top_down(egui::Align::Min)));
             let ui = &mut child;
             Frame::none()
                 .fill(BG1)
-                .stroke(Stroke::new(1.0, STROKE))
+                .stroke(Stroke::new(1.0_f32, STROKE))
                 .rounding(Rounding::same(14.0))
                 .inner_margin(Margin::same(20.0))
                 .shadow(egui::epaint::Shadow { offset: vec2(0.0, 14.0), blur: 34.0, spread: 0.0, color: Color32::from_black_alpha(130) })
@@ -531,7 +531,7 @@ fn fit_text(painter: &egui::Painter, s: &str, font: FontId, max_w: f32) -> Strin
     let chars: Vec<char> = s.chars().collect();
     let (mut lo, mut hi) = (0usize, chars.len());
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = (lo + hi).div_ceil(2);
         let t: String = chars[..mid].iter().collect::<String>() + "…";
         if w(&t) <= max_w {
             lo = mid;

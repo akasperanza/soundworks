@@ -48,7 +48,7 @@ pub fn compute(path: &Path) -> Option<Vec<f32>> {
         let mut env: Vec<f32> = vec![];
         crate::player::decode_native(path, |chunk, rate| {
             let win = (rate as usize / 20).max(1);
-            for f in chunk.chunks_exact(2) {
+            for f in chunk.as_chunks::<2>().0 {
                 let m = f[0].abs().max(f[1].abs());
                 peak = peak.max(m);
                 sum_sq += (m as f64) * (m as f64);

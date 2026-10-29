@@ -52,12 +52,6 @@ fn save_cached(name: &str, info: &ArtistInfo) {
     }
 }
 
-pub fn forget(name: &str) {
-    let id = id_of(name);
-    let _ = std::fs::remove_file(data_dir().join(format!("{id}.json")));
-    let _ = std::fs::remove_file(data_dir().join(format!("{id}.jpg")));
-}
-
 pub struct Fetcher {
     queue: Arc<(Mutex<VecDeque<String>>, Condvar)>,
     pending: Arc<Mutex<HashSet<String>>>,

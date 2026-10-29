@@ -146,14 +146,14 @@ fn version_pill(ui: &mut egui::Ui, text: &str, filled: bool) {
         ui.painter().rect_filled(rect, Rounding::same(18.0), alpha(BLUE, 200));
     } else {
         ui.painter().rect_filled(rect, Rounding::same(18.0), alpha(Color32::WHITE, 14));
-        ui.painter().rect_stroke(rect, Rounding::same(18.0), Stroke::new(1.0, alpha(Color32::WHITE, 36)));
+        ui.painter().rect_stroke(rect, Rounding::same(18.0), Stroke::new(1.0_f32, alpha(Color32::WHITE, 36)));
     }
     ui.painter().galley(rect.center() - g.size() * 0.5, g, Color32::WHITE);
 }
 
 fn notes_card(ui: &mut egui::Ui, notes: &str, max_h: f32, a: f32) {
     let lines = update::notes_to_lines(&update::pick_language(notes, crate::i18n::get().code()));
-    Frame::none().fill(alpha(BG2, (210.0 * a) as u8)).rounding(Rounding::same(16.0)).inner_margin(Margin::symmetric(24.0, 18.0)).stroke(Stroke::new(1.0, alpha(Color32::WHITE, (16.0 * a) as u8))).show(ui, |ui| {
+    Frame::none().fill(alpha(BG2, (210.0 * a) as u8)).rounding(Rounding::same(16.0)).inner_margin(Margin::symmetric(24.0, 18.0)).stroke(Stroke::new(1.0_f32, alpha(Color32::WHITE, (16.0 * a) as u8))).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("YENİLİKLER")).font(bold(11.0)).color(alpha(SKY, (220.0 * a) as u8)));
@@ -381,7 +381,7 @@ impl App {
             let block_h = 30.0 + 18.0 + 56.0 + 14.0 + 36.0 + 26.0 + card_h + 26.0 + 100.0;
             let top = rect.top() + ((rect.height() - block_h) * 0.5).max(28.0) + (1.0 - ease(t)) * 24.0;
             let col = Rect::from_min_size(pos2(rect.center().x - col_w * 0.5, top), vec2(col_w, rect.height() - (top - rect.top()) - 24.0));
-            let mut cui = ui.child_ui(col, egui::Layout::top_down(egui::Align::Center), None);
+            let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(col).layout(egui::Layout::top_down(egui::Align::Center)));
             let ui = &mut cui;
             ui.set_width(col_w);
 
@@ -389,7 +389,7 @@ impl App {
             let badge = crate::i18n::tr(if mode == Mode::Updated { "GÜNCELLENDİ" } else { "YENİ SÜRÜM" });
             let g = ui.painter().layout_no_wrap(badge, bold(11.0), alpha(SKY, (255.0 * a0) as u8));
             let (br, _) = ui.allocate_exact_size(g.size() + vec2(26.0, 12.0), Sense::hover());
-            ui.painter().rect_stroke(br, Rounding::same(14.0), Stroke::new(1.0, alpha(SKY, (120.0 * a0) as u8)));
+            ui.painter().rect_stroke(br, Rounding::same(14.0), Stroke::new(1.0_f32, alpha(SKY, (120.0 * a0) as u8)));
             ui.painter().galley(br.center() - g.size() * 0.5, g, alpha(SKY, (255.0 * a0) as u8));
             ui.add_space(18.0 + (1.0 - a0) * 10.0);
 

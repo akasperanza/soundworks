@@ -869,7 +869,7 @@ fn lq(s: &str) -> String {
 fn tags_of(e: &Value) -> Vec<String> {
     let mut t: Vec<(i64, String)> =
         e["tags"].as_array().map(|a| a.iter().filter_map(|x| Some((x["count"].as_i64().unwrap_or(0), x["name"].as_str()?.to_string()))).collect()).unwrap_or_default();
-    t.sort_by(|a, b| b.0.cmp(&a.0));
+    t.sort_by_key(|x| std::cmp::Reverse(x.0));
     t.into_iter().map(|x| x.1).collect()
 }
 

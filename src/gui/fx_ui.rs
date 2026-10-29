@@ -304,7 +304,7 @@ impl App {
                     Item::Placeholder => {
                         let on = dragging && ptr.map(|p| rect.expand(40.0).contains(p)).unwrap_or(false);
                         let p = ui.painter();
-                        p.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.4, if on { BLUE } else { alpha(DIM, 110) }));
+                        p.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.4_f32, if on { BLUE } else { alpha(DIM, 110) }));
                         p.rect_filled(rect, Rounding::same(12.0), if on { alpha(BLUE, 28) } else { Color32::TRANSPARENT });
                         p.text_tr(rect.center(), Align2::CENTER_CENTER, "Modülleri buraya sürükle", body(12.5), if on { SKY } else { DIM });
                     }
@@ -324,7 +324,7 @@ impl App {
                         if h > 0.0 && !sel {
                             p.rect_filled(rect, Rounding::same(12.0), alpha(Color32::WHITE, (10.0 * h) as u8));
                         }
-                        p.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.2, if sel { BLUE } else { alpha(STROKE, 200) }));
+                        p.rect_stroke(rect, Rounding::same(12.0), Stroke::new(1.2_f32, if sel { BLUE } else { alpha(STROKE, 200) }));
                         fx_glyph(p, spec.kind, pos2(rect.left() + 28.0, rect.top() + 30.0), 26.0, alpha(if spec.enabled { SKY } else { DIM }, (255.0 * dim) as u8));
                         p.text_tr(pos2(rect.left() + 50.0, rect.top() + 24.0), Align2::LEFT_CENTER, fit(p, info.name, bold(13.5), nw - 60.0), bold(13.5), alpha(Color32::WHITE, (255.0 * dim) as u8));
                         p.text_tr(pos2(rect.left() + 50.0, rect.top() + 42.0), Align2::LEFT_CENTER, fit(p, info.tagline, body(11.5), nw - 60.0), body(11.5), alpha(DIM, (255.0 * dim) as u8));
@@ -356,9 +356,9 @@ impl App {
                     let c = pos2(rect.right() + ARROW_W * 0.5, rect.center().y);
                     let col = alpha(DIM, 150);
                     let p = ui.painter();
-                    p.line_segment([pos2(c.x - 6.0, c.y), pos2(c.x + 6.0, c.y)], Stroke::new(1.5, col));
-                    p.line_segment([pos2(c.x + 2.0, c.y - 4.0), pos2(c.x + 6.0, c.y)], Stroke::new(1.5, col));
-                    p.line_segment([pos2(c.x + 2.0, c.y + 4.0), pos2(c.x + 6.0, c.y)], Stroke::new(1.5, col));
+                    p.line_segment([pos2(c.x - 6.0, c.y), pos2(c.x + 6.0, c.y)], Stroke::new(1.5_f32, col));
+                    p.line_segment([pos2(c.x + 2.0, c.y - 4.0), pos2(c.x + 6.0, c.y)], Stroke::new(1.5_f32, col));
+                    p.line_segment([pos2(c.x + 2.0, c.y + 4.0), pos2(c.x + 6.0, c.y)], Stroke::new(1.5_f32, col));
                 }
             }
         });
@@ -511,7 +511,7 @@ impl App {
                 let p = ui.painter().with_clip_rect(rect);
                 p.rect_filled(rect, Rounding::same(14.0), lerp_color(BG2, BG3, h * 0.7));
                 if resp.dragged() {
-                    p.rect_stroke(rect, Rounding::same(14.0), Stroke::new(1.2, BLUE));
+                    p.rect_stroke(rect, Rounding::same(14.0), Stroke::new(1.2_f32, BLUE));
                 }
                 let ir = Rect::from_min_size(rect.min + vec2(16.0, 16.0), vec2(46.0, 46.0));
                 p.rect_filled(ir, Rounding::same(11.0), BG1);
@@ -564,7 +564,7 @@ impl App {
                 let r = Rect::from_center_size(p + vec2(0.0, 8.0), vec2(150.0, 54.0));
                 pa.rect_filled(r.translate(vec2(0.0, 5.0)).expand(2.0), Rounding::same(14.0), Color32::from_black_alpha(70));
                 pa.rect_filled(r, Rounding::same(12.0), alpha(BG3, 245));
-                pa.rect_stroke(r, Rounding::same(12.0), Stroke::new(1.4, BLUE));
+                pa.rect_stroke(r, Rounding::same(12.0), Stroke::new(1.4_f32, BLUE));
                 fx_glyph(&pa, k, pos2(r.left() + 26.0, r.center().y), 24.0, SKY);
                 pa.text_tr(pos2(r.left() + 48.0, r.center().y - 7.0), Align2::LEFT_CENTER, info.name, bold(13.0), Color32::WHITE);
                 pa.text_tr(pos2(r.left() + 48.0, r.center().y + 10.0), Align2::LEFT_CENTER, info.tagline, body(11.0), DIM);

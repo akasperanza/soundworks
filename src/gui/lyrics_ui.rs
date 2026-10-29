@@ -91,7 +91,7 @@ impl App {
                         row_h = 0.0;
                     }
                     row_h = row_h.max(h);
-                    toks.push(LyrTok { sp: *sp, bg: *bg, x, y: ly, galley, word: *word });
+                    toks.push(LyrTok { bg: *bg, x, y: ly, galley, word: *word });
                     x += w + if *sp { sp_w } else { 0.0 };
                     any = true;
                 }
@@ -244,7 +244,7 @@ impl App {
                     .range(-10.0..=10.0)
                     .speed(0.01)
                     .custom_formatter(|v, _| format!("{v:+.2} {}", crate::i18n::tr("sn")))
-                    .custom_parser(|s| s.trim().trim_end_matches(|c| c == 's' || c == 'n').trim().replace(',', ".").parse::<f64>().ok());
+                    .custom_parser(|s| s.trim().trim_end_matches(['s', 'n']).trim().replace(',', ".").parse::<f64>().ok());
                 if ui.add(edit).on_hover_text_tr("Tıklayıp yaz (ör. -2,35) ya da sürükle").changed() {
                     next = (secs * 1000.0).round() as i32;
                 }
