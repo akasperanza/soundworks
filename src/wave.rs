@@ -126,7 +126,7 @@ pub fn compute(path: &Path) -> Option<Vec<f32>> {
     }
 
     let mut sorted = out.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(|a, b| a.total_cmp(b));
     let ref_v = sorted[(sorted.len() as f32 * 0.98) as usize].max(1e-4);
     for v in out.iter_mut() {
         *v = (*v / ref_v).clamp(0.0, 1.0).powf(0.8);

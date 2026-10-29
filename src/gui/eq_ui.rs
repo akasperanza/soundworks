@@ -84,7 +84,7 @@ impl App {
         for f in files {
             match apo::load(&f) {
                 Ok(_) => {
-                    let name = f.file_name().unwrap().to_string_lossy().to_string();
+                    let Some(name) = f.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
                     if std::fs::copy(&f, presets_dir().join(&name)).is_ok() {
                         last = Some(name);
                     }
@@ -111,7 +111,10 @@ impl App {
                 else {
                     return;
                 };
-                p.file_name().unwrap().to_string_lossy().to_string()
+                match p.file_name() {
+                    Some(n) => n.to_string_lossy().to_string(),
+                    None => return,
+                }
             }
         };
         if std::fs::write(presets_dir().join(&name), apo::to_text(&self.preset)).is_ok() {
@@ -178,8 +181,9 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_enabled_ui(self.dirty && self.preset_name.is_some(), |ui| {
                     if pill_button(ui, "Geri al", Some(Icon::Undo), false).clicked() {
-                        let n = self.preset_name.clone().unwrap();
-                        self.select(&n, false);
+                        if let Some(n) = self.preset_name.clone() {
+                            self.select(&n, false);
+                        }
                     }
                 });
                 ui.add_enabled_ui(self.dirty || self.preset_name.is_none(), |ui| {
@@ -416,7 +420,7 @@ impl App {
                 .enumerate()
                 .map(|(i, b)| (i, node_pos(b).distance(p)))
                 .filter(|(_, d)| *d < 13.0)
-                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                .min_by(|a, b| a.1.total_cmp(&b.1))
                 .map(|(i, _)| i)
         };
         let before = self.preset.clone();

@@ -375,11 +375,10 @@ impl App {
                     };
                     let idx = insert_index(&rects, skip, p);
                     let others: Vec<Rect> = rects.iter().enumerate().filter(|(i, _)| Some(*i) != skip).map(|(_, r)| *r).collect();
-                    let (x, top) = if idx < others.len() {
-                        (others[idx].left() - 13.0, others[idx].top())
-                    } else {
-                        let l = others.last().unwrap();
-                        (l.right() + 13.0, l.top())
+                    let (x, top) = match (others.get(idx), others.last().or(rects.first())) {
+                        (Some(r), _) => (r.left() - 13.0, r.top()),
+                        (None, Some(l)) => (l.right() + 13.0, l.top()),
+                        (None, None) => (self.fx_zone.left(), self.fx_zone.top()),
                     };
                     ui.painter().rect_filled(Rect::from_min_max(pos2(x - 1.5, top), pos2(x + 1.5, top + NODE_H)), Rounding::same(2.0), BLUE);
                     ui.painter().rect_filled(Rect::from_min_max(pos2(x - 5.0, top), pos2(x + 5.0, top + NODE_H)), Rounding::same(5.0), alpha(BLUE, 40));
