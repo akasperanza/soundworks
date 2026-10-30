@@ -329,15 +329,18 @@ impl App {
             return;
         }
         let mut vol_btn_rect = Rect::NOTHING;
-        egui::TopBottomPanel::bottom("bar")
-            .frame(Frame::none().fill(Color32::TRANSPARENT).inner_margin(Margin { left: 24.0, right: 24.0, top: 4.0, bottom: 12.0 }))
+        let bar_w = (ctx.screen_rect().width() * 0.7).clamp(560.0, 880.0).min(ctx.screen_rect().width() - 32.0);
+        egui::Area::new(Id::new("player_bar"))
+            .order(egui::Order::Middle)
+            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -14.0))
             .show(ctx, |ui| {
-                Frame::none()
-                    .fill(Color32::from_rgba_unmultiplied(10, 14, 24, 168))
-                    .stroke(Stroke::new(1.0_f32, alpha(Color32::WHITE, 26)))
-                    .rounding(Rounding::same(22.0))
-                    .inner_margin(Margin::symmetric(20.0, 9.0))
-                    .shadow(egui::epaint::Shadow { offset: vec2(0.0, 4.0), blur: 14.0, spread: 0.0, color: Color32::from_black_alpha(90) })
+                ui.set_width(bar_w);
+                let glass = Frame::none()
+                    .fill(Color32::from_rgba_unmultiplied(16, 22, 36, 172))
+                    .stroke(Stroke::new(1.0_f32, alpha(Color32::WHITE, 38)))
+                    .rounding(Rounding::same(24.0))
+                    .inner_margin(Margin::symmetric(18.0, 9.0))
+                    .shadow(egui::epaint::Shadow { offset: vec2(0.0, 10.0), blur: 30.0, spread: 0.0, color: Color32::from_black_alpha(120) })
                     .show(ui, |ui| {
                 ui.horizontal(|ui| {
 
@@ -464,6 +467,7 @@ impl App {
                     }
                 });
                     });
+                edge_highlight(ui.painter(), glass.response.rect, 22.0, 120);
             });
 
         let pointer = ctx.pointer_hover_pos();
@@ -789,7 +793,8 @@ impl App {
                         ui.set_width(ui.available_width());
                         self.band_faders(ui);
                     });
-                });
+                ui.add_space(96.0);
+});
             });
     }
 }

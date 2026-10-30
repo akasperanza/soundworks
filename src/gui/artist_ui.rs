@@ -195,7 +195,8 @@ impl App {
                     }
                 }
             });
-        });
+        ui.add_space(96.0);
+});
         if let Some(n) = open {
             self.open_artist(&n);
         }
@@ -399,7 +400,8 @@ impl App {
                 });
             }
             ui.add_space(20.0);
-        });
+        ui.add_space(96.0);
+});
         if back {
             self.lib_artist = None;
             self.artist_big.clear();

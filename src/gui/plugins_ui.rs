@@ -304,7 +304,8 @@ impl App {
                     ui.add_space(12.0);
                     self.plugins_settings(ui);
                     ui.add_space(12.0);
-                });
+                ui.add_space(96.0);
+});
             });
     }
 

@@ -61,7 +61,7 @@ impl App {
                         2 => self.settings_eq(ui),
                         _ => self.settings_app(ui),
                     }
-                    ui.add_space(12.0);
+                    ui.add_space(100.0);
                 });
                 ui.allocate_rect(full, Sense::hover());
                 if self.cfg != cfg_before {

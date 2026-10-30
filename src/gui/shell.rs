@@ -41,6 +41,12 @@ pub fn run(start_hidden: bool) -> anyhow::Result<()> {
             vp = vp.with_maximized(true);
         }
     }
+    if let Some([w, h]) = crate::devenv::dev_var("SW_SIZE").ok().and_then(|v| {
+        let mut it = v.split('x').filter_map(|n| n.parse::<f32>().ok());
+        Some([it.next()?, it.next()?])
+    }) {
+        vp = vp.with_inner_size([w, h]);
+    }
     #[allow(unused_mut)]
     let mut opts = eframe::NativeOptions { viewport: vp, ..Default::default() };
     #[cfg(feature = "devtools")]

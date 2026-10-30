@@ -141,7 +141,7 @@ impl App {
         let (mut understood, mut hide_forever) = (false, false);
         egui::Area::new(Id::new("tip_banner"))
             .order(egui::Order::Foreground)
-            .anchor(Align2::CENTER_BOTTOM, vec2(avail.center().x - screen.center().x, -(screen.bottom() - avail.bottom()) - 14.0 + (1.0 - e) * 18.0))
+            .anchor(Align2::CENTER_BOTTOM, vec2(avail.center().x - screen.center().x, -(screen.bottom() - avail.bottom()) - 96.0 + (1.0 - e) * 18.0))
             .show(ctx, |ui| {
                 ui.set_opacity(e);
                 Frame::none()

@@ -148,7 +148,7 @@ impl App {
         let (mut write, mut later, mut never) = (false, false, false);
         egui::Area::new(Id::new("meta_banner"))
             .order(egui::Order::Foreground)
-            .anchor(Align2::CENTER_BOTTOM, vec2(avail.center().x - screen.center().x, -(screen.bottom() - avail.bottom()) - 14.0 - lift + (1.0 - e) * 18.0))
+            .anchor(Align2::CENTER_BOTTOM, vec2(avail.center().x - screen.center().x, -(screen.bottom() - avail.bottom()) - 96.0 - lift + (1.0 - e) * 18.0))
             .show(ctx, |ui| {
                 ui.set_opacity(e);
                 Frame::none()

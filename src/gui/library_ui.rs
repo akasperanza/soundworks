@@ -269,39 +269,53 @@ impl App {
         }
         let tab = self.lib_tab.min(1) as usize;
         let active = !self.lib_q.trim().is_empty() || self.lib_genre.is_some();
-        ui.horizontal(|ui| {
+        let narrow = ui.available_width() < 980.0;
+        let hint = if tab == 0 { "Albüm ya da sanatçı filtrele…" } else { "Sanatçı filtrele…" };
+        let sorts: &[&str; 4] = if tab == 0 { &ALBUM_SORTS } else { &ARTIST_SORTS };
+        let search_w = if narrow { (ui.available_width() - 230.0).clamp(120.0, 320.0) } else { 230.0 };
+        let controls = |app: &mut App, ui: &mut egui::Ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            ui.spacing_mut().interact_size.y = 34.0;
-            let hint = if tab == 0 { "Albüm ya da sanatçı filtrele…" } else { "Sanatçı filtrele…" };
-            ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text_tr(hint).desired_width(230.0).margin(vec2(10.0, 7.0)));
             if !genres.is_empty() {
-                let shown = self.lib_genre.clone().unwrap_or_else(|| "Tüm türler".to_string());
+                let shown = app.lib_genre.clone().unwrap_or_else(|| "Tüm türler".to_string());
                 egui::ComboBox::from_id_salt("lib_genre").width(150.0).selected_text_tr(shown).show_ui(ui, |ui| {
-                    ui.selectable_value_tr(&mut self.lib_genre, None, "Tüm türler");
+                    ui.selectable_value_tr(&mut app.lib_genre, None, "Tüm türler");
                     for g in &genres {
-                        ui.selectable_value_tr(&mut self.lib_genre, Some(g.clone()), g);
+                        ui.selectable_value_tr(&mut app.lib_genre, Some(g.clone()), g);
                     }
                 });
             }
-            let names = if tab == 0 { ALBUM_SORTS } else { ARTIST_SORTS };
-            let mut sort = self.lib_sort[tab];
-            egui::ComboBox::from_id_salt(("lib_sort", tab)).width(150.0).selected_text_tr(format!("Sırala: {}", names[sort as usize % 4])).show_ui(ui, |ui| {
-                for (i, n) in names.iter().enumerate() {
+            let mut sort = app.lib_sort[tab];
+            egui::ComboBox::from_id_salt(("lib_sort", tab)).width(150.0).selected_text_tr(format!("Sırala: {}", sorts[sort as usize % 4])).show_ui(ui, |ui| {
+                for (i, n) in sorts.iter().enumerate() {
                     ui.selectable_value_tr(&mut sort, i as u8, *n);
                 }
             });
-            self.lib_sort[tab] = sort;
+            app.lib_sort[tab] = sort;
             if active && pill_button(ui, "Filtreyi temizle", Some(Icon::Close), false).clicked() {
-                self.lib_q.clear();
-                self.lib_genre = None;
+                app.lib_q.clear();
+                app.lib_genre = None;
             }
-
+        };
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            ui.spacing_mut().interact_size.y = 34.0;
+            ui.add(egui::TextEdit::singleline(&mut self.lib_q).hint_text_tr(hint).desired_width(search_w).margin(vec2(10.0, 7.0)));
+            if !narrow {
+                controls(self, ui);
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut tab_v = self.lib_tab;
                 view_switch(ui, &mut tab_v, &[(0u8, "Albümler"), (1u8, "Sanatçılar")]);
                 self.lib_tab = tab_v;
             });
         });
+        if narrow {
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().interact_size.y = 34.0;
+                controls(self, ui);
+            });
+        }
     }
 
     fn visible_albums(&self) -> Vec<usize> {
@@ -574,7 +588,8 @@ impl App {
                 });
             }
             ui.add_space(16.0);
-        });
+        ui.add_space(96.0);
+});
         self.apply_album_actions(open, play, remove);
     }
 
@@ -748,7 +763,8 @@ impl App {
                 }
             }
             ui.add_space(24.0);
-        });
+        ui.add_space(96.0);
+});
         if back {
             self.lib_open = None;
         }

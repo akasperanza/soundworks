@@ -136,47 +136,51 @@ impl App {
             None if !self.meta.title.is_empty() && self.play_bd.is_some() => format!("play|{}", self.cover_id),
             None => "default".to_string(),
         };
-        if key != self.bd_key {
-            let cover = match &opened {
-                Some(k) => image::open(library::cover_path(k)).ok().and_then(|img| {
-                    let rgba = img.to_rgba8();
-                    blurred_backdrop(rgba.width() as usize, rgba.height() as usize, rgba.as_raw())
-                }),
-                None if key != "default" => self.play_bd.clone(),
-                None => None,
+        let dt = ctx.input(|i| i.unstable_dt).clamp(0.001, 0.1);
+        if self.bd_layers.last().map(|l| &l.0) != Some(&key) {
+            let cached = self.bd_images.get(&key).cloned();
+            let image = match cached {
+                Some(img) => img,
+                None => {
+                    let cover = match &opened {
+                        Some(k) => image::open(library::cover_path(k)).ok().and_then(|img| {
+                            let rgba = img.to_rgba8();
+                            blurred_backdrop(rgba.width() as usize, rgba.height() as usize, rgba.as_raw())
+                        }),
+                        None if key != "default" => self.play_bd.clone(),
+                        None => None,
+                    };
+                    let img = std::sync::Arc::new(cover.unwrap_or_else(default_backdrop));
+                    if self.bd_images.len() > 24 {
+                        self.bd_images.clear();
+                    }
+                    self.bd_images.insert(key.clone(), img.clone());
+                    img
+                }
             };
-            let is_cover = cover.is_some();
-            self.bd_prev_cover = self.bd_cur_cover;
-            self.bd_cur_cover = is_cover;
-            if self.bd_cur.is_some() {
-                self.bd_prev = self.bd_cur.take();
-            }
-            self.bd_cur = Some(ctx.load_texture(format!("backdrop{key}"), cover.unwrap_or_else(default_backdrop), TextureOptions::LINEAR));
-            self.bd_key = key;
-            self.bd_t0 = Instant::now();
+            let tex = ctx.load_texture(format!("backdrop{key}"), (*image).clone(), TextureOptions::LINEAR);
+            self.bd_layers.push((key, tex, 0.0));
         }
-        let t = ease(self.bd_t0.elapsed().as_secs_f32() / 0.7);
-        if t >= 1.0 {
-            self.bd_prev = None;
-        } else {
+        let mut animating = false;
+        if let Some(top) = self.bd_layers.last_mut() {
+            if top.2 < 1.0 {
+                top.2 = (top.2 + dt / 0.9).min(1.0);
+                animating = true;
+            }
+            if top.2 >= 1.0 {
+                let keep = self.bd_layers.len() - 1;
+                self.bd_layers.drain(..keep);
+            }
+        }
+        if animating {
             ctx.request_repaint();
         }
         let screen = ctx.screen_rect();
         let painter = ctx.layer_painter(egui::LayerId::background());
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        if let Some(p) = &self.bd_prev {
-            painter.image(p.id(), screen, uv, Color32::WHITE);
-        }
-        if let Some(c) = &self.bd_cur {
-            painter.image(c.id(), screen, uv, alpha(Color32::WHITE, (255.0 * t) as u8));
-        }
-        let from = if self.bd_prev.is_some() && self.bd_prev_cover { 1.0 } else { 0.0 };
-        let to = if self.bd_cur_cover { 1.0 } else { 0.0 };
-        let strength = if self.bd_prev.is_some() { from + (to - from) * t } else { to };
-        if strength > 0.0 {
-            let top = alpha(Color32::BLACK, (96.0 * strength) as u8);
-            let bottom = alpha(Color32::BLACK, (170.0 * strength) as u8);
-            vgradient(&painter, screen, top, bottom);
+        for (i, (_, tex, a)) in self.bd_layers.iter().enumerate() {
+            let a = if i == 0 { 1.0 } else { ease(*a) };
+            painter.image(tex.id(), screen, uv, alpha(Color32::WHITE, (255.0 * a) as u8));
         }
     }
 
