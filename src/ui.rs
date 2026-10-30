@@ -294,18 +294,53 @@ pub fn panel_frame(inner: Margin, outer: Margin) -> Frame {
     Frame::none().fill(alpha(BG1, 150)).rounding(Rounding::same(14.0)).inner_margin(inner).outer_margin(outer)
 }
 
+pub fn raised_frame(inner: Margin) -> Frame {
+    Frame::none().fill(alpha(BG2, 200)).rounding(Rounding::same(14.0)).inner_margin(inner)
+}
+
 pub fn raised_shadow(ui: &Ui) {
     let rect = ui.max_rect();
     let painter = ui.painter().with_clip_rect(ui.ctx().screen_rect());
-    let shadow = egui::epaint::Shadow { offset: vec2(0.0, 10.0), blur: 26.0, spread: 0.0, color: Color32::from_black_alpha(150) };
-    painter.add(shadow.as_shape(rect, Rounding::same(14.0)));
+    let ambient = egui::epaint::Shadow { offset: vec2(0.0, 18.0), blur: 44.0, spread: 0.0, color: Color32::from_black_alpha(190) };
+    let contact = egui::epaint::Shadow { offset: vec2(0.0, 2.0), blur: 8.0, spread: 0.0, color: Color32::from_black_alpha(120) };
+    painter.add(ambient.as_shape(rect, Rounding::same(14.0)));
+    painter.add(contact.as_shape(rect, Rounding::same(14.0)));
 }
 
 pub fn raised_surface(ui: &Ui, inner: Margin) {
     let r = ui.max_rect();
     let panel = Rect::from_min_max(pos2(r.left() - inner.left, r.top() - inner.top), pos2(r.right() + inner.right, r.bottom() + inner.bottom));
-    panel_glow(ui.painter(), panel, 14.0, 170.0, Color32::WHITE, 13.0);
-    ui.painter().rect_stroke(panel.shrink(0.5), Rounding::same(14.0), Stroke::new(1.0_f32, alpha(Color32::WHITE, 24)));
+    ui.painter().rect_stroke(panel.shrink(0.5), Rounding::same(14.0), Stroke::new(1.0_f32, alpha(Color32::WHITE, 16)));
+    let (x0, x1, y) = (panel.left() + 14.0, panel.right() - 14.0, panel.top() + 1.0);
+    let mid = (x0 + x1) * 0.5;
+    let mut mesh = Mesh::default();
+    for (x, a) in [(x0, 0u8), (mid, 78), (x1, 0)] {
+        mesh.colored_vertex(pos2(x, y - 0.5), alpha(Color32::WHITE, a));
+        mesh.colored_vertex(pos2(x, y + 0.5), alpha(Color32::WHITE, a));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(1, 3, 2);
+    mesh.add_triangle(2, 3, 4);
+    mesh.add_triangle(3, 5, 4);
+    ui.painter().add(Shape::mesh(mesh));
+}
+
+pub fn default_backdrop() -> egui::ColorImage {
+    let n = 64usize;
+    let mut px = Vec::with_capacity(n * n * 4);
+    for y in 0..n {
+        for x in 0..n {
+            let (fx, fy) = (x as f32 / n as f32, y as f32 / n as f32);
+            let glow = |cx: f32, cy: f32, r: f32| (1.0 - ((fx - cx).powi(2) + (fy - cy).powi(2)).sqrt() / r).clamp(0.0, 1.0).powi(2);
+            let g1 = glow(0.15, -0.05, 0.95);
+            let g2 = glow(0.95, 0.35, 0.7);
+            let r = 9.0 + 6.0 * g1 + 18.0 * g2;
+            let g = 13.0 + 26.0 * g1 + 8.0 * g2;
+            let b = 22.0 + 70.0 * g1 + 40.0 * g2;
+            px.extend_from_slice(&[r as u8, g as u8, b as u8, 255]);
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([n, n], &px)
 }
 
 pub fn blurred_backdrop(w: usize, h: usize, rgba: &[u8]) -> Option<egui::ColorImage> {

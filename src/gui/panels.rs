@@ -519,7 +519,7 @@ impl App {
             .show(ctx, |ui| {
                 let avail = ui.available_size();
                 raised_shadow(ui);
-                panel_frame(inner, Margin::ZERO).show(ui, |ui| {
+                raised_frame(inner).show(ui, |ui| {
                 ui.set_min_size(vec2(avail.x - inner.left - inner.right, avail.y - inner.top - inner.bottom));
                 raised_surface(ui, inner);
                 ui.set_opacity(fade);

@@ -134,21 +134,24 @@ impl App {
         let key = match &opened {
             Some(k) => format!("album|{k}"),
             None if !self.meta.title.is_empty() && self.play_bd.is_some() => format!("play|{}", self.cover_id),
-            None => String::new(),
+            None => "default".to_string(),
         };
         if key != self.bd_key {
-            let image = match &opened {
+            let cover = match &opened {
                 Some(k) => image::open(library::cover_path(k)).ok().and_then(|img| {
                     let rgba = img.to_rgba8();
                     blurred_backdrop(rgba.width() as usize, rgba.height() as usize, rgba.as_raw())
                 }),
-                None if !key.is_empty() => self.play_bd.clone(),
+                None if key != "default" => self.play_bd.clone(),
                 None => None,
             };
+            let is_cover = cover.is_some();
+            self.bd_prev_cover = self.bd_cur_cover;
+            self.bd_cur_cover = is_cover;
             if self.bd_cur.is_some() {
                 self.bd_prev = self.bd_cur.take();
             }
-            self.bd_cur = image.map(|img| ctx.load_texture(format!("backdrop{key}"), img, TextureOptions::LINEAR));
+            self.bd_cur = Some(ctx.load_texture(format!("backdrop{key}"), cover.unwrap_or_else(default_backdrop), TextureOptions::LINEAR));
             self.bd_key = key;
             self.bd_t0 = Instant::now();
         }
@@ -161,16 +164,15 @@ impl App {
         let screen = ctx.screen_rect();
         let painter = ctx.layer_painter(egui::LayerId::background());
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
-        let mut strength = 0.0f32;
         if let Some(p) = &self.bd_prev {
-            let a = if self.bd_cur.is_some() { 1.0 } else { 1.0 - t };
-            painter.image(p.id(), screen, uv, alpha(Color32::WHITE, (255.0 * a) as u8));
-            strength = a;
+            painter.image(p.id(), screen, uv, Color32::WHITE);
         }
         if let Some(c) = &self.bd_cur {
             painter.image(c.id(), screen, uv, alpha(Color32::WHITE, (255.0 * t) as u8));
-            strength = 1.0;
         }
+        let from = if self.bd_prev.is_some() && self.bd_prev_cover { 1.0 } else { 0.0 };
+        let to = if self.bd_cur_cover { 1.0 } else { 0.0 };
+        let strength = if self.bd_prev.is_some() { from + (to - from) * t } else { to };
         if strength > 0.0 {
             let top = alpha(Color32::BLACK, (96.0 * strength) as u8);
             let bottom = alpha(Color32::BLACK, (170.0 * strength) as u8);
