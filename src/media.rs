@@ -39,13 +39,33 @@ pub fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
 }
 
+type Wake = Box<dyn Fn() + Send + Sync>;
+
+fn wake_slot() -> &'static Mutex<Option<Wake>> {
+    static W: OnceLock<Mutex<Option<Wake>>> = OnceLock::new();
+    W.get_or_init(|| Mutex::new(None))
+}
+
+/// Queues a command that came from somewhere other than the hotkey thread (taskbar buttons, system media overlay).
+pub fn push(c: MediaCmd) {
+    queue().lock().unwrap().push_back(c);
+    if let Some(w) = wake_slot().lock().unwrap().as_ref() {
+        w();
+    }
+}
+
 pub fn drain() -> Vec<MediaCmd> {
     queue().lock().unwrap().drain(..).collect()
 }
 
-pub fn start(wake: impl Fn() + Send + 'static) {
+pub fn start(wake: impl Fn() + Send + Sync + 'static) {
     if STARTED.swap(true, Ordering::SeqCst) {
         return;
+    }
+    let wake = std::sync::Arc::new(wake);
+    {
+        let w = wake.clone();
+        *wake_slot().lock().unwrap() = Some(Box::new(move || w()));
     }
     std::thread::spawn(move || {
         use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey, MOD_NOREPEAT};

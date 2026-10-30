@@ -726,4 +726,8 @@ pub static ENTRIES: &[(&str, &str, &str)] = &[
     ("Kapak bulundu", "Cover found", "Cover gefunden"),
     ("Bu albüm için uygun bir kapak bulunamadı", "No suitable cover found for this album", "Kein passendes Cover für dieses Album gefunden"),
     ("İnternete ulaşılamadı", "Couldn't reach the internet", "Keine Internetverbindung"),
+    ("Albüme git", "Go to album", "Zum Album"),
+    ("Önceki", "Previous", "Zurück"),
+    ("Sonraki", "Next", "Weiter"),
+    ("Duraklat", "Pause", "Pause"),
 ];

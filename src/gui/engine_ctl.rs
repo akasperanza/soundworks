@@ -195,7 +195,21 @@ impl App {
 
     pub(super) fn tick_media(&mut self) {
         crate::media::set_enabled(self.running.is_some() && !self.cfg.use_loopback);
+        let np = crate::winmedia::NowPlaying {
+            active: self.player.current().is_some() && !self.cfg.use_loopback,
+            playing: self.player.playing.load(Relaxed),
+            title: self.meta.title.clone(),
+            artist: self.meta.artist.clone(),
+            album: self.meta.album.clone(),
+            cover: self.np_cover.clone(),
+            cover_id: self.cover_id as u64,
+        };
+        let hwnd = if crate::winmedia::installed() { None } else { crate::winmedia::own_window() };
+        crate::winmedia::sync(hwnd, &np);
         for c in crate::media::drain() {
+            if self.cfg.use_loopback {
+                continue;
+            }
             match c {
                 crate::media::MediaCmd::PlayPause => self.play_pressed(),
                 crate::media::MediaCmd::Next => self.player.next(),

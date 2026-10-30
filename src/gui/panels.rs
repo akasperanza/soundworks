@@ -35,6 +35,13 @@ impl App {
             } else {
                 BLUE
             };
+            self.np_cover = m.cover.as_ref().and_then(|(w, h, d)| {
+                let path = library::data_dir().join("now_playing.png");
+                let _ = std::fs::create_dir_all(path.parent()?);
+                let img = image::RgbaImage::from_raw(*w, *h, d.clone())?;
+                img.save_with_format(&path, image::ImageFormat::Png).ok()?;
+                Some(path)
+            });
             self.play_bd = m.cover.as_ref().and_then(|(w, h, d)| blurred_backdrop(*w as usize, *h as usize, d));
             m.cover = None;
             self.meta = m;
@@ -330,6 +337,10 @@ impl App {
         }
         let mut vol_btn_rect = Rect::NOTHING;
         let mut bar_rect = Rect::NOTHING;
+        let playing_album: Option<(String, String)> = self
+            .current_path()
+            .and_then(|p| self.lib.albums.iter().find(|a| a.tracks.iter().any(|t| t.path == p)).map(|a| (a.key.clone(), a.artist.clone())));
+        let (mut goto_album, mut goto_artist) = (false, false);
         let screen = ctx.screen_rect();
         let right_w = self.right_panels_width(ctx);
         let free_w = (screen.width() - right_w).max(0.0);
@@ -356,7 +367,10 @@ impl App {
                     .show(ui, |ui| {
                 ui.horizontal(|ui| {
 
-                    let (r, _) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::hover());
+                    let (r, cover_resp) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::click());
+                    if playing_album.is_some() {
+                        goto_album |= cover_resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text_tr("Albüme git").clicked();
+                    }
                     match &self.cover_tex {
                         Some(t) => rounded_image(ui.painter(), t.id(), r, 6.0, Color32::WHITE),
                         None => {
@@ -372,8 +386,18 @@ impl App {
                             } else {
                                 (self.meta.title.clone(), self.meta.artist.clone())
                             };
-                            ui.add(egui::Label::new(RichText::new(t).font(bold(13.5))).wrap());
-                            ui.add(egui::Label::new(RichText::new(a).font(body(12.0)).color(DIM)).wrap());
+                            let link = |ui: &mut egui::Ui, text: String, font: egui::FontId, color: Color32, enabled: bool| -> bool {
+                                let r = ui.add(egui::Label::new(RichText::new(text).font(font).color(color)).wrap().sense(if enabled { Sense::click() } else { Sense::hover() }));
+                                if enabled && r.hovered() {
+                                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::PointingHand);
+                                    let y = r.rect.bottom() - 1.0;
+                                    ui.painter().line_segment([pos2(r.rect.left(), y), pos2(r.rect.right(), y)], Stroke::new(1.0_f32, alpha(color, 170)));
+                                }
+                                enabled && r.clicked()
+                            };
+                            let has = playing_album.is_some();
+                            goto_album |= link(ui, t, bold(13.5), Color32::WHITE, has);
+                            goto_artist |= link(ui, a, body(12.0), DIM, has);
                         });
                     });
                     let playing = self.player.playing.load(Relaxed);
@@ -524,6 +548,15 @@ impl App {
             self.vol_popup_rect = area.response.rect.union(vol_btn_rect);
         } else {
             self.vol_popup_rect = Rect::NOTHING;
+        }
+        if let Some((key, artist)) = playing_album {
+            if goto_album {
+                self.set_view(View::Library);
+                self.lib_artist = None;
+                self.lib_open = Some(key);
+            } else if goto_artist {
+                self.open_artist(&artist);
+            }
         }
         self.big_waveform(ctx, bar_rect);
     }

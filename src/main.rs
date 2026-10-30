@@ -28,6 +28,7 @@ mod web;
 mod player;
 mod proof;
 mod media;
+mod winmedia;
 mod recover;
 
 use anyhow::{bail, Result};

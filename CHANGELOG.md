@@ -9,14 +9,23 @@ Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları 
 <!-- tr -->
 - Waveform'a gelince üzerinde büyük bir ilerleme çubuğu açılır: oynatıcı çubuğunun tamamını kaplar, ikonların üstüne çıkar ve istediğin yere kolayca tıklayıp sürükleyebilirsin
 - Fare ayrılınca çubuk eski haline döner
+- Windows medya oynatıcısı olarak tanınır: kulaklık ve klavye medya tuşları, Windows ses/medya paneli ve kilit ekranı Soundworks'ü kontrol eder ve çalan parçayı gösterir
+- Görev çubuğu önizlemesinde önceki / oynat-duraklat / sonraki düğmeleri çıkar
+- Oynatıcıdaki parça adına ya da albüm kapağına tıklayınca albüme, sanatçı adına tıklayınca sanatçıya gidilir
 
 <!-- en -->
 - Hovering the waveform opens a large scrubber over the whole player bar, on top of the icons, so you can click and drag to any position easily
 - It collapses back when the pointer leaves
+- Soundworks is now recognized by Windows as a media player: headphone and keyboard media keys, the Windows volume/media flyout and the lock screen control it and show what's playing
+- The taskbar thumbnail now has previous / play-pause / next buttons
+- In the player, clicking the track title or the cover opens the album, clicking the artist name opens the artist
 
 <!-- de -->
 - Beim Überfahren der Waveform öffnet sich ein großer Positionsregler über der ganzen Player-Leiste, auch über den Symbolen, zum bequemen Klicken und Ziehen
 - Er klappt wieder ein, sobald der Mauszeiger die Leiste verlässt
+- Windows erkennt Soundworks jetzt als Mediaplayer: Kopfhörer- und Tastatur-Medientasten, das Windows-Lautstärke-/Medienfenster und der Sperrbildschirm steuern es und zeigen den laufenden Titel
+- Die Taskleisten-Vorschau hat jetzt Schaltflächen für Zurück / Wiedergabe-Pause / Weiter
+- Im Player öffnet ein Klick auf Titel oder Cover das Album, ein Klick auf den Künstlernamen den Künstler
 
 ## 0.5.6
 
