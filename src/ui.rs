@@ -357,31 +357,6 @@ pub fn blurred_backdrop(w: usize, h: usize, rgba: &[u8]) -> Option<egui::ColorIm
     Some(egui::ColorImage::from_rgba_unmultiplied([64, 64], soft.as_raw()))
 }
 
-pub fn panel_glow(painter: &Painter, panel: Rect, radius: f32, height: f32, color: Color32, a: f32) {
-    if a < 1.0 {
-        return;
-    }
-    let h = height.min(panel.height());
-    let mut ys: Vec<f32> = (0..=10).map(|k| radius * k as f32 / 10.0).collect();
-    ys.extend((1..=24).map(|k| radius + (h - radius).max(0.0) * k as f32 / 24.0));
-    let mut mesh = Mesh::default();
-    for (k, dy) in ys.iter().enumerate() {
-        let dy = *dy;
-        let f = (dy / h).clamp(0.0, 1.0);
-        let y = panel.top() + dy;
-        let inset = if dy < radius { radius - (radius * radius - (radius - dy) * (radius - dy)).max(0.0).sqrt() } else { 0.0 };
-        let col = alpha(color, (a * (1.0 - f) * (1.0 - f * 0.35)) as u8);
-        mesh.colored_vertex(pos2(panel.left() + inset, y), col);
-        mesh.colored_vertex(pos2(panel.right() - inset, y), col);
-        if k > 0 {
-            let i = (k * 2) as u32;
-            mesh.add_triangle(i - 2, i - 1, i);
-            mesh.add_triangle(i - 1, i + 1, i);
-        }
-    }
-    painter.add(Shape::mesh(mesh));
-}
-
 pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<R> {
     Frame::none()
         .fill(BG2)
