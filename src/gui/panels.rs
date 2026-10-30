@@ -329,6 +329,7 @@ impl App {
             return;
         }
         let mut vol_btn_rect = Rect::NOTHING;
+        let mut bar_rect = Rect::NOTHING;
         let screen = ctx.screen_rect();
         let right_w = self.right_panels_width(ctx);
         let free_w = (screen.width() - right_w).max(0.0);
@@ -418,8 +419,11 @@ impl App {
                     let progress = self.wave_drag.unwrap_or(if dur > 0.0 { (pos / dur) as f32 } else { 0.0 });
 
                     let (wresp, preview, commit) =
-                        waveform_seek(ui, vec2(seek_w, 36.0), wave.as_ref().map(|v| v.as_slice()), progress, dur > 0.0 && cur.is_some());
-                    self.wave_drag = preview;
+                        waveform_seek(ui, vec2(seek_w, 36.0), wave.as_ref().map(|v| v.as_slice()), progress, dur > 0.0 && cur.is_some(), true);
+                    self.wave_rect = wresp.rect;
+                    if !self.wave_big {
+                        self.wave_drag = preview;
+                    }
                     if let Some(f) = commit {
                         self.player.seek(f as f64 * dur);
                         self.wave_drag = None;
@@ -478,6 +482,7 @@ impl App {
                     }
                 });
                     });
+                bar_rect = glass.response.rect;
                 edge_highlight(ui.painter(), glass.response.rect, 22.0, 120);
             });
 
@@ -520,6 +525,66 @@ impl App {
         } else {
             self.vol_popup_rect = Rect::NOTHING;
         }
+        self.big_waveform(ctx, bar_rect);
+    }
+
+    /// While the pointer is over the waveform, a large scrubber covers the whole bar (icons included).
+    fn big_waveform(&mut self, ctx: &egui::Context, bar: Rect) {
+        let dur = self.player.duration();
+        let cur = self.current_path();
+        let active = dur > 0.0 && cur.is_some();
+        let modal = self.meta_edit.is_some() || self.del_confirm.is_some() || self.dsd_dialog.is_some() || self.search_open;
+        let pointer = ctx.pointer_hover_pos();
+        let over = pointer.map_or(false, |p| self.wave_rect.contains(p) || (self.wave_big && self.wave_big_rect.contains(p)));
+        let dragging = self.wave_big && ctx.input(|i| i.pointer.primary_down());
+        self.wave_big = active && !modal && bar.is_positive() && (over || dragging || crate::devenv::dev_var("SW_BIGWAVE").is_ok());
+        let t = ctx.animate_bool_with_time(Id::new("wave_big_t"), self.wave_big, 0.12);
+        if t <= 0.01 || !bar.is_positive() {
+            if !self.wave_big {
+                self.wave_big_rect = Rect::NOTHING;
+            }
+            return;
+        }
+        let big = Rect::from_min_max(pos2(bar.left(), bar.top() - 40.0), bar.right_bottom());
+        let wave = cur.as_ref().and_then(|p| self.wave_cache.get(p).cloned());
+        let pos = self.player.position();
+        let progress = self.wave_drag.unwrap_or(if dur > 0.0 { (pos / dur) as f32 } else { 0.0 });
+        let mut result = (None, None);
+        let area = egui::Area::new(Id::new("wave_big")).order(egui::Order::Foreground).fixed_pos(big.min + vec2(0.0, (1.0 - ease(t)) * 10.0)).show(ctx, |ui| {
+            ui.set_opacity(t);
+            Frame::none()
+                .fill(Color32::from_rgba_unmultiplied(12, 17, 30, 252))
+                .stroke(Stroke::new(1.0_f32, alpha(Color32::WHITE, 46)))
+                .rounding(Rounding::same(26.0))
+                .inner_margin(Margin::symmetric(24.0, 14.0))
+                .shadow(egui::epaint::Shadow { offset: vec2(0.0, 10.0), blur: 30.0, spread: 0.0, color: Color32::from_black_alpha(130) })
+                .show(ui, |ui| {
+                    ui.set_width(big.width() - 48.0);
+                    ui.set_height(big.height() - 28.0);
+                    ui.horizontal_centered(|ui| {
+                        ui.spacing_mut().item_spacing.x = 14.0;
+                        let shown = if dur > 0.0 { progress as f64 * dur } else { pos };
+                        ui.label(RichText::new(fmt_time(shown)).font(bold(13.0)).color(Color32::WHITE));
+                        let w = (ui.available_width() - 56.0).max(100.0);
+                        let (resp, preview, commit) = waveform_seek(ui, vec2(w, big.height() - 28.0), wave.as_ref().map(|v| v.as_slice()), progress, true, false);
+                        if let Some(hp) = resp.hover_pos() {
+                            let f = ((hp.x - resp.rect.left()) / resp.rect.width()).clamp(0.0, 1.0);
+                            resp.on_hover_ui_at_pointer(|ui| {
+                                ui.label(RichText::new(fmt_time(f as f64 * dur)).font(bold(12.0)));
+                            });
+                        }
+                        result = (preview, commit);
+                        ui.label(RichText::new(fmt_time(dur)).font(body(13.0)).color(DIM));
+                    });
+                });
+        });
+        self.wave_big_rect = area.response.rect;
+        self.wave_drag = result.0;
+        if let Some(f) = result.1 {
+            self.player.seek(f as f64 * dur);
+            self.wave_drag = None;
+        }
+        ctx.request_repaint();
     }
 
     fn side_hide(&self, ctx: &egui::Context) -> f32 {

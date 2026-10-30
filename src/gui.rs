@@ -487,6 +487,9 @@ pub struct App {
     wave_fetcher: wave::WaveFetcher,
     wave_cache: HashMap<String, Arc<Vec<f32>>>,
     wave_drag: Option<f32>,
+    wave_rect: Rect,
+    wave_big: bool,
+    wave_big_rect: Rect,
     lyr_cache: HashMap<String, Lyrics>,
     lyr_failed: HashSet<String>,
     lyr_layout: Option<LyrLayout>,
@@ -703,6 +706,9 @@ impl App {
             wave_fetcher: wave::WaveFetcher::new(),
             wave_cache: HashMap::new(),
             wave_drag: None,
+            wave_rect: Rect::NOTHING,
+            wave_big: false,
+            wave_big_rect: Rect::NOTHING,
             lyr_cache: HashMap::new(),
             lyr_failed: HashSet::new(),
             lyr_layout: None,
@@ -1212,7 +1218,7 @@ struct LyrLayout {
     lines: Vec<LyrLine>,
 }
 
-fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, progress: f32, active: bool) -> (egui::Response, Option<f32>, Option<f32>) {
+fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, progress: f32, active: bool, can_grow: bool) -> (egui::Response, Option<f32>, Option<f32>) {
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let resp = ui.interact(rect.expand2(vec2(0.0, 16.0)), ui.id().with("wave_seek"), Sense::click_and_drag());
     let (bar, gap) = (2.0f32, 1.6f32);
@@ -1221,7 +1227,7 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
     let mid = rect.center().y;
     let time = ui.input(|i| i.time) as f32;
     // grows taller while the pointer is near or dragging, so the target is easy to hit
-    let grow = ui.ctx().animate_bool_with_time(resp.id.with("grow"), (resp.hovered() || resp.dragged()) && active, 0.16);
+    let grow = ui.ctx().animate_bool_with_time(resp.id.with("grow"), (resp.hovered() || resp.dragged()) && active && can_grow, 0.16);
     let half = (rect.height() * 0.5 - 1.0) * (1.0 + 0.5 * ease(grow));
     let painter = ui.painter_at(rect.expand2(vec2(0.0, half - rect.height() * 0.5 + 4.0)));
     if grow > 0.003 && grow < 0.997 {

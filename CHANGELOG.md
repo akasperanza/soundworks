@@ -4,6 +4,20 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.7
+
+<!-- tr -->
+- Waveform'a gelince üzerinde büyük bir ilerleme çubuğu açılır: oynatıcı çubuğunun tamamını kaplar, ikonların üstüne çıkar ve istediğin yere kolayca tıklayıp sürükleyebilirsin
+- Fare ayrılınca çubuk eski haline döner
+
+<!-- en -->
+- Hovering the waveform opens a large scrubber over the whole player bar, on top of the icons, so you can click and drag to any position easily
+- It collapses back when the pointer leaves
+
+<!-- de -->
+- Beim Überfahren der Waveform öffnet sich ein großer Positionsregler über der ganzen Player-Leiste, auch über den Symbolen, zum bequemen Klicken und Ziehen
+- Er klappt wieder ein, sobald der Mauszeiger die Leiste verlässt
+
 ## 0.5.6
 
 <!-- tr -->
