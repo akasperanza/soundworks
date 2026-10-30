@@ -329,11 +329,22 @@ impl App {
             return;
         }
         let mut vol_btn_rect = Rect::NOTHING;
-        let bar_w = (ctx.screen_rect().width() * 0.7).clamp(560.0, 880.0).min(ctx.screen_rect().width() - 32.0);
+        let screen = ctx.screen_rect();
+        let right_w = self.right_panels_width(ctx);
+        let free_w = (screen.width() - right_w).max(0.0);
+        let bar_w = (free_w * 0.72).clamp(780.0, 860.0).min(screen.width() - 32.0);
+        let shift = -(right_w * 0.5).min((screen.width() - bar_w) * 0.5 - 40.0).max(0.0);
         egui::Area::new(Id::new("player_bar"))
             .order(egui::Order::Middle)
-            .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -14.0))
+            .anchor(Align2::CENTER_BOTTOM, vec2(shift, -14.0))
             .show(ctx, |ui| {
+                let scrim_h = 150.0;
+                vgradient(
+                    &ui.painter().with_clip_rect(screen),
+                    Rect::from_min_max(pos2(screen.left(), screen.bottom() - scrim_h), screen.right_bottom()),
+                    alpha(Color32::BLACK, 0),
+                    alpha(Color32::BLACK, 205),
+                );
                 ui.set_width(bar_w);
                 let glass = Frame::none()
                     .fill(Color32::from_rgba_unmultiplied(16, 22, 36, 172))
@@ -511,13 +522,34 @@ impl App {
         }
     }
 
+    fn side_hide(&self, ctx: &egui::Context) -> f32 {
+        let other = (self.lyrics_open && !self.cfg.use_loopback) || self.queue_open || self.plugin_panel.is_some();
+        ease(ctx.animate_bool_with_time(Id::new("side_hide"), other, 0.24))
+    }
+
+    fn right_panels_width(&self, ctx: &egui::Context) -> f32 {
+        let anim = |id: &str, on: bool| ease(ctx.animate_bool_with_time(Id::new(id), on, 0.24));
+        let mut w = 0.0;
+        if self.view == View::Motor {
+            w += 318.0 * (1.0 - self.side_hide(ctx));
+        }
+        w += 450.0 * anim("lyr_side", self.lyrics_open && !self.cfg.use_loopback);
+        w += 400.0 * anim("queue_side", self.queue_open);
+        w += 380.0 * anim("plug_side", self.plugin_panel.is_some());
+        w
+    }
+
     pub(super) fn side_panel(&mut self, ctx: &egui::Context, fade: f32) {
         if dev_skip("side") {
             return;
         }
+        let keep = 1.0 - self.side_hide(ctx);
+        if keep < 0.2 {
+            return;
+        }
         let inner = Margin { left: 22.0, right: 22.0, top: 20.0, bottom: 18.0 };
         egui::SidePanel::right("side")
-            .exact_width(318.0)
+            .exact_width(318.0 * keep)
             .resizable(false)
             .frame(Frame::none().inner_margin(Margin { left: 12.0, right: 12.0, top: 2.0, bottom: 2.0 }))
             .show(ctx, |ui| {

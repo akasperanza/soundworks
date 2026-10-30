@@ -370,12 +370,14 @@ pub fn blurred_backdrop(w: usize, h: usize, rgba: &[u8]) -> Option<egui::ColorIm
     for p in soft.pixels_mut() {
         let lum = 0.3 * p[0] as f32 + 0.59 * p[1] as f32 + 0.11 * p[2] as f32;
         for c in 0..3 {
-            p[c] = (lum + (p[c] as f32 - lum) * 1.35).clamp(0.0, 255.0) as u8;
+            p[c] = (lum + (p[c] as f32 - lum) * 1.2).clamp(0.0, 255.0) as u8;
         }
         p[3] = 255;
     }
+    let mean = soft.pixels().map(|p| 0.3 * p[0] as f32 + 0.59 * p[1] as f32 + 0.11 * p[2] as f32).sum::<f32>() / (64.0 * 64.0);
+    let k = (95.0 / mean.max(1.0)).clamp(0.62, 1.0);
     let mut raw = soft.into_raw();
-    darken_rows(&mut raw, 64, 0.62, 0.33);
+    darken_rows(&mut raw, 64, 0.62 * k, 0.33 * k);
     Some(egui::ColorImage::from_rgba_unmultiplied([64, 64], &raw))
 }
 
