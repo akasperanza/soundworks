@@ -8,6 +8,7 @@ mod biquad;
 mod devenv;
 mod dsd;
 mod engine;
+mod fileops;
 mod fsutil;
 mod fx;
 mod gui;

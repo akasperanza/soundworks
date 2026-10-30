@@ -116,6 +116,12 @@ pub(super) fn apply(app: &mut App) {
             probe: DsdProbe::Idle,
         });
     }
+    if let Ok(v) = crate::devenv::dev_var("SW_EDIT_META") {
+        app.dev_meta_edit(v == "album");
+    }
+    if let Ok(v) = crate::devenv::dev_var("SW_CONFIRM") {
+        app.dev_confirm(v == "delete");
+    }
     if crate::devenv::dev_var("SW_LYRICS").is_ok() {
         app.lyrics_open = true;
     }

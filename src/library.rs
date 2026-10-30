@@ -71,6 +71,12 @@ pub struct Library {
 
     #[serde(default)]
     pub online_tried: std::collections::BTreeMap<String, u64>,
+
+    #[serde(default)]
+    pub cover_tried: std::collections::BTreeMap<String, u64>,
+
+    #[serde(default)]
+    pub ignored: std::collections::BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +198,20 @@ impl Library {
             || Path::new(&t.path).file_stem().map_or(false, |s| s.to_string_lossy() == t.title.as_str())
     }
 
+    pub fn cover_jobs(&self, limit: usize, skip: impl Fn(&str) -> bool) -> Vec<(String, String, String)> {
+        let mut out = vec![];
+        for a in &self.albums {
+            if out.len() >= limit {
+                break;
+            }
+            if a.artist == UNKNOWN_ARTIST || a.title.trim().is_empty() || self.cover_tried.contains_key(&a.key) || skip(&a.key) || cover_path(&a.key).exists() {
+                continue;
+            }
+            out.push((a.key.clone(), a.artist.clone(), a.title.clone()));
+        }
+        out
+    }
+
     pub fn online_progress(&self, all: bool) -> (usize, usize) {
         let (mut done, mut total) = (0, 0);
         for a in &self.albums {
@@ -302,6 +322,23 @@ impl Library {
     pub fn all_paths(&self) -> Vec<String> {
         self.albums.iter().flat_map(|a| a.tracks.iter().map(|t| t.path.clone())).collect()
     }
+
+    /// Paths a folder scan must not add again: everything in the library plus tracks the user removed.
+    pub fn known_paths(&self) -> HashSet<String> {
+        self.all_paths().into_iter().chain(self.ignored.iter().cloned()).collect()
+    }
+
+    pub fn forget_tracks(&mut self, paths: &HashSet<String>, keep_out_of_scans: bool) -> usize {
+        let n = self.remove_missing(paths);
+        for p in paths {
+            self.online.remove(p);
+            self.online_tried.remove(p);
+            if keep_out_of_scans {
+                self.ignored.insert(p.clone());
+            }
+        }
+        n
+    }
 }
 
 pub fn spawn_missing_check(paths: Vec<String>) -> Receiver<HashSet<String>> {
@@ -367,7 +404,7 @@ fn read_rev(r: &MetadataRevision, raw: &mut Raw) {
     }
 }
 
-fn make_key(album: &str, artist: &str, path: &Path) -> (String, String) {
+pub(crate) fn make_key(album: &str, artist: &str, path: &Path) -> (String, String) {
     if album.trim().is_empty() {
         let dir = path.parent().map(|p| p.to_string_lossy().to_lowercase()).unwrap_or_default();
         let name = path
@@ -592,6 +629,21 @@ mod tests {
         assert_eq!(lib.albums.len(), 1);
         assert_eq!(lib.albums[0].tracks.len(), 1);
         assert_eq!(lib.all_paths(), vec!["a1.flac".to_string()]);
+    }
+
+    #[test]
+    fn removed_tracks_stay_out_of_later_scans() {
+        let mut lib = Library::default();
+        lib.add(&info("a1.flac", "x", 1));
+        lib.add(&info("a2.flac", "x", 2));
+        let gone: HashSet<String> = ["a2.flac".to_string()].into_iter().collect();
+        assert_eq!(lib.forget_tracks(&gone, true), 1);
+        assert!(lib.known_paths().contains("a2.flac") && lib.known_paths().contains("a1.flac"));
+        assert_eq!(lib.all_paths(), vec!["a1.flac".to_string()]);
+        let back: HashSet<String> = ["a1.flac".to_string()].into_iter().collect();
+        lib.forget_tracks(&back, false);
+        assert!(!lib.known_paths().contains("a1.flac"));
+        assert!(lib.albums.is_empty());
     }
 
     #[test]

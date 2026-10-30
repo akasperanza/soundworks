@@ -54,6 +54,28 @@ impl App {
             self.lib_tex.retain(|_, v| v.is_some());
             self.meta_unsaved += 1;
         }
+        for (key, res) in self.cover_fetcher.poll() {
+            match res {
+                Ok(found) => {
+                    self.lib.cover_tried.insert(key.clone(), epoch_now());
+                    if found {
+                        self.lib_tex.remove(&key);
+                        self.bd_images.remove(&format!("album|{key}"));
+                    }
+                    if self.cover_manual.remove(&key) {
+                        self.say(if found { "Kapak bulundu" } else { "Bu albüm için uygun bir kapak bulunamadı" });
+                    }
+                    self.meta_unsaved += 1;
+                }
+                Err(_) => {
+                    if self.cover_manual.remove(&key) {
+                        self.say("İnternete ulaşılamadı");
+                    } else {
+                        self.meta_pause = Some(Instant::now());
+                    }
+                }
+            }
+        }
         if self.meta_pause.map_or(false, |t| t.elapsed() >= ERROR_PAUSE) {
             self.meta_pause = None;
         }
@@ -68,7 +90,13 @@ impl App {
                 }
             }
         }
-        if self.meta_unsaved > 0 && (self.meta_unsaved >= 10 || self.meta_fetcher.queue_len() == 0) {
+        if self.cfg.meta_online && self.cfg.meta_covers && self.meta_pause.is_none() && self.lib_scans.is_empty() && self.cover_fetcher.queue_len() < 2 && self.cover_check.elapsed() >= Duration::from_secs(2) {
+            self.cover_check = Instant::now();
+            for (key, artist, album) in self.lib.cover_jobs(2, |k| self.cover_fetcher.is_pending(k)) {
+                self.cover_fetcher.request(key, artist, album);
+            }
+        }
+        if self.meta_unsaved > 0 && (self.meta_unsaved >= 10 || (self.meta_fetcher.queue_len() == 0 && self.cover_fetcher.queue_len() == 0)) {
             self.lib.save();
             self.meta_unsaved = 0;
         }
@@ -80,7 +108,7 @@ impl App {
                 _ => {}
             }
         }
-        if self.meta_fetcher.queue_len() > 0 || self.meta_write_rx.is_some() {
+        if self.meta_fetcher.queue_len() > 0 || self.cover_fetcher.queue_len() > 0 || self.meta_write_rx.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
         }
     }
@@ -199,6 +227,14 @@ impl App {
                 "Albüm, sanatçı, yıl ve parça numarası Deezer ve MusicBrainz'dan alınır",
                 "Dosya adı ve süreyle eşleştirir; emin olmadığı sonucu kullanmaz. Etiketi dolu alanların yerine geçmez.",
                 &mut self.cfg.meta_online,
+            );
+            row_sep(ui);
+            toggle_row(
+                ui,
+                "Eksik albüm kapaklarını bul",
+                "Kapağı olmayan albümlerin kapağı Deezer'dan indirilir",
+                "Albüm ve sanatçı adı eşleşmezse kapak kullanılmaz. Dosyalara dokunulmaz, kapaklar yalnızca Soundworks'te görünür.",
+                &mut self.cfg.meta_covers,
             );
             row_sep(ui);
             setting_row(ui, "Hangi parçalar", "Tüm şarkılarda etiketi dolu parçaların boş alanları (yıl, albüm sanatçısı gibi) tamamlanır", "", |ui| {

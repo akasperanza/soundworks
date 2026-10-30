@@ -82,6 +82,54 @@ fn lookup_loop(queue: Queue, pending: Arc<Mutex<HashSet<String>>>, tx: Sender<Lo
     }
 }
 
+pub type CoverResult = (String, Result<bool, String>);
+
+pub struct CoverFetcher {
+    tx: Sender<(String, String, String)>,
+    pending: Arc<Mutex<HashSet<String>>>,
+    rx: Receiver<CoverResult>,
+}
+
+impl CoverFetcher {
+    pub fn new() -> CoverFetcher {
+        let (tx, jobs) = channel::<(String, String, String)>();
+        let (rtx, rx) = channel();
+        let pending = Arc::new(Mutex::new(HashSet::new()));
+        {
+            let pending = pending.clone();
+            std::thread::spawn(move || {
+                while let Ok((key, artist, album)) = jobs.recv() {
+                    let res = web::album_cover_lookup(&artist, &album, &crate::library::cover_path(&key));
+                    pending.lock().unwrap().remove(&key);
+                    if rtx.send((key, res)).is_err() {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(250));
+                }
+            });
+        }
+        CoverFetcher { tx, pending, rx }
+    }
+
+    pub fn is_pending(&self, key: &str) -> bool {
+        self.pending.lock().unwrap().contains(key)
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.pending.lock().unwrap().len()
+    }
+
+    pub fn request(&self, key: String, artist: String, album: String) {
+        if self.pending.lock().unwrap().insert(key.clone()) {
+            let _ = self.tx.send((key, artist, album));
+        }
+    }
+
+    pub fn poll(&self) -> Vec<CoverResult> {
+        self.rx.try_iter().collect()
+    }
+}
+
 pub struct WriteReport {
     pub entries: Vec<WriteLogEntry>,
     pub failed: usize,

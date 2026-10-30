@@ -142,6 +142,7 @@ struct Config {
     fetch_genres: bool,
     meta_online: bool,
     meta_all: bool,
+    meta_covers: bool,
     meta_write: u8,
     group_by_genre: bool,
 
@@ -212,6 +213,7 @@ impl Default for Config {
             fetch_genres: true,
             meta_online: true,
             meta_all: false,
+            meta_covers: true,
             meta_write: 0,
             group_by_genre: true,
             scan_on_start: true,
@@ -277,7 +279,8 @@ mod presetprops_ui;
 mod settings_ui;
 mod shell;
 mod tips_ui;
-pub use shell::run;
+mod track_menu;
+pub use shell::{recycle, run};
 use shell::{hide_window, make_tray, set_run_at_login, style_titlebar};
 #[cfg(feature = "devtools")]
 use shell::request_quit;
@@ -506,6 +509,13 @@ pub struct App {
     genre_fetcher: artist::GenreFetcher,
     meta_fetcher: crate::onlinemeta::MetaFetcher,
     meta_pause: Option<Instant>,
+    cover_fetcher: crate::onlinemeta::CoverFetcher,
+    cover_check: Instant,
+    cover_manual: HashSet<String>,
+    meta_edit: Option<track_menu::MetaEdit>,
+    del_confirm: Option<track_menu::DeleteConfirm>,
+    edit_rx: Option<Receiver<crate::fileops::EditReport>>,
+    del_rx: Option<Receiver<crate::fileops::DeleteReport>>,
     meta_found: Vec<String>,
     meta_banner_n: usize,
     meta_unsaved: u32,
@@ -715,6 +725,13 @@ impl App {
             genre_fetcher: artist::GenreFetcher::new(),
             meta_fetcher: crate::onlinemeta::MetaFetcher::new(),
             meta_pause: None,
+            cover_fetcher: crate::onlinemeta::CoverFetcher::new(),
+            cover_check: Instant::now(),
+            cover_manual: HashSet::new(),
+            meta_edit: None,
+            del_confirm: None,
+            edit_rx: None,
+            del_rx: None,
             meta_found: Vec::new(),
             meta_banner_n: 0,
             meta_unsaved: 0,
@@ -1106,6 +1123,7 @@ impl eframe::App for App {
         }
         self.drive_genres();
         self.drive_online_meta(ctx);
+        self.poll_file_jobs();
         if !self.lib_scans.is_empty() {
             ctx.request_repaint();
         }
@@ -1195,14 +1213,20 @@ struct LyrLayout {
 }
 
 fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, progress: f32, active: bool) -> (egui::Response, Option<f32>, Option<f32>) {
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
-    let painter = ui.painter_at(rect);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let resp = ui.interact(rect.expand2(vec2(0.0, 16.0)), ui.id().with("wave_seek"), Sense::click_and_drag());
     let (bar, gap) = (2.0f32, 1.6f32);
     let step = bar + gap;
     let n = (rect.width() / step).floor().max(1.0) as usize;
     let mid = rect.center().y;
-    let half = rect.height() * 0.5 - 1.0;
     let time = ui.input(|i| i.time) as f32;
+    // grows taller while the pointer is near or dragging, so the target is easy to hit
+    let grow = ui.ctx().animate_bool_with_time(resp.id.with("grow"), (resp.hovered() || resp.dragged()) && active, 0.16);
+    let half = (rect.height() * 0.5 - 1.0) * (1.0 + 0.5 * ease(grow));
+    let painter = ui.painter_at(rect.expand2(vec2(0.0, half - rect.height() * 0.5 + 4.0)));
+    if grow > 0.003 && grow < 0.997 {
+        ui.ctx().request_repaint();
+    }
 
     let dbg_hover: Option<f32> = crate::devenv::dev_var("SW_WAVEHOVER").ok().and_then(|v| v.parse::<f32>().ok()).map(|f| rect.left() + f * rect.width());
     let hovering = resp.hover_pos().is_some() || resp.dragged() || dbg_hover.is_some();
@@ -1271,7 +1295,7 @@ fn waveform_seek(ui: &mut egui::Ui, size: egui::Vec2, peaks: Option<&[f32]>, pro
 
     if active && have {
         let x = rect.left() + progress.clamp(0.0, 1.0) * rect.width();
-        painter.rect_filled(Rect::from_min_max(pos2(x - 0.5, rect.top()), pos2(x + 0.5, rect.bottom())), Rounding::ZERO, alpha(Color32::WHITE, 150));
+        painter.rect_filled(Rect::from_min_max(pos2(x - 0.5, mid - half), pos2(x + 0.5, mid + half)), Rounding::ZERO, alpha(Color32::WHITE, 150));
     }
     let frac_of = |p: egui::Pos2| ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
     let mut preview = None;

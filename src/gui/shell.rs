@@ -269,6 +269,23 @@ pub(super) fn set_run_at_login(on: bool) {
     }
 }
 
+pub fn recycle(path: &std::path::Path) -> Result<(), String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE, SHFILEOPSTRUCTW};
+    let from: Vec<u16> = path.as_os_str().to_string_lossy().encode_utf16().chain([0, 0]).collect();
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: PCWSTR(from.as_ptr()),
+        fFlags: (FOF_ALLOWUNDO.0 | FOF_NOCONFIRMATION.0 | FOF_NOERRORUI.0 | FOF_SILENT.0) as u16,
+        ..Default::default()
+    };
+    let code = unsafe { SHFileOperationW(&mut op) };
+    if code != 0 || op.fAnyOperationsAborted.as_bool() {
+        return Err(format!("recycle bin refused the file (code {code})"));
+    }
+    Ok(())
+}
+
 pub(crate) fn shell_open(target: &str) {
     shell_run("open", target, None);
 }
@@ -306,6 +323,15 @@ mod tests {
             .output()
             .unwrap();
         String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
+    #[test]
+    #[ignore = "moves a temp file through the real recycle bin"]
+    fn recycle_removes_the_file() {
+        let f = std::env::temp_dir().join("sw_recycle_test.txt");
+        std::fs::write(&f, b"x").unwrap();
+        recycle(&f).unwrap();
+        assert!(!f.exists());
     }
 
     #[test]

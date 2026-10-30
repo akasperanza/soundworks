@@ -160,6 +160,59 @@ pub fn write_missing(path: &Path, meta: &OnlineMeta) -> Result<Vec<(String, Stri
     })
 }
 
+pub const FIELDS: [&str; 6] = ["title", "artist", "album", "album_artist", "year", "track"];
+
+pub fn read_fields(path: &Path) -> Result<Vec<(&'static str, String)>, String> {
+    let file = open(path)?;
+    let tag = file.primary_tag().or_else(|| file.first_tag());
+    Ok(FIELDS.iter().map(|f| (*f, tag.and_then(|t| field_value(t, f)).unwrap_or_default())).collect())
+}
+
+fn same_value(field: &str, want: &str, got: &str) -> bool {
+    if field == "year" {
+        want.chars().take(4).collect::<String>() == got
+    } else if field == "track" {
+        want.parse::<u32>().ok().map(|n| n.to_string()).as_deref() == Some(got)
+    } else {
+        want == got
+    }
+}
+
+/// Sets every field to the given value; an empty value removes the field.
+pub fn write_fields(path: &Path, edits: &[(&'static str, String)]) -> Result<(), String> {
+    if !can_write(path) {
+        return Err("this file format cannot be tagged".into());
+    }
+    if edits.is_empty() {
+        return Ok(());
+    }
+    through_temp(path, |tmp| {
+        let mut file = open(tmp)?;
+        {
+            let tag = primary_tag(&mut file);
+            for (field, value) in edits {
+                if value.trim().is_empty() {
+                    clear_field(tag, field);
+                } else {
+                    set_field(tag, field, value.trim());
+                }
+            }
+        }
+        file.save_to_path(tmp, WriteOptions::default()).map_err(|e| e.to_string())?;
+        let check = open(tmp)?;
+        let tag = check.primary_tag().or_else(|| check.first_tag());
+        for (field, value) in edits {
+            let got = tag.and_then(|t| field_value(t, field)).unwrap_or_default();
+            let want = value.trim();
+            if !(want.is_empty() && got.is_empty()) && !same_value(field, want, &got) {
+                return Err(format!("could not store {field}"));
+            }
+        }
+        Ok(edits.iter().map(|(f, v)| (f.to_string(), v.clone())).collect())
+    })
+    .map(|_| ())
+}
+
 pub fn undo(entry: &WriteLogEntry) -> Result<usize, String> {
     let path = Path::new(&entry.path);
     let removed = through_temp(path, |tmp| {
@@ -298,6 +351,23 @@ mod tests {
         assert!(write_missing(&junk, &meta()).is_err());
         assert_eq!(std::fs::read(&junk).unwrap(), b"not audio");
         assert!(!temp_path(&junk).exists());
+    }
+
+    #[test]
+    fn edited_fields_replace_and_clear_existing_tags() {
+        let dir = temp("edit");
+        let file = dir.join("e.wav");
+        silent_wav(&file);
+        write_missing(&file, &meta()).unwrap();
+        write_fields(&file, &[("title", "Yeni Ad".into()), ("album", String::new()), ("year", "1987".into()), ("track", "7".into())]).unwrap();
+        let got: std::collections::HashMap<_, _> = read_fields(&file).unwrap().into_iter().collect();
+        assert_eq!(got["title"], "Yeni Ad");
+        assert_eq!(got["artist"], "Sanatçı");
+        assert_eq!(got["album"], "");
+        assert_eq!(got["year"], "1987");
+        assert_eq!(got["track"], "7");
+        assert!(!temp_path(&file).exists());
+        assert!(write_fields(&dir.join("x.dsf"), &[("title", "a".into())]).is_err());
     }
 
     #[test]

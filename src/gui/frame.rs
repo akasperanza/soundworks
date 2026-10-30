@@ -235,6 +235,7 @@ impl App {
             self.tip_banner(ctx);
             self.meta_banner(ctx);
             self.dsd_dialog_ui(ctx);
+            self.track_dialogs(ctx);
         }
     }
 }

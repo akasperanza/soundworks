@@ -4,6 +4,32 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.6
+
+<!-- tr -->
+- Albümlere ve parçalara sağ tıklayınca menü açılır: çal, sıraya ekle, dosya gezgininde göster, dosya yolunu kopyala, metadatayı düzenle, Soundworks'ten sil ve dosyayı sil
+- Silme işlemleri önce "emin misin?" diye sorar; dosyalar kalıcı silinmez, geri dönüşüm kutusuna taşınır
+- Soundworks'ten silinen parçalar sonraki klasör taramalarında geri eklenmez
+- Yeni metadata düzenleyici: bir parçanın ya da tüm albümün başlık, sanatçı, albüm, yıl ve parça numarası etiketlerini dosyalara yazar
+- Kapağı olmayan albümlerin kapağı Deezer'dan bulunur (Ayarlar'dan kapatılabilir); albüm menüsünden elle de aranabilir
+- Waveform üzerine gelince yükselir ve vuruş alanı genişler, ilerletmek ve seçim yapmak kolaylaşır
+
+<!-- en -->
+- Right-click albums and tracks for a menu: play, add to queue, show in File Explorer, copy file path, edit metadata, remove from Soundworks and delete file
+- Deleting always asks "are you sure?" first; files are never erased permanently, they go to the recycle bin
+- Tracks removed from Soundworks are not added back by later folder scans
+- New metadata editor: writes title, artist, album, year and track number tags to the files for one track or a whole album
+- Covers for albums without artwork are found on Deezer (can be turned off in Settings); you can also search for one by hand from the album menu
+- The waveform grows taller and its hit area widens on hover, making it easy to scrub and pick a position
+
+<!-- de -->
+- Rechtsklick auf Alben und Titel öffnet ein Menü: abspielen, zur Warteschlange, im Explorer zeigen, Dateipfad kopieren, Metadaten bearbeiten, aus Soundworks entfernen und Datei löschen
+- Löschen fragt immer vorher nach; Dateien werden nie endgültig gelöscht, sondern in den Papierkorb verschoben
+- Aus Soundworks entfernte Titel werden von späteren Ordner-Scans nicht wieder hinzugefügt
+- Neuer Metadaten-Editor: schreibt Titel, Künstler, Album, Jahr und Titelnummer für einen Titel oder ein ganzes Album in die Dateien
+- Cover für Alben ohne Artwork werden bei Deezer gefunden (in den Einstellungen abschaltbar); über das Albummenü lässt sich auch manuell suchen
+- Die Waveform wird beim Überfahren höher und ihre Trefferfläche größer, so lässt sich leicht eine Position wählen
+
 ## 0.5.5
 
 <!-- tr -->

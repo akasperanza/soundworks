@@ -358,20 +358,12 @@ impl App {
                 let d = t.duration as u64;
                 ui.painter().text_tr(pos2(rect.right() - 12.0, rect.center().y), Align2::RIGHT_CENTER, format!("{}:{:02}", d / 60, d % 60), body(12.5), DIM);
                 ui.set_opacity(prev_op);
-                let tpath = PathBuf::from(&t.path);
-                let mut qreq: Option<bool> = None;
-                resp.context_menu(|ui| {
-                    if ui.button_tr("Sıradaki olarak ekle").clicked() {
-                        qreq = Some(true);
-                        ui.close_menu();
-                    }
-                    if ui.button_tr("Sıraya ekle").clicked() {
-                        qreq = Some(false);
-                        ui.close_menu();
-                    }
-                });
-                if let Some(next) = qreq {
-                    self.pending_queue = Some((vec![tpath], next));
+                let mut tact = None;
+                resp.context_menu(|ui| tact = super::track_menu::track_menu(ui));
+                match tact {
+                    Some(super::track_menu::Act::Play) => play_from = Some(i),
+                    Some(a) => self.run_track_act(ctx, a, &t.path),
+                    None => {}
                 }
                 if resp.clicked() {
                     play_from = Some(i);

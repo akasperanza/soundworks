@@ -1133,6 +1133,43 @@ fn mb_lookup(base: &str, h: &TrackHint, guesses: &[(String, String)]) -> Result<
     Ok(None)
 }
 
+pub fn album_cover_lookup(artist: &str, album: &str, out: &Path) -> Result<bool, String> {
+    album_cover_at("https://api.deezer.com", artist, album, out)
+}
+
+pub fn album_cover_at(base: &str, artist: &str, album: &str, out: &Path) -> Result<bool, String> {
+    if artist.trim().is_empty() || album.trim().is_empty() {
+        return Ok(false);
+    }
+    let various = artist.to_lowercase().contains("various");
+    for (i, q) in [format!("artist:\"{}\" album:\"{}\"", lq(artist), lq(album)), format!("{artist} {album}")].iter().enumerate() {
+        let body = http_get_ua(&format!("{base}/search/album?q={}&limit=10", enc(q)), "Soundworks/0.1", 20)?;
+        let v: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+        let hit = v["data"].as_array().into_iter().flatten().find(|d| {
+            title_ok(album, d["title"].as_str().unwrap_or("")) && (various || artist_ok(artist, d["artist"]["name"].as_str().unwrap_or("")))
+        });
+        let Some(hit) = hit else {
+            if i == 0 {
+                continue;
+            }
+            return Ok(false);
+        };
+        let Some(url) = ["cover_xl", "cover_big", "cover_medium"].iter().filter_map(|k| hit[*k].as_str()).find(|u| !u.is_empty()) else {
+            return Ok(false);
+        };
+        let bytes = http_bytes(url, 8 << 20)?;
+        let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
+        if let Some(dir) = out.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let tmp = out.with_extension("tmp");
+        img.thumbnail(360, 360).save_with_format(&tmp, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, out).map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub fn track_lookup(h: &TrackHint) -> Result<Option<crate::library::OnlineMeta>, String> {
     track_lookup_at(h, "https://api.deezer.com", "https://musicbrainz.org")
 }
@@ -1212,6 +1249,30 @@ mod tests {
 
     fn hint(title: &str, artist: &str, folder: &str, duration: f64) -> TrackHint {
         TrackHint { title: title.into(), artist: artist.into(), duration, folder: folder.into() }
+    }
+
+    #[test]
+    #[ignore]
+    fn live_album_cover() {
+        let out = std::env::temp_dir().join("sw_live_cover.png");
+        let _ = std::fs::remove_file(&out);
+        assert!(album_cover_lookup("Daft Punk", "Discovery", &out).unwrap());
+        let img = image::open(&out).unwrap();
+        assert!(img.width() >= 300);
+        assert!(!album_cover_lookup("Daft Punk", "zzqx nonexistent album 91827", &out.with_extension("x.png")).unwrap());
+    }
+
+    #[test]
+    fn cover_is_not_downloaded_for_mismatching_album() {
+        let port = serve_json(vec![(
+            "/search/album",
+            r#"{"data":[{"title":"Other Thing","artist":{"name":"Someone Else"},"cover_xl":"http://127.0.0.1:1/x.jpg"}]}"#.to_string(),
+        )]);
+        let out = std::env::temp_dir().join(format!("sw_cover_test_{port}.png"));
+        let _ = std::fs::remove_file(&out);
+        let got = album_cover_at(&format!("http://127.0.0.1:{port}"), "Daft Punk", "Discovery", &out).unwrap();
+        assert!(!got && !out.exists());
+        assert!(!album_cover_at("http://127.0.0.1:1", "", "Discovery", &out).unwrap());
     }
 
     #[test]

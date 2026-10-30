@@ -11,13 +11,15 @@ impl App {
     pub(super) fn rescan_library(&mut self, scan_new: bool) {
         self.start_missing_check();
         if scan_new && !self.lib.folders.is_empty() {
-            let known: HashSet<String> = self.lib.all_paths().into_iter().collect();
+            let known = self.lib.known_paths();
             self.lib_scans.push((library::spawn_folder_scan(self.lib.folders.clone(), known), 0, 0));
         }
     }
 
     pub(super) fn add_library_folder(&mut self, dir: PathBuf) {
         self.lib.add_folder(&dir.to_string_lossy());
+        let prefix = dir.to_string_lossy().to_lowercase();
+        self.lib.ignored.retain(|p| !p.to_lowercase().starts_with(&prefix));
         self.lib.save();
         let known: HashSet<String> = self.lib.all_paths().into_iter().collect();
         self.lib_scans.push((library::spawn_folder_scan(vec![dir.to_string_lossy().to_string()], known), 0, 0));
@@ -34,6 +36,9 @@ impl App {
     pub(super) fn lib_add_paths(&mut self, paths: Vec<PathBuf>) {
         if paths.is_empty() {
             return;
+        }
+        for p in &paths {
+            self.lib.ignored.remove(&p.to_string_lossy().to_string());
         }
         let known: HashSet<String> =
             self.lib.albums.iter().flat_map(|a| a.tracks.iter().map(|t| t.path.clone())).collect();
@@ -431,7 +436,7 @@ impl App {
         draw_lines(painter, pos2(rect.left(), rect.top() + cw + 8.0 + used + 3.0), Align2::LEFT_TOP, &sub_l, &sub_f, DIM);
         let pr = Rect::from_center_size(cover.right_bottom() - vec2(26.0, 26.0), vec2(36.0, 36.0));
         let mut over_play = false;
-        let (mut open, mut play, mut remove) = (None, None, None);
+        let (mut open, mut play) = (None, None);
         if hov || h > 0.01 {
             let presp = ui.interact(pr, resp.id.with("play"), Sense::click());
             over_play = presp.hovered();
@@ -445,28 +450,15 @@ impl App {
         if resp.clicked() && !over_play {
             open = Some(key.clone());
         }
-        let album_paths = self.lib.albums[i].paths();
-        let mut queue_req: Option<bool> = None;
-        resp.context_menu(|ui| {
-            if ui.button_tr("Sıradaki olarak ekle").clicked() {
-                queue_req = Some(true);
-                ui.close_menu();
-            }
-            if ui.button_tr("Sıraya ekle").clicked() {
-                queue_req = Some(false);
-                ui.close_menu();
-            }
-            ui.separator();
-            if ui.button_tr("Kütüphaneden kaldır").clicked() {
-                remove = Some(key.clone());
-                ui.close_menu();
-            }
-        });
-        if let Some(next) = queue_req {
-            self.pending_queue = Some((album_paths, next));
+        let mut menu_act = None;
+        resp.context_menu(|ui| menu_act = super::track_menu::album_menu(ui));
+        match menu_act {
+            Some(super::track_menu::Act::Play) => play = Some(key.clone()),
+            Some(a) => self.run_album_act(a, &key),
+            None => {}
         }
         ui.set_opacity(prev_op);
-        (open, play, remove)
+        (open, play, None)
     }
 
     pub(super) fn apply_album_actions(&mut self, open: Option<String>, play: Option<String>, remove: Option<String>) {
@@ -516,6 +508,9 @@ impl App {
             if let Some((u, _, _)) = self.undo.take() {
                 match u {
                     Undo::Album(a, i) => {
+                        for t in &a.tracks {
+                            self.lib.ignored.remove(&t.path);
+                        }
                         if !self.lib.albums.iter().any(|x| x.key == a.key) {
                             let at = i.min(self.lib.albums.len());
                             self.lib.albums.insert(at, a);
@@ -631,8 +626,8 @@ impl App {
         let mut back = false;
         let mut play_from: Option<usize> = None;
         let mut shuffle_play = false;
-        let mut remove = false;
         let mut goto_artist = false;
+        let mut menu_act: Option<super::track_menu::Act> = None;
 
         let _ = tint;
 
@@ -698,10 +693,7 @@ impl App {
                             ui.memory_mut(|m| m.toggle_popup(pid));
                         }
                         egui::popup_below_widget(ui, pid, &more, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                            ui.set_min_width(220.0);
-                            if ui.button_tr("Kütüphaneden kaldır (dosyalar silinmez)").clicked() {
-                                remove = true;
-                            }
+                            menu_act = super::track_menu::album_menu(ui);
                         });
                     });
                 });
@@ -758,6 +750,13 @@ impl App {
                 let d = t.duration as u64;
                 ui.painter().text_tr(pos2(rect.right() - 18.0, rect.center().y), Align2::RIGHT_CENTER, format!("{}:{:02}", d / 60, d % 60), body(13.0 * sc), DIM);
                 ui.set_opacity(prev_op);
+                let mut tact = None;
+                resp.context_menu(|ui| tact = super::track_menu::track_menu(ui));
+                match tact {
+                    Some(super::track_menu::Act::Play) => play_from = Some(i),
+                    Some(a) => self.run_track_act(ctx, a, &t.path),
+                    None => {}
+                }
                 if resp.clicked() {
                     play_from = Some(i);
                 }
@@ -781,9 +780,10 @@ impl App {
         } else if let Some(i) = play_from {
             self.play_album(key, i);
         }
-        if remove {
-            self.remove_album_undoable(key);
-            self.lib_open = None;
+        match menu_act {
+            Some(super::track_menu::Act::Play) => self.play_album(key, 0),
+            Some(a) => self.run_album_act(a, key),
+            None => {}
         }
     }
 
