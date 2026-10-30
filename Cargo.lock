@@ -3806,7 +3806,7 @@ dependencies = [
 
 [[package]]
 name = "soundworks"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "ab_glyph",
  "anyhow",

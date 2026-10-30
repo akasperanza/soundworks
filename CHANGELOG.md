@@ -4,6 +4,26 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.4
+
+<!-- tr -->
+- Yeni arayüz: çalan albümün kapağı bulanık bir arka plan olarak tüm pencereye yayılır, paneller yarı saydamdır
+- Alttaki oynatıcı yüzen bir çubuğa dönüştü (waveform ilerleme çubuğu korundu)
+- Sağ paneller (Motor, Sözler, Kuyruk, eklentiler) gölge ve ışıkla yükseltilmiş yüzey olarak çizilir
+- Parça çalmıyorken hafif bir varsayılan arka plan gösterilir
+
+<!-- en -->
+- New look: the playing album's cover spreads across the window as a blurred backdrop, and panels are translucent
+- The bottom player is now a floating bar (the waveform progress bar is kept)
+- Right panels (Engine, Lyrics, Queue, plugins) are drawn as raised surfaces with shadow and light
+- A subtle default backdrop is shown when nothing is playing
+
+<!-- de -->
+- Neues Design: Das Cover des laufenden Albums breitet sich als unscharfer Hintergrund über das Fenster aus, die Panels sind halbtransparent
+- Der Player unten ist jetzt eine schwebende Leiste (die Waveform-Fortschrittsleiste bleibt erhalten)
+- Rechte Panels (Engine, Songtexte, Warteschlange, Plugins) werden als erhabene Flächen mit Schatten und Licht dargestellt
+- Wenn nichts läuft, wird ein dezenter Standardhintergrund angezeigt
+
 ## 0.5.3
 
 <!-- tr -->
