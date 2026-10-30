@@ -278,6 +278,18 @@ impl App {
             row_sep(ui);
             toggle_row(ui, "Kapatınca tepside çalışmaya devam et", "Sistem DSP için önerilir", "", &mut self.cfg.tray_on_close);
             row_sep(ui);
+            let mut menu = self.cfg.explorer_menu;
+            if toggle_row(ui, "Dosya Gezgini sağ tık menüsü", "Ses dosyalarında: Kütüphaneye ekle, Spektrum analizi", "", &mut menu) {
+                self.cfg.explorer_menu = menu;
+                if menu {
+                    if let Ok(exe) = std::env::current_exe() {
+                        crate::shellmenu::register(&exe);
+                    }
+                } else {
+                    crate::shellmenu::unregister();
+                }
+            }
+            row_sep(ui);
             let mut login = self.cfg.run_at_login;
             if toggle_row(ui, "Windows ile birlikte başlat", "Tepside, arka planda açılır", "", &mut login) {
                 self.cfg.run_at_login = login;

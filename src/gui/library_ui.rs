@@ -559,9 +559,10 @@ impl App {
             return;
         }
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            let gap = 26.0;
             let avail = ui.available_width() - 6.0;
-            let cols = ((avail + gap) / (180.0 + gap)).floor().max(1.0);
+            let target = (avail * 0.17).clamp(120.0, 190.0);
+            let gap = (target * 0.14).clamp(16.0, 26.0);
+            let cols = ((avail + gap) / (target + gap)).floor().max(1.0);
             let cw = ((avail - gap * (cols - 1.0)) / cols).floor();
             for (name, idxs) in &sections {
                 if !name.is_empty() {

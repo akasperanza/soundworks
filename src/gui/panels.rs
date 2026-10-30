@@ -566,7 +566,7 @@ impl App {
         let dur = self.player.duration();
         let cur = self.current_path();
         let active = dur > 0.0 && cur.is_some();
-        let modal = self.meta_edit.is_some() || self.del_confirm.is_some() || self.dsd_dialog.is_some() || self.search_open;
+        let modal = self.meta_edit.is_some() || self.del_confirm.is_some() || self.spectrum.is_some() || self.dsd_dialog.is_some() || self.search_open;
         let pointer = ctx.pointer_hover_pos();
         let over = pointer.map_or(false, |p| self.wave_rect.contains(p) || (self.wave_big && self.wave_big_rect.contains(p)));
         let dragging = self.wave_big && ctx.input(|i| i.pointer.primary_down());
@@ -676,12 +676,7 @@ impl App {
 
                     section_label(ui, "Ses işleme");
                     ui.add_space(2.0);
-                    ui.label(RichText::new("Crossfeed").font(body(12.5)).color(DIM));
                     ui.spacing_mut().slider_width = ui.available_width() - 64.0;
-                    let mut cf = self.cfg.crossfeed * 100.0;
-                    if ui.add(egui::Slider::new(&mut cf, 0.0..=100.0).suffix("%")).changed() {
-                        self.cfg.crossfeed = cf / 100.0;
-                    }
                     ui.label(RichText::new("Balans").font(body(12.5)).color(DIM));
                     let mut b = self.cfg.balance * 100.0;
                     let r = ui.add(egui::Slider::new(&mut b, -100.0..=100.0).custom_formatter(|v, _| {
@@ -769,7 +764,7 @@ impl App {
         if !self.cfg.use_loopback && self.player.volume() < 0.999 {
             reasons.push("ses < %100");
         }
-        if self.cfg.crossfeed > 0.0 || self.cfg.mono || self.cfg.balance != 0.0 {
+        if self.cfg.mono || self.cfg.balance != 0.0 {
             reasons.push("DSP açık");
         }
         if self.player.rg_applied_db().is_some() && !self.cfg.use_loopback {

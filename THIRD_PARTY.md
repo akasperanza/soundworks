@@ -7,6 +7,7 @@ Soundworks, [GPL-3.0-or-later](LICENSE) ile lisanslıdır. Aşağıdaki bileşen
 | Bileşen | Kullanım | Lisans |
 |---|---|---|
 | [Barlow](https://github.com/jpt/barlow) SemiBold, © 2017 The Barlow Project Authors | Başlıktaki "Soundworks" yazısı, uygulama simgesindeki harfler | SIL Open Font License 1.1: [assets/fonts/OFL.txt](assets/fonts/OFL.txt) |
+| [Menbere](https://github.com/SorkinType/Menbere), © 2022 The Menbere Project Authors (Latin harflere küçültülmüş Regular ve Bold) | Arayüzdeki tüm yazılar | SIL Open Font License 1.1: [assets/fonts/OFL-Menbere.txt](assets/fonts/OFL-Menbere.txt) |
 | [Lucide](https://lucide.dev) simgeleri, © Lucide Icons and Contributors (bir kısmı © Cole Bemis, Feather) | Arayüz simgeleri (`assets/icons`) | ISC ve MIT: [assets/icons/LICENSE](assets/icons/LICENSE) |
 
 ## Çalışma sırasında kullanılan veri kaynakları
@@ -16,7 +17,7 @@ Aşağıdaki veriler Soundworks ile birlikte dağıtılmaz, kullanıcı istediğ
 - [AutoEq](https://github.com/jaakkopasanen/AutoEq) kulaklık profilleri (MIT).
 - MusicBrainz, Deezer, Last.fm ve Wikipedia: albüm türü, sanatçı fotoğrafı ve özeti.
 - LRCLib, Apple Music ve BiniLyrics: şarkı sözleri.
-- Windows ile gelen Segoe UI yazı tipi uygulamaya gömülü değildir, sistemden okunur.
+- Windows ile gelen Segoe UI yazı tipi uygulamaya gömülü değildir, sistemden okunur; yalnızca Menbere'de bulunmayan simgeler için yedek olarak kullanılır.
 
 ## Rust kütüphaneleri
 

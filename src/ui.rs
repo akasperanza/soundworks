@@ -103,6 +103,10 @@ pub fn ease(t: f32) -> f32 {
     1.0 - (1.0 - t).powi(3)
 }
 
+/// Menbere has taller line metrics and a larger x-height than the Segoe UI the layouts were drawn for.
+const MENBERE_SCALE: f32 = 0.92;
+const MENBERE_Y: f32 = 0.0;
+
 pub fn setup(ctx: &Context) {
     let mut fonts = FontDefinitions::default();
     let mut load = |key: &str, path: &str| -> bool {
@@ -117,16 +121,20 @@ pub fn setup(ctx: &Context) {
     let has_reg = load("segoe", "C:/Windows/Fonts/segoeui.ttf");
     let has_bold = load("segoe_b", "C:/Windows/Fonts/segoeuib.ttf");
     let has_sym = load("segoe_sym", "C:/Windows/Fonts/seguisym.ttf");
+    let tweak = egui::FontTweak { scale: MENBERE_SCALE, y_offset_factor: MENBERE_Y, ..Default::default() };
+    fonts.font_data.insert("menbere".to_owned(), FontData::from_static(include_bytes!("../assets/fonts/Menbere-Regular.ttf")).tweak(tweak));
+    fonts.font_data.insert("menbere_b".to_owned(), FontData::from_static(include_bytes!("../assets/fonts/Menbere-Bold.ttf")).tweak(tweak));
     {
         let prop = fonts.families.entry(FontFamily::Proportional).or_default();
+        prop.insert(0, "menbere".to_owned());
         if has_reg {
-            prop.insert(0, "segoe".to_owned());
+            prop.push("segoe".to_owned());
         }
         if has_sym {
             prop.push("segoe_sym".to_owned());
         }
     }
-    let mut bold_fam: Vec<String> = vec![];
+    let mut bold_fam: Vec<String> = vec!["menbere_b".into()];
     if has_bold {
         bold_fam.push("segoe_b".into());
     }

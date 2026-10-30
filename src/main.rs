@@ -30,6 +30,7 @@ mod proof;
 mod media;
 mod winmedia;
 mod recover;
+mod shellmenu;
 
 use anyhow::{bail, Result};
 use std::path::Path;
@@ -148,6 +149,14 @@ fn main() -> Result<()> {
         }
         None => gui::run(false)?,
         Some("--tray") => gui::run(true)?,
+        Some(flag @ ("--add" | "--spectrum")) => {
+            let kind = if flag == "--add" { shellmenu::Kind::Add } else { shellmenu::Kind::Spectrum };
+            let paths: Vec<std::path::PathBuf> = args[1..].iter().map(std::path::PathBuf::from).collect();
+            if !paths.is_empty() {
+                let _ = shellmenu::send(kind, &paths);
+            }
+            gui::run(false)?
+        }
         _ => usage(),
     }
     Ok(())

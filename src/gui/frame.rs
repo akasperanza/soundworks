@@ -208,7 +208,6 @@ impl App {
             let c = &r.ctl;
             c.bypass.store(ab_held, Relaxed);
             c.level_match.store(!self.cfg.level_match_off, Relaxed);
-            c.crossfeed.store(self.cfg.crossfeed.to_bits(), Relaxed);
             c.balance.store(self.cfg.balance.to_bits(), Relaxed);
             c.mono.store(self.cfg.mono, Relaxed);
             c.dither.store(self.cfg.dither, Relaxed);

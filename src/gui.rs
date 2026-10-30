@@ -128,7 +128,6 @@ struct Config {
     tips_on: bool,
 
     tips_dismissed: Vec<String>,
-    crossfeed: f32,
     balance: f32,
     mono: bool,
     viz_bars: bool,
@@ -139,6 +138,7 @@ struct Config {
     restore_default: Option<String>,
     tray_on_close: bool,
     run_at_login: bool,
+    explorer_menu: bool,
     fetch_genres: bool,
     meta_online: bool,
     meta_all: bool,
@@ -201,7 +201,6 @@ impl Default for Config {
             rg_prevent: true,
             tips_on: false,
             tips_dismissed: Vec::new(),
-            crossfeed: 0.0,
             balance: 0.0,
             mono: false,
             viz_bars: false,
@@ -210,6 +209,7 @@ impl Default for Config {
             restore_default: None,
             tray_on_close: true,
             run_at_login: false,
+            explorer_menu: true,
             fetch_genres: true,
             meta_online: true,
             meta_all: false,
@@ -279,6 +279,7 @@ mod presetprops_ui;
 mod settings_ui;
 mod shell;
 mod tips_ui;
+mod spectrum_ui;
 mod track_menu;
 pub use shell::{recycle, run};
 use shell::{hide_window, make_tray, set_run_at_login, style_titlebar};
@@ -514,6 +515,8 @@ pub struct App {
     meta_pause: Option<Instant>,
     cover_fetcher: crate::onlinemeta::CoverFetcher,
     cover_check: Instant,
+    spectrum: Option<spectrum_ui::SpectrumView>,
+    inbox_check: Instant,
     np_cover: Option<PathBuf>,
     cover_manual: HashSet<String>,
     meta_edit: Option<track_menu::MetaEdit>,
@@ -734,6 +737,8 @@ impl App {
             meta_pause: None,
             cover_fetcher: crate::onlinemeta::CoverFetcher::new(),
             cover_check: Instant::now(),
+            spectrum: None,
+            inbox_check: Instant::now(),
             np_cover: None,
             cover_manual: HashSet::new(),
             meta_edit: None,
@@ -806,6 +811,11 @@ impl App {
         app.player.repeat_one.store(app.cfg.repeat_one, Relaxed);
         app.player.shuffle.store(app.cfg.shuffle, Relaxed);
         app.refresh_library();
+        if app.cfg.explorer_menu && crate::devenv::dev_var("SW_SHOT").is_err() && crate::devenv::dev_var("SW_MULTI").is_err() {
+            if let Ok(exe) = std::env::current_exe() {
+                std::thread::spawn(move || crate::shellmenu::refresh(&exe));
+            }
+        }
 
         app.rescan_library(app.cfg.scan_on_start && crate::devenv::dev_var("SW_OFFSCREEN").is_err());
         if let Some(name) = app.cfg.preset.clone() {
@@ -1132,6 +1142,7 @@ impl eframe::App for App {
         self.drive_genres();
         self.drive_online_meta(ctx);
         self.poll_file_jobs();
+        self.poll_inbox(ctx);
         if !self.lib_scans.is_empty() {
             ctx.request_repaint();
         }

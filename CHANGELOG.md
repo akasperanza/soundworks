@@ -12,6 +12,11 @@ Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları 
 - Windows medya oynatıcısı olarak tanınır: kulaklık ve klavye medya tuşları, Windows ses/medya paneli ve kilit ekranı Soundworks'ü kontrol eder ve çalan parçayı gösterir
 - Görev çubuğu önizlemesinde önceki / oynat-duraklat / sonraki düğmeleri çıkar
 - Oynatıcıdaki parça adına ya da albüm kapağına tıklayınca albüme, sanatçı adına tıklayınca sanatçıya gidilir
+- Parçalara sağ tıklayınca "Spektrum analizi" seçeneği gelir: spektrogramı çizer ve yüksek frekanslardaki keskin kesimden sahte kayıpsız (MP3/AAC'den dönüştürülmüş) ya da yükseltilmiş dosyaları ortaya çıkarır
+- Dosya Gezgini'nde ses dosyalarına sağ tıklayınca Soundworks menüsü çıkar: "Soundworks Kütüphanesine Ekle" ve "Spektrum Analizi" (Ayarlar'dan kapatılabilir)
+- Arayüz yazı tipi Menbere oldu
+- Pencere küçüldükçe albüm kapakları da küçülür
+- Ses işleme bölümündeki ayrı Crossfeed kaydırıcısı kaldırıldı; crossfeed artık yalnızca sinyal zincirindeki modülden gelir
 
 <!-- en -->
 - Hovering the waveform opens a large scrubber over the whole player bar, on top of the icons, so you can click and drag to any position easily
@@ -19,6 +24,11 @@ Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları 
 - Soundworks is now recognized by Windows as a media player: headphone and keyboard media keys, the Windows volume/media flyout and the lock screen control it and show what's playing
 - The taskbar thumbnail now has previous / play-pause / next buttons
 - In the player, clicking the track title or the cover opens the album, clicking the artist name opens the artist
+- Right-clicking a track offers "Spectrum analysis": it draws the spectrogram and uses the sharp cut at high frequencies to expose fake lossless (converted from MP3/AAC) or upsampled files
+- Right-clicking audio files in File Explorer shows a Soundworks menu: "Add to Soundworks Library" and "Spectrum Analysis" (can be turned off in Settings)
+- The interface font is now Menbere
+- Album covers shrink as the window gets smaller
+- The separate Crossfeed slider under audio processing is gone; crossfeed now comes only from the module in the signal chain
 
 <!-- de -->
 - Beim Überfahren der Waveform öffnet sich ein großer Positionsregler über der ganzen Player-Leiste, auch über den Symbolen, zum bequemen Klicken und Ziehen
@@ -26,6 +36,11 @@ Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları 
 - Windows erkennt Soundworks jetzt als Mediaplayer: Kopfhörer- und Tastatur-Medientasten, das Windows-Lautstärke-/Medienfenster und der Sperrbildschirm steuern es und zeigen den laufenden Titel
 - Die Taskleisten-Vorschau hat jetzt Schaltflächen für Zurück / Wiedergabe-Pause / Weiter
 - Im Player öffnet ein Klick auf Titel oder Cover das Album, ein Klick auf den Künstlernamen den Künstler
+- Rechtsklick auf einen Titel bietet „Spektrumanalyse“: Sie zeichnet das Spektrogramm und entlarvt anhand des scharfen Schnitts bei hohen Frequenzen gefälschtes Lossless (aus MP3/AAC konvertiert) oder hochgerechnete Dateien
+- Im Datei-Explorer erscheint beim Rechtsklick auf Audiodateien ein Soundworks-Menü: „Zur Soundworks-Bibliothek hinzufügen“ und „Spektrumanalyse“ (in den Einstellungen abschaltbar)
+- Die Schrift der Oberfläche ist jetzt Menbere
+- Die Albumcover werden kleiner, wenn das Fenster schrumpft
+- Der separate Crossfeed-Regler unter „Audioverarbeitung“ entfällt; Crossfeed kommt nur noch vom Modul in der Signalkette
 
 ## 0.5.6
 

@@ -10,6 +10,7 @@ pub(super) enum Act {
     Next,
     Queue,
     Reveal,
+    Spectrum,
     Edit,
     CopyPath,
     Cover,
@@ -58,6 +59,7 @@ pub(super) fn track_menu(ui: &mut egui::Ui) -> Option<Act> {
     menu_item(ui, &mut act, Act::Queue, "Sıraya ekle", false);
     ui.separator();
     menu_item(ui, &mut act, Act::Reveal, "Dosya gezgininde göster", false);
+    menu_item(ui, &mut act, Act::Spectrum, "Spektrum analizi…", false);
     menu_item(ui, &mut act, Act::Edit, "Metadatayı düzenle…", false);
     menu_item(ui, &mut act, Act::CopyPath, "Dosya yolunu kopyala", false);
     ui.separator();
@@ -83,7 +85,7 @@ pub(super) fn album_menu(ui: &mut egui::Ui) -> Option<Act> {
     act
 }
 
-fn dim_backdrop(ctx: &egui::Context, id: &str) {
+pub(super) fn dim_backdrop(ctx: &egui::Context, id: &str) {
     egui::Area::new(Id::new(id)).order(egui::Order::Foreground).fixed_pos(pos2(0.0, 0.0)).show(ctx, |ui| {
         let r = ctx.screen_rect();
         ui.allocate_rect(r, Sense::click_and_drag());
@@ -101,6 +103,7 @@ impl App {
         match act {
             Act::Next | Act::Queue => self.pending_queue = Some((vec![PathBuf::from(path)], act == Act::Next)),
             Act::Reveal => shell::shell_select(Path::new(path)),
+            Act::Spectrum => self.open_spectrum(ctx, path),
             Act::CopyPath => ctx.copy_text(path.to_string()),
             Act::Edit => self.open_meta_edit(vec![path.to_string()], false, title),
             Act::Remove => self.del_confirm = Some(DeleteConfirm { paths: vec![path.to_string()], title, disk: false, album_key: None }),
@@ -137,7 +140,7 @@ impl App {
             }
             Act::Remove => self.del_confirm = Some(DeleteConfirm { paths, title: album.title.clone(), disk: false, album_key: Some(key.to_string()) }),
             Act::Delete => self.del_confirm = Some(DeleteConfirm { paths, title: album.title.clone(), disk: true, album_key: Some(key.to_string()) }),
-            Act::CopyPath => {}
+            Act::CopyPath | Act::Spectrum => {}
         }
     }
 
@@ -196,6 +199,7 @@ impl App {
     pub(super) fn track_dialogs(&mut self, ctx: &egui::Context) {
         self.meta_edit_ui(ctx);
         self.confirm_ui(ctx);
+        self.spectrum_ui(ctx);
     }
 
     fn meta_edit_ui(&mut self, ctx: &egui::Context) {
@@ -344,6 +348,23 @@ impl App {
         self.lib.save();
         self.lib_tex.retain(|_, v| v.is_some());
         self.queue_sig = usize::MAX;
+    }
+
+    pub(super) fn poll_inbox(&mut self, ctx: &egui::Context) {
+        if self.inbox_check.elapsed() < std::time::Duration::from_millis(400) {
+            return;
+        }
+        self.inbox_check = Instant::now();
+        for req in crate::shellmenu::drain() {
+            match req.kind {
+                crate::shellmenu::Kind::Add => self.lib_add_paths(req.paths),
+                crate::shellmenu::Kind::Spectrum => {
+                    if let Some(p) = req.paths.first() {
+                        self.open_spectrum(ctx, &p.to_string_lossy());
+                    }
+                }
+            }
+        }
     }
 
     pub(super) fn poll_file_jobs(&mut self) {

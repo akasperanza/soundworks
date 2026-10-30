@@ -35,7 +35,6 @@ pub struct Control {
 
     pub balance: std::sync::atomic::AtomicU32,
 
-    pub crossfeed: std::sync::atomic::AtomicU32,
     pub mono: AtomicBool,
 
     pub peak_l: std::sync::atomic::AtomicU32,
@@ -92,7 +91,6 @@ impl Control {
             viz_seq: std::sync::atomic::AtomicU64::new(0),
             viz_rate: std::sync::atomic::AtomicU32::new(48000),
             balance: std::sync::atomic::AtomicU32::new(0f32.to_bits()),
-            crossfeed: std::sync::atomic::AtomicU32::new(0f32.to_bits()),
             mono: AtomicBool::new(false),
             peak_l: std::sync::atomic::AtomicU32::new(0),
             peak_r: std::sync::atomic::AtomicU32::new(0),
@@ -793,7 +791,6 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         device: dst_name.to_string(),
         dop: false,
     };
-    let mut cf = Crossfeed::new(fmt.rate as f32);
     let mut vbuf: Vec<f32> = Vec::with_capacity(4096);
     let mut gate_cur = 0f32;
     let gate_step = 1.0 / (0.006 * fmt.rate as f32);
@@ -870,7 +867,6 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
         if let Some((o, _)) = old_chain.as_mut() {
             o.set_level(level);
         }
-        let cf_amt = f32::from_bits(ctl.crossfeed.load(Ordering::Relaxed)).clamp(0.0, 1.0);
         let mono = ctl.mono.load(Ordering::Relaxed);
         let bal = f32::from_bits(ctl.balance.load(Ordering::Relaxed)).clamp(-1.0, 1.0);
         let (bal_l, bal_r) = (if bal > 0.0 { 1.0 - bal } else { 1.0 }, if bal < 0.0 { 1.0 + bal } else { 1.0 });
@@ -887,7 +883,6 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
             || solo_cur > 0.0005
             || old_eq.is_some()
             || (mix_tgt < 1.0 && dry_gain != 1.0)
-            || cf_amt > 0.0
             || mono
             || bal_l != 1.0
             || bal_r != 1.0;
@@ -980,11 +975,6 @@ unsafe fn render_loop(ctl: &Control, dst_id: &str, dst_name: &str, src_rate: u32
                     if matches!(old_chain, Some((_, 0))) {
                         old_chain = None;
                     }
-                }
-                if cf_amt > 0.0 {
-                    let (a, b) = cf.process(l, r, cf_amt);
-                    l = a;
-                    r = b;
                 }
                 if mono {
                     let m = (l + r) * 0.5;
@@ -1280,41 +1270,6 @@ pub fn measure(dev_query: Option<&str>, secs: u64) -> Result<f64> {
             bail!("hiç ses yakalanmadı (paket {pk}, sessiz {sil})");
         }
         Ok(10.0 * (sum / cnt as f64).max(1e-20).log10())
-    }
-}
-
-struct Crossfeed {
-    dl: Vec<f32>,
-    dr: Vec<f32>,
-    pos: usize,
-    lp_l: f32,
-    lp_r: f32,
-    a: f32,
-}
-
-impl Crossfeed {
-    fn new(rate: f32) -> Crossfeed {
-        let n = ((0.00027 * rate) as usize).max(1);
-        Crossfeed {
-            dl: vec![0.0; n],
-            dr: vec![0.0; n],
-            pos: 0,
-            lp_l: 0.0,
-            lp_r: 0.0,
-            a: 1.0 - (-2.0 * std::f32::consts::PI * 700.0 / rate).exp(),
-        }
-    }
-
-    fn process(&mut self, l: f32, r: f32, amt: f32) -> (f32, f32) {
-        let (old_l, old_r) = (self.dl[self.pos], self.dr[self.pos]);
-        self.dl[self.pos] = l;
-        self.dr[self.pos] = r;
-        self.pos = (self.pos + 1) % self.dl.len();
-        self.lp_l += self.a * (old_l - self.lp_l);
-        self.lp_r += self.a * (old_r - self.lp_r);
-        let k = 0.5 * amt;
-        let norm = 1.0 / (1.0 + k * 0.6);
-        ((l + k * self.lp_r) * norm, (r + k * self.lp_l) * norm)
     }
 }
 

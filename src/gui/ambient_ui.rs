@@ -18,7 +18,7 @@ fn accent_of(c: Color32) -> Color32 {
 
 impl App {
     fn ambient_blocked(&self) -> bool {
-        self.search_open || self.props.is_some() || self.ae.open || self.dsd_dialog.is_some() || self.upload_open || self.meta_edit.is_some() || self.del_confirm.is_some()
+        self.search_open || self.props.is_some() || self.ae.open || self.dsd_dialog.is_some() || self.upload_open || self.meta_edit.is_some() || self.del_confirm.is_some() || self.spectrum.is_some()
     }
 
     pub(super) fn ambient_tick(&mut self, ctx: &egui::Context) {
