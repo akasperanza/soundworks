@@ -127,25 +127,54 @@ impl App {
     }
 
     pub(super) fn update_backdrop(&mut self, ctx: &egui::Context) {
-        let album_tint = match (&self.view, &self.lib_artist, self.lib_open.clone()) {
-            (View::Library, None, Some(k)) if self.lib.albums.iter().any(|a| a.key == k) => Some(self.album_tint(&k)),
+        let opened = match (&self.view, &self.lib_artist, self.lib_open.clone()) {
+            (View::Library, None, Some(k)) if self.lib.albums.iter().any(|a| a.key == k) => Some(k),
             _ => None,
         };
-        let (tc, ta) = match album_tint {
-            Some(c) => (c, 105.0),
-            None if !self.meta.title.is_empty() => {
-                let c = self.tint;
-                let k = (130.0 / (c.r().max(c.g()).max(c.b()) as f32).max(1.0)).min(1.0);
-                (Color32::from_rgb((c.r() as f32 * k) as u8, (c.g() as f32 * k) as u8, (c.b() as f32 * k) as u8), 78.0)
-            }
-            None => (BLUE, 26.0),
+        let key = match &opened {
+            Some(k) => format!("album|{k}"),
+            None if !self.meta.title.is_empty() && self.play_bd.is_some() => format!("play|{}", self.cover_id),
+            None => String::new(),
         };
-        let dt = ctx.input(|i| i.unstable_dt).clamp(0.001, 0.1);
-        let s = (dt * 4.0).min(1.0);
-        self.backdrop = lerp_color(self.backdrop, tc, s);
-        self.backdrop_a += (ta - self.backdrop_a) * s;
-        if (self.backdrop_a - ta).abs() > 0.5 {
+        if key != self.bd_key {
+            let image = match &opened {
+                Some(k) => image::open(library::cover_path(k)).ok().and_then(|img| {
+                    let rgba = img.to_rgba8();
+                    blurred_backdrop(rgba.width() as usize, rgba.height() as usize, rgba.as_raw())
+                }),
+                None if !key.is_empty() => self.play_bd.clone(),
+                None => None,
+            };
+            if self.bd_cur.is_some() {
+                self.bd_prev = self.bd_cur.take();
+            }
+            self.bd_cur = image.map(|img| ctx.load_texture(format!("backdrop{key}"), img, TextureOptions::LINEAR));
+            self.bd_key = key;
+            self.bd_t0 = Instant::now();
+        }
+        let t = ease(self.bd_t0.elapsed().as_secs_f32() / 0.7);
+        if t >= 1.0 {
+            self.bd_prev = None;
+        } else {
             ctx.request_repaint();
+        }
+        let screen = ctx.screen_rect();
+        let painter = ctx.layer_painter(egui::LayerId::background());
+        let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+        let mut strength = 0.0f32;
+        if let Some(p) = &self.bd_prev {
+            let a = if self.bd_cur.is_some() { 1.0 } else { 1.0 - t };
+            painter.image(p.id(), screen, uv, alpha(Color32::WHITE, (255.0 * a) as u8));
+            strength = a;
+        }
+        if let Some(c) = &self.bd_cur {
+            painter.image(c.id(), screen, uv, alpha(Color32::WHITE, (255.0 * t) as u8));
+            strength = 1.0;
+        }
+        if strength > 0.0 {
+            let top = alpha(Color32::BLACK, (96.0 * strength) as u8);
+            let bottom = alpha(Color32::BLACK, (170.0 * strength) as u8);
+            vgradient(&painter, screen, top, bottom);
         }
     }
 

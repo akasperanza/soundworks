@@ -291,7 +291,35 @@ pub fn vgradient(painter: &Painter, rect: Rect, top: Color32, bottom: Color32) {
 }
 
 pub fn panel_frame(inner: Margin, outer: Margin) -> Frame {
-    Frame::none().fill(BG1).rounding(Rounding::same(14.0)).inner_margin(inner).outer_margin(outer)
+    Frame::none().fill(alpha(BG1, 150)).rounding(Rounding::same(14.0)).inner_margin(inner).outer_margin(outer)
+}
+
+pub fn raised_shadow(ui: &Ui) {
+    let rect = ui.max_rect();
+    let painter = ui.painter().with_clip_rect(ui.ctx().screen_rect());
+    let shadow = egui::epaint::Shadow { offset: vec2(0.0, 10.0), blur: 26.0, spread: 0.0, color: Color32::from_black_alpha(150) };
+    painter.add(shadow.as_shape(rect, Rounding::same(14.0)));
+}
+
+pub fn raised_surface(ui: &Ui, inner: Margin) {
+    let r = ui.max_rect();
+    let panel = Rect::from_min_max(pos2(r.left() - inner.left, r.top() - inner.top), pos2(r.right() + inner.right, r.bottom() + inner.bottom));
+    panel_glow(ui.painter(), panel, 14.0, 170.0, Color32::WHITE, 13.0);
+    ui.painter().rect_stroke(panel.shrink(0.5), Rounding::same(14.0), Stroke::new(1.0_f32, alpha(Color32::WHITE, 24)));
+}
+
+pub fn blurred_backdrop(w: usize, h: usize, rgba: &[u8]) -> Option<egui::ColorImage> {
+    let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba.to_vec())?;
+    let small = image::imageops::resize(&img, 64, 64, image::imageops::FilterType::Triangle);
+    let mut soft = image::imageops::blur(&small, 3.5);
+    for p in soft.pixels_mut() {
+        let lum = 0.3 * p[0] as f32 + 0.59 * p[1] as f32 + 0.11 * p[2] as f32;
+        for c in 0..3 {
+            p[c] = (lum + (p[c] as f32 - lum) * 1.35).clamp(0.0, 255.0) as u8;
+        }
+        p[3] = 255;
+    }
+    Some(egui::ColorImage::from_rgba_unmultiplied([64, 64], soft.as_raw()))
 }
 
 pub fn panel_glow(painter: &Painter, panel: Rect, radius: f32, height: f32, color: Color32, a: f32) {

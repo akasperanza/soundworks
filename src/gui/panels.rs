@@ -35,6 +35,7 @@ impl App {
             } else {
                 BLUE
             };
+            self.play_bd = m.cover.as_ref().and_then(|(w, h, d)| blurred_backdrop(*w as usize, *h as usize, d));
             m.cover = None;
             self.meta = m;
         }
@@ -329,8 +330,15 @@ impl App {
         }
         let mut vol_btn_rect = Rect::NOTHING;
         egui::TopBottomPanel::bottom("bar")
-            .frame(Frame::none().fill(Color32::TRANSPARENT).inner_margin(Margin::symmetric(36.0, 14.0)))
+            .frame(Frame::none().fill(Color32::TRANSPARENT).inner_margin(Margin { left: 24.0, right: 24.0, top: 4.0, bottom: 12.0 }))
             .show(ctx, |ui| {
+                Frame::none()
+                    .fill(Color32::from_rgba_unmultiplied(10, 14, 24, 168))
+                    .stroke(Stroke::new(1.0_f32, alpha(Color32::WHITE, 26)))
+                    .rounding(Rounding::same(22.0))
+                    .inner_margin(Margin::symmetric(20.0, 9.0))
+                    .shadow(egui::epaint::Shadow { offset: vec2(0.0, 4.0), blur: 14.0, spread: 0.0, color: Color32::from_black_alpha(90) })
+                    .show(ui, |ui| {
                 ui.horizontal(|ui| {
 
                     let (r, _) = ui.allocate_exact_size(vec2(40.0, 40.0), Sense::hover());
@@ -385,7 +393,7 @@ impl App {
                     let dur = self.player.duration();
                     let pos = self.player.position();
                     ui.label(RichText::new(fmt_time(pos)).font(body(12.0)).color(DIM));
-                    let seek_w = (ui.available_width() - 222.0 - 36.0 * self.plugin_bar_count() as f32).max(120.0);
+                    let seek_w = (ui.available_width() - 266.0 - 36.0 * self.plugin_bar_count() as f32).max(120.0);
                     let cur = self.current_path();
                     if let Some(p) = &cur {
                         if !self.wave_cache.contains_key(p) && !self.wave_fetcher.is_pending(p) {
@@ -455,6 +463,7 @@ impl App {
                         self.ambient_ctl = Instant::now();
                     }
                 });
+                    });
             });
 
         let pointer = ctx.pointer_hover_pos();
@@ -509,9 +518,10 @@ impl App {
             .frame(Frame::none().inner_margin(Margin { left: 12.0, right: 12.0, top: 2.0, bottom: 2.0 }))
             .show(ctx, |ui| {
                 let avail = ui.available_size();
+                raised_shadow(ui);
                 panel_frame(inner, Margin::ZERO).show(ui, |ui| {
                 ui.set_min_size(vec2(avail.x - inner.left - inner.right, avail.y - inner.top - inner.bottom));
-                self.paint_glow(ui, inner);
+                raised_surface(ui, inner);
                 ui.set_opacity(fade);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -698,7 +708,6 @@ impl App {
         egui::CentralPanel::default()
             .frame(panel_frame(inner, Margin { left: 12.0, right: 0.0, top: 2.0, bottom: 2.0 }))
             .show(ctx, |ui| {
-                self.paint_glow(ui, inner);
                 ui.set_opacity(fade);
                 ui.horizontal(|ui| {
                     let mut t = self.motor_tab;

@@ -194,9 +194,10 @@ impl App {
             .show(ctx, |ui| {
                 let inner = Margin { left: 22.0, right: 22.0, top: 22.0, bottom: 12.0 };
                 let avail = ui.available_size();
+                raised_shadow(ui);
                 panel_frame(inner, Margin::ZERO).show(ui, |ui| {
                     ui.set_min_size(vec2(avail.x - inner.left - inner.right, avail.y - inner.top - inner.bottom));
-                    self.paint_glow(ui, inner);
+                    raised_surface(ui, inner);
                     ui.set_opacity(e);
                     let w = full_w - 44.0;
                     ui.set_min_width(w);
@@ -296,7 +297,6 @@ impl App {
         egui::CentralPanel::default()
             .frame(panel_frame(inner, Margin { left: 12.0, right: 12.0, top: 2.0, bottom: 2.0 }))
             .show(ctx, |ui| {
-                self.paint_glow(ui, inner);
                 ui.set_opacity(fade);
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     ui.label(RichText::new("Eklentiler").font(bold(20.0)));

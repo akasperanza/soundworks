@@ -66,9 +66,10 @@ impl App {
             .show(ctx, |ui| {
                 let inner = Margin { left: 22.0, right: 22.0, top: 22.0, bottom: 12.0 };
                 let avail = ui.available_size();
+                raised_shadow(ui);
                 panel_frame(inner, Margin::ZERO).show(ui, |ui| {
                     ui.set_min_size(vec2(avail.x - inner.left - inner.right, avail.y - inner.top - inner.bottom));
-                    self.paint_glow(ui, inner);
+                    raised_surface(ui, inner);
                     ui.set_opacity(e);
                     let w = full_w - 44.0;
                     ui.horizontal(|ui| {

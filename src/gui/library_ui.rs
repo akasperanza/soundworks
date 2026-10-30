@@ -164,18 +164,11 @@ impl App {
         self.player.playlist.lock().unwrap().get(i).map(|p| p.to_string_lossy().to_string())
     }
 
-    pub(super) fn paint_glow(&self, ui: &egui::Ui, inner: Margin) {
-        let r = ui.max_rect();
-        let panel = Rect::from_min_max(pos2(r.left() - inner.left, r.top() - inner.top), pos2(r.right() + inner.right, r.bottom() + inner.bottom));
-        panel_glow(ui.painter(), panel, 14.0, 420.0, self.backdrop, self.backdrop_a * 0.7);
-    }
-
     pub(super) fn library_view(&mut self, ctx: &egui::Context, fade: f32) {
         let inner = Margin { left: 40.0, right: 40.0, top: 20.0, bottom: 20.0 };
         egui::CentralPanel::default()
             .frame(panel_frame(inner, Margin { left: 12.0, right: 12.0, top: 2.0, bottom: 2.0 }))
             .show(ctx, |ui| {
-                self.paint_glow(ui, inner);
                 let sig = (self.lib_open.clone(), self.lib_artist.clone(), self.lib_tab);
                 if sig != self.nav_sig {
                     self.nav_sig = sig;

@@ -6,7 +6,6 @@ impl App {
         egui::CentralPanel::default()
             .frame(panel_frame(inner, Margin { left: 12.0, right: 12.0, top: 2.0, bottom: 2.0 }))
             .show(ctx, |ui| {
-                self.paint_glow(ui, inner);
                 ui.set_opacity(fade);
 
                 if !self.cfg.use_loopback && self.running.is_some() && !self.player.playing.load(Relaxed) {
