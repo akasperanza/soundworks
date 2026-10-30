@@ -4,6 +4,29 @@ Her sürümün notları aşağıda `## <sürüm numarası>` başlığı altında
 
 Notlar çok dillidir: `<!-- tr -->`, `<!-- en -->` ve `<!-- de -->` satırları dil bloklarını ayırır, uygulama kullanıcının diline uyan bloğu gösterir (olmazsa İngilizce, sonra Türkçe). Yazım kuralları için [docs/RELEASING.md](docs/RELEASING.md) dosyasına bakın.
 
+## 0.5.5
+
+<!-- tr -->
+- Oynatıcı çubuğu cam gibi içeriğin üstünde yüzer, altında yumuşak bir karartma okunurluğu korur
+- Sağ paneller açıkken çubuk onların yanında ortalanır; Sözler ve Kuyruk açıkken Motor'daki seviye paneli gizlenir
+- Albüm değiştirirken arka plan yumuşakça geçiş yapar
+- Dar pencerede kütüphane filtre satırı iki satıra bölünür, üst üste binmez
+- Panel gölgeleri hafifletildi; arka plan renkleri daha dengeli
+
+<!-- en -->
+- The player bar floats over the content like glass, with a soft fade underneath to keep it readable
+- With right panels open, the bar centers beside them; the level panel in Engine hides while Lyrics or Queue is open
+- The backdrop now transitions smoothly when switching albums
+- In narrow windows the library filter row wraps to two lines instead of overlapping
+- Panel shadows were softened; backdrop colors are more balanced
+
+<!-- de -->
+- Die Player-Leiste schwebt wie Glas über dem Inhalt, ein sanfter Verlauf darunter sorgt für Lesbarkeit
+- Bei geöffneten rechten Panels wird die Leiste daneben zentriert; das Pegel-Panel in Engine wird bei Songtexten oder Warteschlange ausgeblendet
+- Der Hintergrund wechselt beim Albumwechsel jetzt sanft
+- In schmalen Fenstern bricht die Filterzeile der Bibliothek in zwei Zeilen um, statt sich zu überlagern
+- Panel-Schatten wurden abgeschwächt; die Hintergrundfarben sind ausgewogener
+
 ## 0.5.4
 
 <!-- tr -->
